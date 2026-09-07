@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>              <string>Tapdeck</string>
+    <key>CFBundleIdentifier</key>        <string>dev.kosuke.Tapdeck.driver</string>
+    <key>CFBundleExecutable</key>        <string>TapdeckDriver</string>
+    <key>CFBundlePackageType</key>       <string>BNDL</string>
+    <key>CFBundleShortVersionString</key><string>0.1.0</string>
+    <key>CFBundleVersion</key>           <string>1</string>
+    <key>CFBundleDevelopmentRegion</key> <string>en</string>
+    <key>NSHumanReadableCopyright</key>  <string>Tapdeck</string>
+
+    <!-- CFPlugIn のファクトリ登録。値は TapdeckDriver.c のエントリ関数名。 -->
+    <key>CFPlugInFactories</key>
+    <dict>
+        <key>ACAAB673-587F-451B-81EE-35713AD47F32</key>
+        <string>TapdeckDriver_Create</string>
+    </dict>
+
+    <!-- 443ABAB8-... は kAudioServerPlugInTypeUUID（固定値）。 -->
+    <key>CFPlugInTypes</key>
+    <dict>
+        <key>443ABAB8-E7B3-491A-B985-BEB9187030DB</key>
+        <array>
+            <string>ACAAB673-587F-451B-81EE-35713AD47F32</string>
+        </array>
+    </dict>
+</dict>
+</plist>

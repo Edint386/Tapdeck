@@ -37,10 +37,37 @@ Core Audio の Process Tap (macOS 14.2+) で特定アプリの音だけを取り
 `Sources/App/`。ScreenCaptureKit で解像度・FPS 指定、システム音声・マイク収録。
 3600×2338 @ 60fps で実測済み。将来はエンジンから音を受け取る形に繋ぎ替える。
 
-### 未着手: 仮想オーディオデバイス
+### 実装済み・未検証: 仮想オーディオデバイス
 
-他アプリ（Zoom / OBS / QuickTime）から「入力デバイス」として見えるデバイスの公開。
-これだけは Process Tap では実現できず、**AudioServerPlugIn (HAL プラグイン)** が要る。
+`Driver/TapdeckDriver.c`（1040行）。他アプリから「入力デバイス」として見える
+デバイスを公開する **AudioServerPlugIn**。カーネル拡張ではなく、`coreaudiod`
+にロードされるユーザー空間のプラグイン。SIP を切る必要はない。
+
+動作はループバック。出力側に書かれた音がリングバッファ経由で入力側から読める:
+
+```
+Tapdeck.app  ──(ミックス済みの音を再生)──▶  出力側
+                                             │ リングバッファ (16384 frames)
+Zoom / OBS   ◀──(マイクとして読む)────────  入力側
+```
+
+- 2ch、44.1 / 48 / 88.2 / 96 kHz 対応、Float32 インターリーブ
+- 実ハードウェアが無いので `mach_absolute_time` から仮想クロックを合成する
+- ビルドと ad-hoc 署名までは確認済み。**インストール後の動作は未検証**
+
+```
+./Driver/build-driver.sh                          # ビルドのみ（sudo 不要）
+sudo cp -R build/Tapdeck.driver /Library/Audio/Plug-Ins/HAL/
+sudo killall coreaudiod                           # 読み込ませる
+```
+
+HAL プラグインは `/Library/Audio/Plug-Ins/HAL/` にしか置けない。`coreaudiod` は
+`_coreaudiod` ユーザーで動くため、ホームディレクトリ下からは読めない。
+
+アンインストール:
+```
+sudo rm -rf /Library/Audio/Plug-Ins/HAL/Tapdeck.driver && sudo killall coreaudiod
+```
 
 ### 未着手: ミキサー
 
