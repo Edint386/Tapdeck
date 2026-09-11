@@ -18,6 +18,7 @@ final class AudioEngineModel: ObservableObject {
     @Published private(set) var rmsDB: Double = -120
     @Published private(set) var receivedSamples = 0
     @Published private(set) var verdict: Verdict = .unknown
+    @Published private(set) var capturedFile: URL?
 
     enum Verdict {
         case unknown, passed, failed
@@ -26,9 +27,17 @@ final class AudioEngineModel: ObservableObject {
     private var input: DeviceInput?
     private var output: DeviceOutput?
 
-    /// レベル計測はオーディオスレッドから書き込まれるため、
+    /// レベル計測と録音はオーディオスレッドから書き込まれるため、
     /// MainActor 隔離の外に置く必要がある。
     private let meter = LevelAccumulator()
+
+    /// 検証で取り込んだ音の保存先。振幅だけでなく周波数も後から確かめられるようにする。
+    static var captureURL: URL {
+        let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("dev.kosuke.Tapdeck", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("loopback-test.wav")
+    }
 
     // MARK: - 一覧
 
@@ -37,9 +46,14 @@ final class AudioEngineModel: ObservableObject {
             devices = try AudioDevice.all()
             tapdeck = devices.first { $0.uid == "TapdeckDevice" }
             processes = (try? AudioProcess.all()) ?? []
-            status = tapdeck == nil
-                ? "Tapdeck 仮想デバイスが見つかりません（ドライバ未インストール）"
-                : "準備完了"
+
+            if tapdeck == nil {
+                status = "Tapdeck 仮想デバイスが見つかりません（ドライバ未インストール）"
+                verdict = .failed
+            } else if verdict == .unknown {
+                // 検証済みの結果は上書きしない。
+                status = "準備完了"
+            }
         } catch {
             status = "デバイス一覧の取得に失敗: \(error.localizedDescription)"
         }
@@ -77,6 +91,10 @@ final class AudioEngineModel: ObservableObject {
         do {
             status = "入力側を開いています …"
             let deviceInput = try DeviceInput(device: device)
+            let url = Self.captureURL
+            try? FileManager.default.removeItem(at: url)
+            meter.beginWriting(to: url)
+
             let meter = self.meter
             try deviceInput.start { buffer in
                 meter.accumulate(buffer)
@@ -128,6 +146,9 @@ final class AudioEngineModel: ObservableObject {
     private func resetMetrics() { meter.reset() }
 
     private func finishMeasurement() {
+        meter.finishWriting()
+        capturedFile = FileManager.default.fileExists(atPath: Self.captureURL.path)
+            ? Self.captureURL : nil
         let (finalPeak, finalSum, n) = meter.snapshot()
         receivedSamples = n
         guard n > 0 else {
@@ -159,8 +180,19 @@ final class LevelAccumulator: @unchecked Sendable {
     private var sumSquares: Double = 0
     private var total = 0
 
+    private var file: AVAudioFile?
+    private var destination: URL?
+
     func reset() {
         lock.lock(); peak = 0; sumSquares = 0; total = 0; lock.unlock()
+    }
+
+    func beginWriting(to url: URL) {
+        lock.lock(); destination = url; file = nil; lock.unlock()
+    }
+
+    func finishWriting() {
+        lock.lock(); file = nil; destination = nil; lock.unlock()
     }
 
     func accumulate(_ buffer: AVAudioPCMBuffer) {
@@ -185,6 +217,16 @@ final class LevelAccumulator: @unchecked Sendable {
         if localPeak > peak { peak = localPeak }
         sumSquares += localSum
         total += count
+
+        if file == nil, let destination {
+            // 処理フォーマットを入力の実フォーマットに完全一致させる。
+            // ずれていると write(from:) が毎回失敗し、ヘッダだけのファイルになる。
+            file = try? AVAudioFile(forWriting: destination,
+                                    settings: buffer.format.settings,
+                                    commonFormat: buffer.format.commonFormat,
+                                    interleaved: buffer.format.isInterleaved)
+        }
+        try? file?.write(from: buffer)
         lock.unlock()
     }
 

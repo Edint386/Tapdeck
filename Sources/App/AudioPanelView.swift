@@ -88,6 +88,13 @@ struct AudioPanelView: View {
                         Text(String(format: "%.1f dB", model.rmsDB))
                             .font(.system(.caption, design: .monospaced))
                     }
+                    if model.capturedFile != nil {
+                        GridRow {
+                            Text("録音").foregroundStyle(.secondary)
+                            Text("loopback-test.wav")
+                                .font(.system(.caption, design: .monospaced))
+                        }
+                    }
                 }
                 .font(.caption)
             }
