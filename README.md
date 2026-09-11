@@ -112,17 +112,41 @@ sudo rm -rf /Library/Audio/Plug-Ins/HAL/Tapdeck.driver && sudo killall coreaudio
 アプリの音声 → Process Tap → ミキサー → 仮想デバイス → 他アプリが入力として読む、
 という経路が全区間で無劣化に通っている。
 
-## ビルド
-
-Xcode があればその SDK を、無ければ Command Line Tools を使う。
+## インストール
 
 ```
-./build.sh
+./install.sh                 # ビルドして /Applications へ
+sudo ./install-driver.sh     # 仮想デバイスを使う場合、初回のみ
+```
+
+以降は Launchpad や Spotlight から普通に起動できる。
+
+### 署名について
+
+`install.sh` は初回に `Tapdeck Local` という自己署名証明書をキーチェーンへ作る。
+
+ad-hoc 署名（`codesign -s -`）だとビルドのたびに署名が変わり、macOS から見ると
+毎回「別のアプリ」になるため、マイク・画面収録・オーディオ録音の許可が
+その都度リセットされる。固定の証明書なら署名条件が変わらないので許可が維持される。
+
+```
+designated => identifier "dev.kosuke.Tapdeck" and certificate root = H"68b7190f…"
+```
+
+配布するなら Apple Developer Program の Developer ID と公証が必要。
+これは自分の Mac で使うためのもの。
+
+## 開発
+
+```
+./build.sh                   # ビルドのみ（/Applications へは入れない）
+./tools/make-icon.swift      # アイコンの生成（build.sh からは呼ばれない）
 ```
 
 生成物:
+- `Tapdeck.app` — 本体
 - `build/tapproof` — エンジンの検証用CLI
-- `Tapdeck.app` — 画面収録UI
+- `build/Tapdeck.driver` — 仮想オーディオデバイス
 
 ## tapproof の使い方
 

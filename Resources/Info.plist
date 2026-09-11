@@ -10,6 +10,7 @@
     <key>CFBundleShortVersionString</key><string>0.1.0</string>
     <key>CFBundleVersion</key>           <string>1</string>
     <key>LSMinimumSystemVersion</key>    <string>15.0</string>
+    <key>CFBundleIconFile</key>          <string>Tapdeck</string>
     <key>NSHighResolutionCapable</key>   <true/>
     <!-- Core Audio の Process Tap（アプリ単位の音声取得）に必要。
          このキーが無いと TCC はエラーを返さず、無音を返す。 -->
