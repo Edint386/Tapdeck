@@ -52,6 +52,20 @@ final class Recorder: NSObject, ObservableObject {
     @Published private(set) var status = "準備完了"
     @Published private(set) var outputSize: CGSize = .zero
 
+    // MARK: - 音源の選択
+
+    /// 収録に乗せる音をどこから取るか。
+    ///
+    /// ScreenCaptureKit の SCRecordingOutput は音声も面倒を見てくれるが、
+    /// 音源が「システム音声」と「マイク」に固定される。ミキサーで組んだ音を
+    /// 乗せたい場合は、映像と音声を自前で多重化する必要がある。
+    static let screenCaptureKitSourceID = ""
+
+    @Published private(set) var audioDeviceOptions: [AudioDevice] = []
+    @Published var audioSourceID = Recorder.screenCaptureKitSourceID
+
+    var usesMixerOutput: Bool { audioSourceID != Self.screenCaptureKitSourceID }
+
     // MARK: - 設定
 
     @Published var selectedID = ""
@@ -66,6 +80,10 @@ final class Recorder: NSObject, ObservableObject {
     private var content: SCShareableContent?
     private var stream: SCStream?
     private var output: SCRecordingOutput?
+    private var deviceInput: DeviceInput?
+    private let muxerBox = MuxerBox()
+    private let videoQueue = DispatchQueue(label: "dev.kosuke.Tapdeck.recorder.video",
+                                           qos: .userInitiated)
     private var ticker: Timer?
     private var startedAt: Date?
 
@@ -104,6 +122,12 @@ final class Recorder: NSObject, ObservableObject {
                                   label: "ウインドウ: \(owner) — \(w.title ?? "")",
                                   target: .window(w.windowID))
                 }
+
+            audioDeviceOptions = ((try? AudioDevice.all()) ?? []).filter(\.canInput)
+            if audioSourceID != Self.screenCaptureKitSourceID,
+               !audioDeviceOptions.contains(where: { $0.uid == audioSourceID }) {
+                audioSourceID = Self.screenCaptureKitSourceID
+            }
 
             if allOptions.first(where: { $0.id == selectedID }) == nil {
                 selectedID = displayOptions.first?.id ?? ""
@@ -184,38 +208,86 @@ final class Recorder: NSObject, ObservableObject {
             cfg.captureMicrophone = microphone
 
             let url = Self.makeOutputURL()
-            let rcfg = SCRecordingOutputConfiguration()
-            rcfg.outputURL = url
-            rcfg.outputFileType = .mov
-            rcfg.videoCodecType = .h264
-
-            let out = SCRecordingOutput(configuration: rcfg, delegate: self)
             let s = SCStream(filter: filter, configuration: cfg, delegate: self)
-            try s.addRecordingOutput(out)
-            try await s.startCapture()
+
+            if usesMixerOutput {
+                // 映像は SCStream から受け取り、音声は指定デバイスから取って
+                // AVAssetWriter で多重化する。
+                guard let device = audioDeviceOptions.first(where: { $0.uid == audioSourceID })
+                else { throw Failure.noTarget }
+
+                cfg.capturesAudio = false
+                cfg.captureMicrophone = false
+
+                let input = try DeviceInput(device: device)
+                let muxer = try MuxedRecorder(outputURL: url,
+                                              videoSize: CGSize(width: w, height: h),
+                                              audioFormat: input.format)
+                muxer.start()
+                muxerBox.value = muxer
+
+                try input.start { [muxerBox] buffer, timeStamp in
+                    muxerBox.value?.appendAudio(buffer, at: timeStamp)
+                }
+                deviceInput = input
+
+                try s.addStreamOutput(self, type: .screen,
+                                      sampleHandlerQueue: videoQueue)
+                try await s.startCapture()
+            } else {
+                let rcfg = SCRecordingOutputConfiguration()
+                rcfg.outputURL = url
+                rcfg.outputFileType = .mov
+                rcfg.videoCodecType = .h264
+
+                let out = SCRecordingOutput(configuration: rcfg, delegate: self)
+                try s.addRecordingOutput(out)
+                try await s.startCapture()
+                output = out
+            }
 
             stream = s
-            output = out
             lastOutput = url
             outputSize = CGSize(width: w, height: h)
             startedAt = Date()
             elapsed = 0
             isRecording = true
-            status = "収録中 — \(w)×\(h) @ \(fps)fps"
+            status = usesMixerOutput
+                ? "収録中 — \(w)×\(h) @ \(fps)fps / 音声は \(audioSourceName)"
+                : "収録中 — \(w)×\(h) @ \(fps)fps / 音声は ScreenCaptureKit"
             startTicker()
         } catch {
             status = "開始できませんでした: \(error.localizedDescription)"
         }
     }
 
+    var audioSourceName: String {
+        audioDeviceOptions.first { $0.uid == audioSourceID }?.name ?? "—"
+    }
+
     func stop() async {
         guard let s = stream else { return }
         do {
             try await s.stopCapture()
-            status = "保存しました: \(lastOutput?.lastPathComponent ?? "")"
         } catch {
             status = "停止時にエラー: \(error.localizedDescription)"
         }
+
+        deviceInput?.stop()
+        deviceInput = nil
+
+        if let muxer = muxerBox.value {
+            await muxer.finish()
+            muxerBox.value = nil
+            if let failure = muxer.failure {
+                status = "書き出しに失敗: \(failure.localizedDescription)"
+            } else {
+                status = "保存しました: \(lastOutput?.lastPathComponent ?? "")"
+            }
+        } else {
+            status = "保存しました: \(lastOutput?.lastPathComponent ?? "")"
+        }
+
         stream = nil
         output = nil
         isRecording = false
@@ -290,5 +362,34 @@ extension Recorder: SCRecordingOutputDelegate {
 
     nonisolated func recordingOutputDidFinishRecording(_ recordingOutput: SCRecordingOutput) {
         Task { @MainActor in self.status = "書き出し完了: \(self.lastOutput?.lastPathComponent ?? "")" }
+    }
+}
+
+
+/// 実時間のコールバックから多重化器へ届けるための受け皿。
+/// SCStreamOutput も AUHAL も MainActor の外から呼ばれる。
+final class MuxerBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: MuxedRecorder?
+
+    var value: MuxedRecorder? {
+        get { lock.lock(); defer { lock.unlock() }; return storage }
+        set { lock.lock(); storage = newValue; lock.unlock() }
+    }
+}
+
+extension Recorder: SCStreamOutput {
+    nonisolated func stream(_ stream: SCStream,
+                            didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
+                            of type: SCStreamOutputType) {
+        guard type == .screen else { return }
+
+        // 画面に変化が無い周期でも呼ばれる。完成フレーム以外は捨てる。
+        guard let attachments = CMSampleBufferGetSampleAttachmentsArray(
+                  sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
+              let raw = attachments.first?[.status] as? Int,
+              SCFrameStatus(rawValue: raw) == .complete else { return }
+
+        muxerBox.value?.appendVideo(sampleBuffer)
     }
 }

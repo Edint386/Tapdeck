@@ -2,6 +2,9 @@ import SwiftUI
 
 struct MixerPanelView: View {
     @EnvironmentObject private var model: MixerModel
+    @EnvironmentObject private var menuBar: MenuBarController
+    @State private var isNamingPreset = false
+    @State private var presetName = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -17,6 +20,7 @@ struct MixerPanelView: View {
 
     private var sourcesSection: some View {
         VStack(alignment: .leading, spacing: 10) {
+            presetBar
             HStack(spacing: 8) {
                 Text("ソース").font(.headline)
                 if !model.rows.isEmpty {
@@ -43,6 +47,75 @@ struct MixerPanelView: View {
             }
         }
         .padding(18)
+    }
+
+    /// プリセット。用途ごとの組み合わせを切り替える。
+    private var presetBar: some View {
+        HStack(spacing: 8) {
+            Menu {
+                if model.presets.isEmpty {
+                    Text("保存されたプリセットはありません")
+                } else {
+                    ForEach(model.presets) { preset in
+                        Button {
+                            model.applyPreset(preset.id)
+                        } label: {
+                            if model.activePresetID == preset.id {
+                                Label(preset.name, systemImage: "checkmark")
+                            } else {
+                                Text(preset.name)
+                            }
+                        }
+                    }
+                    Divider()
+                    Menu("削除") {
+                        ForEach(model.presets) { preset in
+                            Button(preset.name) { model.deletePreset(preset.id) }
+                        }
+                    }
+                }
+                Divider()
+                Button("いまの構成を保存 …") {
+                    presetName = model.presets.first { $0.id == model.activePresetID }?.name ?? ""
+                    isNamingPreset = true
+                }
+                .disabled(model.rows.isEmpty)
+                Button("ソースをすべて外す") { model.clearSources() }
+                    .disabled(model.rows.isEmpty)
+            } label: {
+                Label(activePresetLabel, systemImage: "square.stack.3d.up")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+
+            Spacer()
+        }
+        .popover(isPresented: $isNamingPreset, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("プリセット名").font(.subheadline.weight(.medium))
+                TextField("会議用 / 配信用 など", text: $presetName)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 220)
+                    .onSubmit { commitPreset() }
+                HStack {
+                    Spacer()
+                    Button("キャンセル") { isNamingPreset = false }
+                    Button("保存") { commitPreset() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(presetName.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+            .padding(14)
+        }
+    }
+
+    private var activePresetLabel: String {
+        model.presets.first { $0.id == model.activePresetID }?.name ?? "プリセット"
+    }
+
+    private func commitPreset() {
+        model.savePreset(named: presetName)
+        isNamingPreset = false
     }
 
     private var quickAddButtons: some View {
@@ -232,6 +305,14 @@ struct MixerPanelView: View {
                     Text("出力レベル").font(.system(size: 9)).foregroundStyle(.secondary)
                     LevelBar(level: model.masterLevel).frame(width: 104, height: 6)
                 }
+            }
+
+            if !menuBar.isPlaced {
+                Label("メニューバーに空きがなく、Tapdeck の項目を置けませんでした（ノッチのある画面では置ける範囲が狭くなります）。他の項目を減らすと出てきます。",
+                      systemImage: "menubar.arrow.up.rectangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if !model.status.isEmpty {

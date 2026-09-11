@@ -259,7 +259,7 @@ func runLoopback(seconds: Double, output: URL) throws {
     var writeError: String?
     let lock = NSLock()
 
-    try input.start { buffer in
+    try input.start { buffer, _ in
         lock.lock(); defer { lock.unlock() }
         if file == nil {
             do {

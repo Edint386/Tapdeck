@@ -34,6 +34,9 @@ final class MixerModel: ObservableObject {
         didSet { if oldValue != outputDeviceUID { persist() } }
     }
 
+    @Published private(set) var presets: [MixerPreset] = []
+    @Published private(set) var activePresetID: UUID?
+
     private let mixer = Mixer()
     private var meterTimer: Timer?
     private var iconCache: [String: NSImage] = [:]
@@ -46,8 +49,66 @@ final class MixerModel: ObservableObject {
             source.gain = entry.gain
             source.isMuted = entry.isMuted
         }
+        presets = MixerPresetStore.load()
         syncRows()
         status = rows.isEmpty ? "ソースを追加してください" : "前回の構成を復元しました"
+    }
+
+    // MARK: - プリセット
+
+    /// いまの構成に名前を付けて保存する。同名があれば上書きする。
+    func savePreset(named name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let configuration = MixerConfiguration(sources: mixer.sources,
+                                               outputDeviceUID: outputDeviceUID)
+        if let index = presets.firstIndex(where: { $0.name == trimmed }) {
+            presets[index].configuration = configuration
+            activePresetID = presets[index].id
+        } else {
+            let preset = MixerPreset(name: trimmed, configuration: configuration)
+            presets.append(preset)
+            activePresetID = preset.id
+        }
+        MixerPresetStore.save(presets)
+        status = "プリセット「\(trimmed)」を保存しました"
+    }
+
+    /// プリセットを読み込んで、いまの構成を置き換える。
+    func applyPreset(_ id: UUID) {
+        guard let preset = presets.first(where: { $0.id == id }) else { return }
+        let wasRunning = isRunning
+        if wasRunning { stop() }
+
+        mixer.removeAll()
+        outputDeviceUID = preset.configuration.outputDeviceUID
+        for entry in preset.configuration.targets {
+            let source = mixer.add(entry.target)
+            source.gain = entry.gain
+            source.isMuted = entry.isMuted
+        }
+        activePresetID = id
+        syncRows()
+        persist()
+        status = "プリセット「\(preset.name)」を読み込みました"
+
+        if wasRunning { start() }
+    }
+
+    func deletePreset(_ id: UUID) {
+        presets.removeAll { $0.id == id }
+        if activePresetID == id { activePresetID = nil }
+        MixerPresetStore.save(presets)
+    }
+
+    func clearSources() {
+        let wasRunning = isRunning
+        if wasRunning { stop() }
+        mixer.removeAll()
+        activePresetID = nil
+        syncRows()
+        persist()
+        status = "ソースをすべて外しました"
     }
 
     // MARK: - 一覧の更新
@@ -117,12 +178,14 @@ final class MixerModel: ObservableObject {
 
     private func add(_ target: Mixer.Target) {
         mixer.add(target)
+        invalidateActivePreset()
         syncRows()
         persist()
     }
 
     func remove(_ id: UUID) {
         mixer.remove(id: id)
+        invalidateActivePreset()
         syncRows()
         persist()
     }
@@ -142,6 +205,11 @@ final class MixerModel: ObservableObject {
 
     private func persist() {
         MixerConfiguration(sources: mixer.sources, outputDeviceUID: outputDeviceUID).save()
+    }
+
+    /// 手で構成を変えたらプリセットの選択を外す（内容が一致しなくなるため）。
+    private func invalidateActivePreset() {
+        activePresetID = nil
     }
 
     // MARK: - 表示用の変換

@@ -1,10 +1,14 @@
+import AppKit
 import SwiftUI
 
 @main
 struct TapdeckApp: App {
-    @StateObject private var recorder = Recorder()
-    @StateObject private var audio = AudioEngineModel()
-    @StateObject private var mixer = MixerModel()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
+
+    @ObservedObject private var recorder = AppModels.shared.recorder
+    @ObservedObject private var audio = AppModels.shared.audio
+    @ObservedObject private var mixer = AppModels.shared.mixer
+    @ObservedObject private var menuBar = AppModels.shared.menuBar
 
     var body: some Scene {
         Window("Tapdeck", id: "main") {
@@ -12,8 +16,22 @@ struct TapdeckApp: App {
                 .environmentObject(recorder)
                 .environmentObject(audio)
                 .environmentObject(mixer)
+                .environmentObject(menuBar)
         }
         .windowResizability(.contentSize)
+    }
+}
+
+/// メニューバーの常駐項目を立ち上げる。
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        AppModels.shared.menuBar.install()
+    }
+
+    /// ウインドウを閉じても終了しない。ミキサーは出しっぱなしで使うため。
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
     }
 }
 
@@ -28,7 +46,7 @@ struct ContentView: View {
             RecorderPanelView()
                 .tabItem { Label("画面収録", systemImage: "record.circle") }
         }
-        .frame(width: 496)
+        .frame(width: 536)
         .padding(.top, 6)
     }
 }

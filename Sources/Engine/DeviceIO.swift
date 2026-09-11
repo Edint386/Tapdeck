@@ -82,7 +82,7 @@ final class DeviceOutput {
 final class DeviceInput {
 
     private var unit: AudioUnit?
-    private var handler: ((AVAudioPCMBuffer) -> Void)?
+    private var handler: ((AVAudioPCMBuffer, AudioTimeStamp) -> Void)?
     private var bufferList: UnsafeMutableAudioBufferListPointer?
     private(set) var format: AVAudioFormat
     private var started = false
@@ -146,7 +146,9 @@ final class DeviceInput {
 
     deinit { stop() }
 
-    func start(onAudio: @escaping (AVAudioPCMBuffer) -> Void) throws {
+    /// - Parameter onAudio: バッファと、それが取り込まれた時刻。
+    ///   時刻は映像と音声を多重化するときに必要になる。
+    func start(onAudio: @escaping (AVAudioPCMBuffer, AudioTimeStamp) -> Void) throws {
         guard let au = unit, !started else { return }
         handler = onAudio
 
@@ -182,7 +184,7 @@ final class DeviceInput {
         let status = AudioUnitRender(au, flags, timeStamp, bus, frames, buffer.mutableAudioBufferList)
         guard status == noErr else { return status }
 
-        handler(buffer)
+        handler(buffer, timeStamp.pointee)
         return noErr
     }
 

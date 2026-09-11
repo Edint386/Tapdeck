@@ -96,11 +96,35 @@ struct RecorderPanelView: View {
     private var audioSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("音声").font(.headline)
-            Toggle("システム音声（Macで鳴っている音）", isOn: $rec.systemAudio)
-            Toggle("マイク", isOn: $rec.microphone)
-            Text("仮想オーディオデバイスは不要です。ScreenCaptureKit が直接取得します。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+
+            HStack {
+                Text("音源").frame(width: 64, alignment: .leading)
+                Picker("", selection: $rec.audioSourceID) {
+                    Text("ScreenCaptureKit（システム音声・マイク）")
+                        .tag(Recorder.screenCaptureKitSourceID)
+                    if !rec.audioDeviceOptions.isEmpty {
+                        Divider()
+                        ForEach(rec.audioDeviceOptions) { device in
+                            Text(device.name).tag(device.uid)
+                        }
+                    }
+                }
+                .labelsHidden()
+            }
+
+            if rec.usesMixerOutput {
+                Label("「Tapdeck」を選ぶと、ミキサーで組んだ音がそのまま収録に乗ります。",
+                      systemImage: "slider.vertical.3")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Toggle("システム音声（Macで鳴っている音）", isOn: $rec.systemAudio)
+                Toggle("マイク", isOn: $rec.microphone)
+                Text("仮想オーディオデバイスは不要です。ScreenCaptureKit が直接取得します。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .disabled(rec.isRecording)
     }

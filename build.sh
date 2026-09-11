@@ -36,6 +36,7 @@ APP="Tapdeck.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+cp Resources/Tapdeck.icns "$APP/Contents/Resources/Tapdeck.icns"
 
 xcrun swiftc -O "${common_flags[@]}" -parse-as-library \
   -framework ScreenCaptureKit \

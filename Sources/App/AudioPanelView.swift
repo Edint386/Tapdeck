@@ -2,6 +2,8 @@ import SwiftUI
 
 struct AudioPanelView: View {
     @EnvironmentObject private var model: AudioEngineModel
+    @State private var newDeviceName = ""
+    @State private var isAddingDevice = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -19,32 +21,102 @@ struct AudioPanelView: View {
     // MARK: 仮想デバイス
 
     private var virtualDeviceSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("仮想デバイス").font(.headline)
                 Spacer()
+                Button {
+                    newDeviceName = ""
+                    isAddingDevice = true
+                } label: { Image(systemName: "plus") }
+                .buttonStyle(.borderless)
+                .disabled(model.virtualDevices.count >= 8)
+                .help("仮想デバイスを追加")
                 Button("更新") { model.refresh() }
                     .controlSize(.small)
                     .disabled(model.isTesting)
             }
 
-            if let device = model.tapdeck {
-                HStack(spacing: 6) {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                    Text("\(device.name) — 入力 \(device.inputChannels)ch / 出力 \(device.outputChannels)ch / \(Int(device.sampleRate)) Hz")
-                        .font(.callout)
-                }
-            } else {
+            if model.tapdeck == nil && model.virtualDevices.count <= 1 {
                 HStack(spacing: 6) {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
-                    Text("見つかりません。ドライバが未インストールです。").font(.callout)
+                    Text("ドライバが未インストールです。").font(.callout)
                 }
-                Text("sudo cp -R build/Tapdeck.driver /Library/Audio/Plug-Ins/HAL/\nsudo killall coreaudiod")
+                Text("sudo ./install-driver.sh")
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
+            } else {
+                VStack(spacing: 4) {
+                    ForEach(model.virtualDevices) { device in
+                        virtualDeviceRow(device)
+                    }
+                }
+            }
+
+            Text("用途ごとにデバイスを分けられます（「Zoom用」「配信用」など）。\n追加・削除は数秒で反映されます。")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if !model.virtualDeviceStatus.isEmpty {
+                Text(model.virtualDeviceStatus).font(.caption).foregroundStyle(.secondary)
             }
         }
+        .popover(isPresented: $isAddingDevice, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("仮想デバイスの名前").font(.subheadline.weight(.medium))
+                TextField("Zoom用 / 配信用 など", text: $newDeviceName)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 220)
+                    .onSubmit { commitNewDevice() }
+                HStack {
+                    Spacer()
+                    Button("キャンセル") { isAddingDevice = false }
+                    Button("追加") { commitNewDevice() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(newDeviceName.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+            .padding(14)
+        }
+    }
+
+    private func commitNewDevice() {
+        model.addVirtualDevice(name: newDeviceName)
+        isAddingDevice = false
+    }
+
+    private func virtualDeviceRow(_ device: VirtualDeviceConfiguration.Device) -> some View {
+        let live = model.devices.first { $0.uid == device.uid }
+        return HStack(spacing: 8) {
+            Image(systemName: live != nil ? "checkmark.circle.fill" : "clock")
+                .font(.caption)
+                .foregroundStyle(live != nil ? Color.green : Color.secondary)
+
+            TextField("", text: Binding(
+                get: { device.name },
+                set: { model.renameVirtualDevice(id: device.id, to: $0) }
+            ))
+            .textFieldStyle(.plain)
+            .font(.callout)
+
+            if let live {
+                Text("入力 \(live.inputChannels)ch / 出力 \(live.outputChannels)ch / \(Int(live.sampleRate)) Hz")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+            } else {
+                Text("反映待ち").font(.system(size: 9)).foregroundStyle(.tertiary)
+            }
+
+            Button {
+                model.removeVirtualDevice(id: device.id)
+            } label: { Image(systemName: "xmark").font(.caption2).foregroundStyle(.tertiary) }
+            .buttonStyle(.borderless)
+            .disabled(model.virtualDevices.count <= 1)
+        }
+        .padding(.horizontal, 9).padding(.vertical, 6)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
     }
 
     // MARK: ループバック検証

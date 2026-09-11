@@ -3,112 +3,353 @@
 //  Tapdeck の仮想オーディオデバイス (AudioServerPlugIn)。
 //  カーネル拡張ではなく、coreaudiod にロードされるユーザー空間のプラグイン。
 //
-//  役割は「ループバック」。このデバイスの出力側に書き込まれた音が、
-//  そのまま入力側から読める。これにより:
+//  役割は「ループバック」。デバイスの出力側に書き込まれた音が、そのまま
+//  入力側から読める。
 //
 //      Tapdeck.app  ──(ミックス済みの音を再生)──▶  出力側
 //                                                   │ リングバッファ
 //      Zoom / OBS   ◀──(マイクとして読む)──────  入力側
 //
-//  という経路が成立する。アプリ単位の音声取得は Process Tap 側 (Sources/Engine)
-//  が担当し、このドライバは「他アプリから見えるデバイス」を提供することに専念する。
+//  公開するデバイスは設定ファイルで決まる。アプリが書き、ドライバが監視して
+//  増減を反映する（coreaudiod の再起動は不要）。
+//
+//      /Users/Shared/Tapdeck/Devices.plist
+//
+//  この場所を使う理由: coreaudiod は _coreaudiod ユーザーで動くのでユーザーの
+//  ホームディレクトリを読めず、かといって /Library 配下へアプリが書くには
+//  管理者権限が要る。/Users/Shared は両方の条件を満たす。
 
 #include <CoreAudio/AudioServerPlugIn.h>
+#include <dispatch/dispatch.h>
 #include <mach/mach_time.h>
 #include <pthread.h>
-#include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
 
-#pragma mark - 設定
+#pragma mark - 定数
 
-#define kDeviceUID          "TapdeckDevice"
-#define kDeviceModelUID     "TapdeckDeviceModel"
-#define kDeviceName         "Tapdeck"
 #define kManufacturerName   "Tapdeck"
-#define kBoxUID             "TapdeckBox"
+#define kConfigurationPath  "/Users/Shared/Tapdeck/Devices.plist"
 
-#define kChannelCount       2
+#define kMaxDevices         8
+#define kMaxChannels        16
+#define kDefaultChannels    2
 #define kRingBufferFrames   16384   // ゼロタイムスタンプの周期でもある
-#define kLatencyFrames      0
-#define kSafetyOffsetFrames 0
+#define kNameLength         128
 
-// 対応サンプルレート。既定は 48000。
 static const Float64 kSupportedSampleRates[] = { 44100.0, 48000.0, 88200.0, 96000.0 };
 #define kSupportedSampleRateCount (sizeof(kSupportedSampleRates) / sizeof(Float64))
 
 #pragma mark - オブジェクトID
+//
+//  プラグイン       : 1
+//  デバイス i       : 2 + i*3
+//  入力ストリーム i : 3 + i*3
+//  出力ストリーム i : 4 + i*3
 
-enum {
-    kObjectID_PlugIn        = kAudioObjectPlugInObject,  // 1
-    kObjectID_Device        = 2,
-    kObjectID_Stream_Input  = 3,
-    kObjectID_Stream_Output = 4,
-};
+#define kObjectID_PlugIn        kAudioObjectPlugInObject
+#define kDeviceObjectID(i)      ((AudioObjectID)(2 + (i) * 3))
+#define kInputStreamObjectID(i) ((AudioObjectID)(3 + (i) * 3))
+#define kOutputStreamObjectID(i)((AudioObjectID)(4 + (i) * 3))
 
-#pragma mark - 状態
+enum { kObjectKind_None = 0, kObjectKind_Device, kObjectKind_InputStream, kObjectKind_OutputStream };
 
-static pthread_mutex_t          gStateMutex     = PTHREAD_MUTEX_INITIALIZER;
-static UInt32                   gRefCount       = 0;
-static AudioServerPlugInHostRef gHost           = NULL;
+#pragma mark - デバイス1台ぶんの状態
 
-static Float64  gSampleRate         = 48000.0;
-static UInt32   gInputStreamActive  = 1;
-static UInt32   gOutputStreamActive = 1;
+typedef struct {
+    Boolean  isPublished;
+    char     uid[kNameLength];
+    char     name[kNameLength];
+    UInt32   channelCount;
 
-// IO 実行中かどうか（StartIO / StopIO の入れ子を数える）
-static UInt64   gIORunningCount     = 0;
+    Float64  sampleRate;
+    UInt32   inputStreamActive;
+    UInt32   outputStreamActive;
 
-// 仮想クロック
-static Float64  gHostTicksPerFrame  = 0.0;
-static UInt64   gAnchorHostTime     = 0;
-static UInt64   gTimeStampCount     = 0;
+    UInt64   ioRunningCount;
+    Float64  hostTicksPerFrame;
+    UInt64   anchorHostTime;
+    UInt64   timeStampCount;
 
-// ループバック用リングバッファ。出力側が書き、入力側が読む。
-static Float32  gRingBuffer[kRingBufferFrames * kChannelCount];
+    Float32  ring[kMaxChannels * kRingBufferFrames];
+} TapdeckDevice;
+
+static TapdeckDevice            gDevices[kMaxDevices];
+static pthread_mutex_t          gStateMutex = PTHREAD_MUTEX_INITIALIZER;
+static UInt32                   gRefCount   = 0;
+static AudioServerPlugInHostRef gHost       = NULL;
+
+static dispatch_source_t        gConfigurationTimer = NULL;
+static struct timespec          gLastConfigurationTime = { 0, 0 };
+static off_t                    gLastConfigurationSize = -1;
+
+static inline void LockState(void)   { pthread_mutex_lock(&gStateMutex); }
+static inline void UnlockState(void) { pthread_mutex_unlock(&gStateMutex); }
 
 #pragma mark - 小道具
 
-static inline void TapdeckLockState(void)   { pthread_mutex_lock(&gStateMutex); }
-static inline void TapdeckUnlockState(void) { pthread_mutex_unlock(&gStateMutex); }
-
-/// mach_absolute_time の 1 フレームあたりのティック数を求める。
-static void TapdeckRecalculateHostTicksPerFrame(void)
+static void RecalculateHostTicks(TapdeckDevice* device)
 {
     struct mach_timebase_info info;
     mach_timebase_info(&info);
     Float64 hostClockFrequency = ((Float64)info.denom / (Float64)info.numer) * 1000000000.0;
-    gHostTicksPerFrame = hostClockFrequency / gSampleRate;
+    device->hostTicksPerFrame = hostClockFrequency / device->sampleRate;
 }
 
-/// このドライバが扱うストリーム形式を組み立てる（Float32 インターリーブ）。
-static void TapdeckFillStreamFormat(AudioStreamBasicDescription* outFormat, Float64 inSampleRate)
+static void FillStreamFormat(AudioStreamBasicDescription* format,
+                             Float64 sampleRate, UInt32 channels)
 {
-    memset(outFormat, 0, sizeof(AudioStreamBasicDescription));
-    outFormat->mSampleRate       = inSampleRate;
-    outFormat->mFormatID         = kAudioFormatLinearPCM;
-    outFormat->mFormatFlags      = kAudioFormatFlagIsFloat
-                                 | kAudioFormatFlagsNativeEndian
-                                 | kAudioFormatFlagIsPacked;
-    outFormat->mBytesPerPacket   = kChannelCount * sizeof(Float32);
-    outFormat->mFramesPerPacket  = 1;
-    outFormat->mBytesPerFrame    = kChannelCount * sizeof(Float32);
-    outFormat->mChannelsPerFrame = kChannelCount;
-    outFormat->mBitsPerChannel   = 8 * sizeof(Float32);
+    memset(format, 0, sizeof(AudioStreamBasicDescription));
+    format->mSampleRate       = sampleRate;
+    format->mFormatID         = kAudioFormatLinearPCM;
+    format->mFormatFlags      = kAudioFormatFlagIsFloat
+                              | kAudioFormatFlagsNativeEndian
+                              | kAudioFormatFlagIsPacked;
+    format->mBytesPerPacket   = channels * sizeof(Float32);
+    format->mFramesPerPacket  = 1;
+    format->mBytesPerFrame    = channels * sizeof(Float32);
+    format->mChannelsPerFrame = channels;
+    format->mBitsPerChannel   = 8 * sizeof(Float32);
 }
 
-static Boolean TapdeckIsSupportedSampleRate(Float64 inRate)
+static Boolean IsSupportedSampleRate(Float64 rate)
 {
     for (UInt32 i = 0; i < kSupportedSampleRateCount; ++i) {
-        if (kSupportedSampleRates[i] == inRate) return true;
+        if (kSupportedSampleRates[i] == rate) return true;
     }
     return false;
 }
 
+/// オブジェクトIDから、どのデバイスの何かを割り出す。
+static int ResolveObject(AudioObjectID objectID, UInt32* outIndex)
+{
+    if (objectID < 2) return kObjectKind_None;
+    UInt32 index = (objectID - 2) / 3;
+    if (index >= kMaxDevices || !gDevices[index].isPublished) return kObjectKind_None;
+    *outIndex = index;
+    switch ((objectID - 2) % 3) {
+        case 0:  return kObjectKind_Device;
+        case 1:  return kObjectKind_InputStream;
+        default: return kObjectKind_OutputStream;
+    }
+}
+
+static UInt32 PublishedDeviceIDs(AudioObjectID* out, UInt32 capacity)
+{
+    UInt32 count = 0;
+    for (UInt32 i = 0; i < kMaxDevices && count < capacity; ++i) {
+        if (gDevices[i].isPublished) out[count++] = kDeviceObjectID(i);
+    }
+    return count;
+}
+
+static UInt32 PublishedDeviceCount(void)
+{
+    UInt32 count = 0;
+    for (UInt32 i = 0; i < kMaxDevices; ++i) if (gDevices[i].isPublished) ++count;
+    return count;
+}
+
+#pragma mark - 設定ファイルの読み込みと監視
+
+typedef struct {
+    char   uid[kNameLength];
+    char   name[kNameLength];
+    UInt32 channelCount;
+} TapdeckDeviceSpec;
+
+static void CopyCFString(CFStringRef string, char* buffer, size_t capacity)
+{
+    buffer[0] = '\0';
+    if (string == NULL || CFGetTypeID(string) != CFStringGetTypeID()) return;
+    CFStringGetCString(string, buffer, (CFIndex)capacity, kCFStringEncodingUTF8);
+}
+
+/// 設定ファイルを読む。無ければ既定の1台を返す（初回インストール直後など）。
+static UInt32 ReadConfiguration(TapdeckDeviceSpec* specs, UInt32 capacity)
+{
+    UInt32 count = 0;
+
+    CFURLRef url = CFURLCreateFromFileSystemRepresentation(
+        NULL, (const UInt8*)kConfigurationPath, (CFIndex)strlen(kConfigurationPath), false);
+    if (url != NULL) {
+        CFReadStreamRef stream = CFReadStreamCreateWithFile(NULL, url);
+        if (stream != NULL && CFReadStreamOpen(stream)) {
+            CFPropertyListRef plist = CFPropertyListCreateWithStream(
+                NULL, stream, 0, kCFPropertyListImmutable, NULL, NULL);
+            CFReadStreamClose(stream);
+
+            if (plist != NULL) {
+                if (CFGetTypeID(plist) == CFArrayGetTypeID()) {
+                    CFArrayRef array = (CFArrayRef)plist;
+                    CFIndex total = CFArrayGetCount(array);
+                    for (CFIndex i = 0; i < total && count < capacity; ++i) {
+                        CFDictionaryRef entry = (CFDictionaryRef)CFArrayGetValueAtIndex(array, i);
+                        if (entry == NULL || CFGetTypeID(entry) != CFDictionaryGetTypeID()) continue;
+
+                        TapdeckDeviceSpec spec;
+                        memset(&spec, 0, sizeof(spec));
+                        CopyCFString(CFDictionaryGetValue(entry, CFSTR("UID")),
+                                     spec.uid, sizeof(spec.uid));
+                        CopyCFString(CFDictionaryGetValue(entry, CFSTR("Name")),
+                                     spec.name, sizeof(spec.name));
+
+                        spec.channelCount = kDefaultChannels;
+                        CFNumberRef channels = CFDictionaryGetValue(entry, CFSTR("Channels"));
+                        if (channels != NULL && CFGetTypeID(channels) == CFNumberGetTypeID()) {
+                            int value = kDefaultChannels;
+                            CFNumberGetValue(channels, kCFNumberIntType, &value);
+                            if (value < 1) value = 1;
+                            if (value > kMaxChannels) value = kMaxChannels;
+                            spec.channelCount = (UInt32)value;
+                        }
+
+                        if (spec.uid[0] == '\0') continue;
+                        if (spec.name[0] == '\0') {
+                            strlcpy(spec.name, spec.uid, sizeof(spec.name));
+                        }
+                        specs[count++] = spec;
+                    }
+                }
+                CFRelease(plist);
+            }
+        }
+        if (stream != NULL) CFRelease(stream);
+        CFRelease(url);
+    }
+
+    if (count == 0) {
+        // 設定が無いときの既定。v0.1 と同じ1台。
+        memset(&specs[0], 0, sizeof(TapdeckDeviceSpec));
+        strlcpy(specs[0].uid,  "TapdeckDevice", sizeof(specs[0].uid));
+        strlcpy(specs[0].name, "Tapdeck",       sizeof(specs[0].name));
+        specs[0].channelCount = kDefaultChannels;
+        count = 1;
+    }
+    return count;
+}
+
+/// 読み込み済みの設定を現在の状態へ反映する。変化があれば true。
+/// 呼び出し側で gStateMutex を保持していること。
+///
+/// ファイル読み込みはここには含めない。ロックを保持したままディスクを触ると、
+/// 実時間のIOスレッドがその完了を待つことになり、音が途切れる。
+static Boolean ApplyConfigurationLocked(const TapdeckDeviceSpec* specs, UInt32 specCount)
+{
+    Boolean changed = false;
+
+    // まず、設定から消えたデバイスを外す。
+    // IO 実行中のものは巻き込み事故を避けるため残す（次回の巡回で外れる）。
+    for (UInt32 i = 0; i < kMaxDevices; ++i) {
+        if (!gDevices[i].isPublished) continue;
+        Boolean stillWanted = false;
+        for (UInt32 s = 0; s < specCount; ++s) {
+            if (strcmp(gDevices[i].uid, specs[s].uid) == 0) { stillWanted = true; break; }
+        }
+        if (!stillWanted && gDevices[i].ioRunningCount == 0) {
+            gDevices[i].isPublished = false;
+            changed = true;
+        }
+    }
+
+    // 次に、設定にあって未公開のものを足す。
+    for (UInt32 s = 0; s < specCount; ++s) {
+        Boolean alreadyPublished = false;
+        for (UInt32 i = 0; i < kMaxDevices; ++i) {
+            if (gDevices[i].isPublished && strcmp(gDevices[i].uid, specs[s].uid) == 0) {
+                // 名前だけ変わった場合はその場で更新する。
+                if (strcmp(gDevices[i].name, specs[s].name) != 0) {
+                    strlcpy(gDevices[i].name, specs[s].name, sizeof(gDevices[i].name));
+                    changed = true;
+                }
+                alreadyPublished = true;
+                break;
+            }
+        }
+        if (alreadyPublished) continue;
+
+        for (UInt32 i = 0; i < kMaxDevices; ++i) {
+            if (gDevices[i].isPublished) continue;
+            TapdeckDevice* device = &gDevices[i];
+            memset(device, 0, sizeof(TapdeckDevice));
+            strlcpy(device->uid,  specs[s].uid,  sizeof(device->uid));
+            strlcpy(device->name, specs[s].name, sizeof(device->name));
+            device->channelCount       = specs[s].channelCount;
+            device->sampleRate         = 48000.0;
+            device->inputStreamActive  = 1;
+            device->outputStreamActive = 1;
+            RecalculateHostTicks(device);
+            device->isPublished = true;
+            changed = true;
+            break;
+        }
+    }
+    return changed;
+}
+
+static void NotifyDeviceListChanged(void)
+{
+    if (gHost == NULL) return;
+    AudioObjectPropertyAddress addresses[2] = {
+        { kAudioPlugInPropertyDeviceList,     kAudioObjectPropertyScopeGlobal,
+          kAudioObjectPropertyElementMain },
+        { kAudioObjectPropertyOwnedObjects,   kAudioObjectPropertyScopeGlobal,
+          kAudioObjectPropertyElementMain },
+    };
+    gHost->PropertiesChanged(gHost, kObjectID_PlugIn, 2, addresses);
+}
+
+/// 設定ファイルの更新を拾う。
+///
+/// vnode 監視ではなく mtime の巡回にしているのは、設定ファイルが上書きではなく
+/// 差し替え（新規作成 → rename）で更新されるため。vnode 監視は古い inode に
+/// 張り付いたままになり、変更を取りこぼす。
+static void CheckConfiguration(void)
+{
+    struct stat info;
+    Boolean exists = (stat(kConfigurationPath, &info) == 0);
+
+    Boolean touched;
+    if (!exists) {
+        touched = (gLastConfigurationSize != -1);
+        gLastConfigurationSize = -1;
+    } else {
+        touched = (info.st_mtimespec.tv_sec  != gLastConfigurationTime.tv_sec)
+               || (info.st_mtimespec.tv_nsec != gLastConfigurationTime.tv_nsec)
+               || (info.st_size              != gLastConfigurationSize);
+        gLastConfigurationTime = info.st_mtimespec;
+        gLastConfigurationSize = info.st_size;
+    }
+    if (!touched) return;
+
+    // 読み込みはロックの外で行う。
+    TapdeckDeviceSpec specs[kMaxDevices];
+    UInt32 specCount = ReadConfiguration(specs, kMaxDevices);
+
+    LockState();
+    Boolean changed = ApplyConfigurationLocked(specs, specCount);
+    UnlockState();
+
+    if (changed) NotifyDeviceListChanged();
+}
+
+static void StartConfigurationWatch(void)
+{
+    if (gConfigurationTimer != NULL) return;
+    dispatch_queue_t queue = dispatch_queue_create("dev.kosuke.Tapdeck.config", NULL);
+    gConfigurationTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, queue);
+    dispatch_source_set_timer(gConfigurationTimer,
+                              dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC),
+                              NSEC_PER_SEC * 2, NSEC_PER_SEC / 2);
+    dispatch_source_set_event_handler(gConfigurationTimer, ^{ CheckConfiguration(); });
+    dispatch_resume(gConfigurationTimer);
+}
+
 #pragma mark - プロパティ: プラグインオブジェクト
 
-static Boolean Tapdeck_PlugInHasProperty(const AudioObjectPropertyAddress* inAddress)
+static Boolean PlugInHasProperty(const AudioObjectPropertyAddress* address)
 {
-    switch (inAddress->mSelector) {
+    switch (address->mSelector) {
         case kAudioObjectPropertyBaseClass:
         case kAudioObjectPropertyClass:
         case kAudioObjectPropertyOwner:
@@ -124,76 +365,90 @@ static Boolean Tapdeck_PlugInHasProperty(const AudioObjectPropertyAddress* inAdd
     }
 }
 
-static OSStatus Tapdeck_PlugInGetPropertyDataSize(const AudioObjectPropertyAddress* inAddress,
-                                                  UInt32* outDataSize)
+static OSStatus PlugInGetPropertyDataSize(const AudioObjectPropertyAddress* address,
+                                          UInt32* outDataSize)
 {
-    switch (inAddress->mSelector) {
+    switch (address->mSelector) {
         case kAudioObjectPropertyBaseClass:
         case kAudioObjectPropertyClass:
-            *outDataSize = sizeof(AudioClassID);            return 0;
+            *outDataSize = sizeof(AudioClassID); return 0;
         case kAudioObjectPropertyOwner:
         case kAudioPlugInPropertyTranslateUIDToDevice:
-            *outDataSize = sizeof(AudioObjectID);           return 0;
+            *outDataSize = sizeof(AudioObjectID); return 0;
         case kAudioObjectPropertyManufacturer:
         case kAudioPlugInPropertyResourceBundle:
-            *outDataSize = sizeof(CFStringRef);             return 0;
+            *outDataSize = sizeof(CFStringRef); return 0;
         case kAudioObjectPropertyOwnedObjects:
         case kAudioPlugInPropertyDeviceList:
-            *outDataSize = sizeof(AudioObjectID);           return 0;
+            LockState();
+            *outDataSize = PublishedDeviceCount() * sizeof(AudioObjectID);
+            UnlockState();
+            return 0;
         case kAudioObjectPropertyCustomPropertyInfoList:
-            *outDataSize = 0;                               return 0;
+            *outDataSize = 0; return 0;
         default:
             return kAudioHardwareUnknownPropertyError;
     }
 }
 
-static OSStatus Tapdeck_PlugInGetPropertyData(const AudioObjectPropertyAddress* inAddress,
-                                              UInt32 inQualifierDataSize,
-                                              const void* inQualifierData,
-                                              UInt32 inDataSize,
-                                              UInt32* outDataSize,
-                                              void* outData)
+static OSStatus PlugInGetPropertyData(const AudioObjectPropertyAddress* address,
+                                      UInt32 qualifierSize, const void* qualifier,
+                                      UInt32 inDataSize, UInt32* outDataSize, void* outData)
 {
-    switch (inAddress->mSelector) {
+    switch (address->mSelector) {
         case kAudioObjectPropertyBaseClass:
             if (inDataSize < sizeof(AudioClassID)) return kAudioHardwareBadPropertySizeError;
             *((AudioClassID*)outData) = kAudioObjectClassID;
-            *outDataSize = sizeof(AudioClassID);
-            return 0;
+            *outDataSize = sizeof(AudioClassID); return 0;
 
         case kAudioObjectPropertyClass:
             if (inDataSize < sizeof(AudioClassID)) return kAudioHardwareBadPropertySizeError;
             *((AudioClassID*)outData) = kAudioPlugInClassID;
-            *outDataSize = sizeof(AudioClassID);
-            return 0;
+            *outDataSize = sizeof(AudioClassID); return 0;
 
         case kAudioObjectPropertyOwner:
             if (inDataSize < sizeof(AudioObjectID)) return kAudioHardwareBadPropertySizeError;
             *((AudioObjectID*)outData) = kAudioObjectUnknown;
-            *outDataSize = sizeof(AudioObjectID);
-            return 0;
+            *outDataSize = sizeof(AudioObjectID); return 0;
 
         case kAudioObjectPropertyManufacturer:
             if (inDataSize < sizeof(CFStringRef)) return kAudioHardwareBadPropertySizeError;
             *((CFStringRef*)outData) = CFSTR(kManufacturerName);
             CFRetain(*((CFStringRef*)outData));
-            *outDataSize = sizeof(CFStringRef);
-            return 0;
+            *outDataSize = sizeof(CFStringRef); return 0;
 
         case kAudioObjectPropertyOwnedObjects:
-        case kAudioPlugInPropertyDeviceList:
-            if (inDataSize < sizeof(AudioObjectID)) { *outDataSize = 0; return 0; }
-            ((AudioObjectID*)outData)[0] = kObjectID_Device;
-            *outDataSize = sizeof(AudioObjectID);
+        case kAudioPlugInPropertyDeviceList: {
+            UInt32 capacity = inDataSize / sizeof(AudioObjectID);
+            LockState();
+            UInt32 written = PublishedDeviceIDs((AudioObjectID*)outData, capacity);
+            UnlockState();
+            *outDataSize = written * sizeof(AudioObjectID);
             return 0;
+        }
 
         case kAudioPlugInPropertyTranslateUIDToDevice: {
-            if (inQualifierDataSize != sizeof(CFStringRef)) return kAudioHardwareBadPropertySizeError;
-            if (inDataSize < sizeof(AudioObjectID))         return kAudioHardwareBadPropertySizeError;
-            CFStringRef uid = *((const CFStringRef*)inQualifierData);
-            *((AudioObjectID*)outData) =
-                (CFStringCompare(uid, CFSTR(kDeviceUID), 0) == kCFCompareEqualTo)
-                    ? kObjectID_Device : kAudioObjectUnknown;
+            if (qualifierSize != sizeof(CFStringRef)) return kAudioHardwareBadPropertySizeError;
+            if (inDataSize < sizeof(AudioObjectID))   return kAudioHardwareBadPropertySizeError;
+            CFStringRef wanted = *((const CFStringRef*)qualifier);
+            AudioObjectID result = kAudioObjectUnknown;
+
+            LockState();
+            for (UInt32 i = 0; i < kMaxDevices; ++i) {
+                if (!gDevices[i].isPublished) continue;
+                CFStringRef uid = CFStringCreateWithCString(NULL, gDevices[i].uid,
+                                                            kCFStringEncodingUTF8);
+                if (uid != NULL) {
+                    if (CFStringCompare(wanted, uid, 0) == kCFCompareEqualTo) {
+                        result = kDeviceObjectID(i);
+                    }
+                    CFRelease(uid);
+                }
+                if (result != kAudioObjectUnknown) break;
+            }
+            UnlockState();
+
+            *((AudioObjectID*)outData) = result;
             *outDataSize = sizeof(AudioObjectID);
             return 0;
         }
@@ -202,12 +457,10 @@ static OSStatus Tapdeck_PlugInGetPropertyData(const AudioObjectPropertyAddress* 
             if (inDataSize < sizeof(CFStringRef)) return kAudioHardwareBadPropertySizeError;
             *((CFStringRef*)outData) = CFSTR("");
             CFRetain(*((CFStringRef*)outData));
-            *outDataSize = sizeof(CFStringRef);
-            return 0;
+            *outDataSize = sizeof(CFStringRef); return 0;
 
         case kAudioObjectPropertyCustomPropertyInfoList:
-            *outDataSize = 0;
-            return 0;
+            *outDataSize = 0; return 0;
 
         default:
             return kAudioHardwareUnknownPropertyError;
@@ -216,23 +469,23 @@ static OSStatus Tapdeck_PlugInGetPropertyData(const AudioObjectPropertyAddress* 
 
 #pragma mark - プロパティ: デバイスオブジェクト
 
-static UInt32 Tapdeck_DeviceStreamsForScope(AudioObjectPropertyScope inScope,
-                                            AudioObjectID outStreams[2])
+static UInt32 DeviceStreamsForScope(UInt32 index, AudioObjectPropertyScope scope,
+                                    AudioObjectID streams[2])
 {
-    switch (inScope) {
+    switch (scope) {
         case kAudioObjectPropertyScopeInput:
-            outStreams[0] = kObjectID_Stream_Input;  return 1;
+            streams[0] = kInputStreamObjectID(index);  return 1;
         case kAudioObjectPropertyScopeOutput:
-            outStreams[0] = kObjectID_Stream_Output; return 1;
+            streams[0] = kOutputStreamObjectID(index); return 1;
         default:
-            outStreams[0] = kObjectID_Stream_Input;
-            outStreams[1] = kObjectID_Stream_Output; return 2;
+            streams[0] = kInputStreamObjectID(index);
+            streams[1] = kOutputStreamObjectID(index); return 2;
     }
 }
 
-static Boolean Tapdeck_DeviceHasProperty(const AudioObjectPropertyAddress* inAddress)
+static Boolean DeviceHasProperty(const AudioObjectPropertyAddress* address)
 {
-    switch (inAddress->mSelector) {
+    switch (address->mSelector) {
         case kAudioObjectPropertyBaseClass:
         case kAudioObjectPropertyClass:
         case kAudioObjectPropertyOwner:
@@ -264,15 +517,17 @@ static Boolean Tapdeck_DeviceHasProperty(const AudioObjectPropertyAddress* inAdd
     }
 }
 
-static OSStatus Tapdeck_DeviceGetPropertyDataSize(const AudioObjectPropertyAddress* inAddress,
-                                                  UInt32* outDataSize)
+static OSStatus DeviceGetPropertyDataSize(UInt32 index,
+                                          const AudioObjectPropertyAddress* address,
+                                          UInt32* outDataSize)
 {
     AudioObjectID streams[2];
-    switch (inAddress->mSelector) {
+    switch (address->mSelector) {
         case kAudioObjectPropertyBaseClass:
         case kAudioObjectPropertyClass:
             *outDataSize = sizeof(AudioClassID); return 0;
         case kAudioObjectPropertyOwner:
+        case kAudioDevicePropertyRelatedDevices:
             *outDataSize = sizeof(AudioObjectID); return 0;
         case kAudioObjectPropertyName:
         case kAudioObjectPropertyManufacturer:
@@ -281,7 +536,7 @@ static OSStatus Tapdeck_DeviceGetPropertyDataSize(const AudioObjectPropertyAddre
             *outDataSize = sizeof(CFStringRef); return 0;
         case kAudioObjectPropertyOwnedObjects:
         case kAudioDevicePropertyStreams:
-            *outDataSize = Tapdeck_DeviceStreamsForScope(inAddress->mScope, streams)
+            *outDataSize = DeviceStreamsForScope(index, address->mScope, streams)
                          * sizeof(AudioObjectID);
             return 0;
         case kAudioObjectPropertyControlList:
@@ -297,8 +552,6 @@ static OSStatus Tapdeck_DeviceGetPropertyDataSize(const AudioObjectPropertyAddre
         case kAudioDevicePropertyIsHidden:
         case kAudioDevicePropertyZeroTimeStampPeriod:
             *outDataSize = sizeof(UInt32); return 0;
-        case kAudioDevicePropertyRelatedDevices:
-            *outDataSize = sizeof(AudioObjectID); return 0;
         case kAudioDevicePropertyNominalSampleRate:
             *outDataSize = sizeof(Float64); return 0;
         case kAudioDevicePropertyAvailableNominalSampleRates:
@@ -306,23 +559,25 @@ static OSStatus Tapdeck_DeviceGetPropertyDataSize(const AudioObjectPropertyAddre
         case kAudioDevicePropertyPreferredChannelsForStereo:
             *outDataSize = 2 * sizeof(UInt32); return 0;
         case kAudioDevicePropertyPreferredChannelLayout:
+            LockState();
             *outDataSize = (UInt32)(offsetof(AudioChannelLayout, mChannelDescriptions)
-                                    + (kChannelCount * sizeof(AudioChannelDescription)));
+                          + (gDevices[index].channelCount * sizeof(AudioChannelDescription)));
+            UnlockState();
             return 0;
         default:
             return kAudioHardwareUnknownPropertyError;
     }
 }
 
-static OSStatus Tapdeck_DeviceGetPropertyData(const AudioObjectPropertyAddress* inAddress,
-                                              UInt32 inDataSize,
-                                              UInt32* outDataSize,
-                                              void* outData)
+static OSStatus DeviceGetPropertyData(UInt32 index,
+                                      const AudioObjectPropertyAddress* address,
+                                      UInt32 inDataSize, UInt32* outDataSize, void* outData)
 {
+    TapdeckDevice* device = &gDevices[index];
     AudioObjectID streams[2];
     UInt32 streamCount, n;
 
-    switch (inAddress->mSelector) {
+    switch (address->mSelector) {
         case kAudioObjectPropertyBaseClass:
             *((AudioClassID*)outData) = kAudioObjectClassID;
             *outDataSize = sizeof(AudioClassID); return 0;
@@ -336,7 +591,21 @@ static OSStatus Tapdeck_DeviceGetPropertyData(const AudioObjectPropertyAddress* 
             *outDataSize = sizeof(AudioObjectID); return 0;
 
         case kAudioObjectPropertyName:
-            *((CFStringRef*)outData) = CFSTR(kDeviceName);
+            LockState();
+            *((CFStringRef*)outData) = CFStringCreateWithCString(NULL, device->name,
+                                                                 kCFStringEncodingUTF8);
+            UnlockState();
+            *outDataSize = sizeof(CFStringRef); return 0;
+
+        case kAudioDevicePropertyDeviceUID:
+            LockState();
+            *((CFStringRef*)outData) = CFStringCreateWithCString(NULL, device->uid,
+                                                                 kCFStringEncodingUTF8);
+            UnlockState();
+            *outDataSize = sizeof(CFStringRef); return 0;
+
+        case kAudioDevicePropertyModelUID:
+            *((CFStringRef*)outData) = CFSTR("TapdeckDeviceModel");
             CFRetain(*((CFStringRef*)outData));
             *outDataSize = sizeof(CFStringRef); return 0;
 
@@ -345,19 +614,9 @@ static OSStatus Tapdeck_DeviceGetPropertyData(const AudioObjectPropertyAddress* 
             CFRetain(*((CFStringRef*)outData));
             *outDataSize = sizeof(CFStringRef); return 0;
 
-        case kAudioDevicePropertyDeviceUID:
-            *((CFStringRef*)outData) = CFSTR(kDeviceUID);
-            CFRetain(*((CFStringRef*)outData));
-            *outDataSize = sizeof(CFStringRef); return 0;
-
-        case kAudioDevicePropertyModelUID:
-            *((CFStringRef*)outData) = CFSTR(kDeviceModelUID);
-            CFRetain(*((CFStringRef*)outData));
-            *outDataSize = sizeof(CFStringRef); return 0;
-
         case kAudioObjectPropertyOwnedObjects:
         case kAudioDevicePropertyStreams:
-            streamCount = Tapdeck_DeviceStreamsForScope(inAddress->mScope, streams);
+            streamCount = DeviceStreamsForScope(index, address->mScope, streams);
             n = inDataSize / sizeof(AudioObjectID);
             if (n > streamCount) n = streamCount;
             for (UInt32 i = 0; i < n; ++i) ((AudioObjectID*)outData)[i] = streams[i];
@@ -372,7 +631,7 @@ static OSStatus Tapdeck_DeviceGetPropertyData(const AudioObjectPropertyAddress* 
             *outDataSize = sizeof(UInt32); return 0;
 
         case kAudioDevicePropertyRelatedDevices:
-            ((AudioObjectID*)outData)[0] = kObjectID_Device;
+            ((AudioObjectID*)outData)[0] = kDeviceObjectID(index);
             *outDataSize = sizeof(AudioObjectID); return 0;
 
         case kAudioDevicePropertyClockDomain:
@@ -380,28 +639,19 @@ static OSStatus Tapdeck_DeviceGetPropertyData(const AudioObjectPropertyAddress* 
             *outDataSize = sizeof(UInt32); return 0;
 
         case kAudioDevicePropertyDeviceIsAlive:
-            *((UInt32*)outData) = 1;
-            *outDataSize = sizeof(UInt32); return 0;
-
-        case kAudioDevicePropertyDeviceIsRunning:
-            TapdeckLockState();
-            *((UInt32*)outData) = (gIORunningCount > 0) ? 1 : 0;
-            TapdeckUnlockState();
-            *outDataSize = sizeof(UInt32); return 0;
-
         case kAudioDevicePropertyDeviceCanBeDefaultDevice:
         case kAudioDevicePropertyDeviceCanBeDefaultSystemDevice:
             *((UInt32*)outData) = 1;
             *outDataSize = sizeof(UInt32); return 0;
 
+        case kAudioDevicePropertyDeviceIsRunning:
+            LockState();
+            *((UInt32*)outData) = (device->ioRunningCount > 0) ? 1 : 0;
+            UnlockState();
+            *outDataSize = sizeof(UInt32); return 0;
+
         case kAudioDevicePropertyLatency:
-            *((UInt32*)outData) = kLatencyFrames;
-            *outDataSize = sizeof(UInt32); return 0;
-
         case kAudioDevicePropertySafetyOffset:
-            *((UInt32*)outData) = kSafetyOffsetFrames;
-            *outDataSize = sizeof(UInt32); return 0;
-
         case kAudioDevicePropertyIsHidden:
             *((UInt32*)outData) = 0;
             *outDataSize = sizeof(UInt32); return 0;
@@ -411,9 +661,9 @@ static OSStatus Tapdeck_DeviceGetPropertyData(const AudioObjectPropertyAddress* 
             *outDataSize = sizeof(UInt32); return 0;
 
         case kAudioDevicePropertyNominalSampleRate:
-            TapdeckLockState();
-            *((Float64*)outData) = gSampleRate;
-            TapdeckUnlockState();
+            LockState();
+            *((Float64*)outData) = device->sampleRate;
+            UnlockState();
             *outDataSize = sizeof(Float64); return 0;
 
         case kAudioDevicePropertyAvailableNominalSampleRates:
@@ -433,15 +683,22 @@ static OSStatus Tapdeck_DeviceGetPropertyData(const AudioObjectPropertyAddress* 
             return 0;
 
         case kAudioDevicePropertyPreferredChannelLayout: {
+            LockState();
+            UInt32 channels = device->channelCount;
+            UnlockState();
             UInt32 size = (UInt32)(offsetof(AudioChannelLayout, mChannelDescriptions)
-                                   + (kChannelCount * sizeof(AudioChannelDescription)));
+                                   + (channels * sizeof(AudioChannelDescription)));
             if (inDataSize < size) return kAudioHardwareBadPropertySizeError;
             AudioChannelLayout* layout = (AudioChannelLayout*)outData;
             memset(layout, 0, size);
-            layout->mChannelLayoutTag         = kAudioChannelLayoutTag_UseChannelDescriptions;
-            layout->mNumberChannelDescriptions = kChannelCount;
-            layout->mChannelDescriptions[0].mChannelLabel = kAudioChannelLabel_Left;
-            layout->mChannelDescriptions[1].mChannelLabel = kAudioChannelLabel_Right;
+            layout->mChannelLayoutTag          = kAudioChannelLayoutTag_UseChannelDescriptions;
+            layout->mNumberChannelDescriptions = channels;
+            for (UInt32 i = 0; i < channels; ++i) {
+                layout->mChannelDescriptions[i].mChannelLabel =
+                    (i == 0) ? kAudioChannelLabel_Left
+                             : ((i == 1) ? kAudioChannelLabel_Right
+                                         : kAudioChannelLabel_Discrete_0 + i);
+            }
             *outDataSize = size;
             return 0;
         }
@@ -453,9 +710,9 @@ static OSStatus Tapdeck_DeviceGetPropertyData(const AudioObjectPropertyAddress* 
 
 #pragma mark - プロパティ: ストリームオブジェクト
 
-static Boolean Tapdeck_StreamHasProperty(const AudioObjectPropertyAddress* inAddress)
+static Boolean StreamHasProperty(const AudioObjectPropertyAddress* address)
 {
-    switch (inAddress->mSelector) {
+    switch (address->mSelector) {
         case kAudioObjectPropertyBaseClass:
         case kAudioObjectPropertyClass:
         case kAudioObjectPropertyOwner:
@@ -474,10 +731,10 @@ static Boolean Tapdeck_StreamHasProperty(const AudioObjectPropertyAddress* inAdd
     }
 }
 
-static OSStatus Tapdeck_StreamGetPropertyDataSize(const AudioObjectPropertyAddress* inAddress,
-                                                  UInt32* outDataSize)
+static OSStatus StreamGetPropertyDataSize(const AudioObjectPropertyAddress* address,
+                                          UInt32* outDataSize)
 {
-    switch (inAddress->mSelector) {
+    switch (address->mSelector) {
         case kAudioObjectPropertyBaseClass:
         case kAudioObjectPropertyClass:
             *outDataSize = sizeof(AudioClassID); return 0;
@@ -502,16 +759,14 @@ static OSStatus Tapdeck_StreamGetPropertyDataSize(const AudioObjectPropertyAddre
     }
 }
 
-static OSStatus Tapdeck_StreamGetPropertyData(AudioObjectID inObjectID,
-                                              const AudioObjectPropertyAddress* inAddress,
-                                              UInt32 inDataSize,
-                                              UInt32* outDataSize,
-                                              void* outData)
+static OSStatus StreamGetPropertyData(UInt32 index, Boolean isInput,
+                                      const AudioObjectPropertyAddress* address,
+                                      UInt32 inDataSize, UInt32* outDataSize, void* outData)
 {
-    Boolean isInput = (inObjectID == kObjectID_Stream_Input);
+    TapdeckDevice* device = &gDevices[index];
     UInt32 n;
 
-    switch (inAddress->mSelector) {
+    switch (address->mSelector) {
         case kAudioObjectPropertyBaseClass:
             *((AudioClassID*)outData) = kAudioObjectClassID;
             *outDataSize = sizeof(AudioClassID); return 0;
@@ -521,13 +776,13 @@ static OSStatus Tapdeck_StreamGetPropertyData(AudioObjectID inObjectID,
             *outDataSize = sizeof(AudioClassID); return 0;
 
         case kAudioObjectPropertyOwner:
-            *((AudioObjectID*)outData) = kObjectID_Device;
+            *((AudioObjectID*)outData) = kDeviceObjectID(index);
             *outDataSize = sizeof(AudioObjectID); return 0;
 
         case kAudioStreamPropertyIsActive:
-            TapdeckLockState();
-            *((UInt32*)outData) = isInput ? gInputStreamActive : gOutputStreamActive;
-            TapdeckUnlockState();
+            LockState();
+            *((UInt32*)outData) = isInput ? device->inputStreamActive : device->outputStreamActive;
+            UnlockState();
             *outDataSize = sizeof(UInt32); return 0;
 
         case kAudioStreamPropertyDirection:
@@ -551,9 +806,10 @@ static OSStatus Tapdeck_StreamGetPropertyData(AudioObjectID inObjectID,
         case kAudioStreamPropertyPhysicalFormat:
             if (inDataSize < sizeof(AudioStreamBasicDescription))
                 return kAudioHardwareBadPropertySizeError;
-            TapdeckLockState();
-            TapdeckFillStreamFormat((AudioStreamBasicDescription*)outData, gSampleRate);
-            TapdeckUnlockState();
+            LockState();
+            FillStreamFormat((AudioStreamBasicDescription*)outData,
+                             device->sampleRate, device->channelCount);
+            UnlockState();
             *outDataSize = sizeof(AudioStreamBasicDescription);
             return 0;
 
@@ -561,12 +817,14 @@ static OSStatus Tapdeck_StreamGetPropertyData(AudioObjectID inObjectID,
         case kAudioStreamPropertyAvailablePhysicalFormats:
             n = inDataSize / sizeof(AudioStreamRangedDescription);
             if (n > kSupportedSampleRateCount) n = kSupportedSampleRateCount;
+            LockState();
             for (UInt32 i = 0; i < n; ++i) {
                 AudioStreamRangedDescription* d = &((AudioStreamRangedDescription*)outData)[i];
-                TapdeckFillStreamFormat(&d->mFormat, kSupportedSampleRates[i]);
+                FillStreamFormat(&d->mFormat, kSupportedSampleRates[i], device->channelCount);
                 d->mSampleRateRange.mMinimum = kSupportedSampleRates[i];
                 d->mSampleRateRange.mMaximum = kSupportedSampleRates[i];
             }
+            UnlockState();
             *outDataSize = n * sizeof(AudioStreamRangedDescription);
             return 0;
 
@@ -578,34 +836,43 @@ static OSStatus Tapdeck_StreamGetPropertyData(AudioObjectID inObjectID,
 #pragma mark - ドライバインターフェース: 振り分け
 
 static Boolean Tapdeck_HasProperty(AudioServerPlugInDriverRef inDriver,
-                                   AudioObjectID inObjectID,
-                                   pid_t inClientProcessID,
+                                   AudioObjectID inObjectID, pid_t inClientProcessID,
                                    const AudioObjectPropertyAddress* inAddress)
 {
     (void)inDriver; (void)inClientProcessID;
     if (inAddress == NULL) return false;
-    switch (inObjectID) {
-        case kObjectID_PlugIn:        return Tapdeck_PlugInHasProperty(inAddress);
-        case kObjectID_Device:        return Tapdeck_DeviceHasProperty(inAddress);
-        case kObjectID_Stream_Input:
-        case kObjectID_Stream_Output: return Tapdeck_StreamHasProperty(inAddress);
-        default:                      return false;
+    if (inObjectID == kObjectID_PlugIn) return PlugInHasProperty(inAddress);
+
+    UInt32 index = 0;
+    LockState();
+    int kind = ResolveObject(inObjectID, &index);
+    UnlockState();
+
+    switch (kind) {
+        case kObjectKind_Device:       return DeviceHasProperty(inAddress);
+        case kObjectKind_InputStream:
+        case kObjectKind_OutputStream: return StreamHasProperty(inAddress);
+        default:                       return false;
     }
 }
 
 static OSStatus Tapdeck_IsPropertySettable(AudioServerPlugInDriverRef inDriver,
-                                           AudioObjectID inObjectID,
-                                           pid_t inClientProcessID,
+                                           AudioObjectID inObjectID, pid_t inClientProcessID,
                                            const AudioObjectPropertyAddress* inAddress,
                                            Boolean* outIsSettable)
 {
     (void)inDriver; (void)inClientProcessID;
     if (inAddress == NULL || outIsSettable == NULL) return kAudioHardwareIllegalOperationError;
 
+    UInt32 index = 0;
+    LockState();
+    int kind = ResolveObject(inObjectID, &index);
+    UnlockState();
+
     Boolean settable = false;
-    if (inObjectID == kObjectID_Device) {
+    if (kind == kObjectKind_Device) {
         settable = (inAddress->mSelector == kAudioDevicePropertyNominalSampleRate);
-    } else if (inObjectID == kObjectID_Stream_Input || inObjectID == kObjectID_Stream_Output) {
+    } else if (kind == kObjectKind_InputStream || kind == kObjectKind_OutputStream) {
         switch (inAddress->mSelector) {
             case kAudioStreamPropertyIsActive:
             case kAudioStreamPropertyVirtualFormat:
@@ -619,93 +886,91 @@ static OSStatus Tapdeck_IsPropertySettable(AudioServerPlugInDriverRef inDriver,
 }
 
 static OSStatus Tapdeck_GetPropertyDataSize(AudioServerPlugInDriverRef inDriver,
-                                            AudioObjectID inObjectID,
-                                            pid_t inClientProcessID,
+                                            AudioObjectID inObjectID, pid_t inClientProcessID,
                                             const AudioObjectPropertyAddress* inAddress,
-                                            UInt32 inQualifierDataSize,
-                                            const void* inQualifierData,
+                                            UInt32 inQualifierDataSize, const void* inQualifierData,
                                             UInt32* outDataSize)
 {
     (void)inDriver; (void)inClientProcessID; (void)inQualifierDataSize; (void)inQualifierData;
     if (inAddress == NULL || outDataSize == NULL) return kAudioHardwareIllegalOperationError;
-    switch (inObjectID) {
-        case kObjectID_PlugIn:        return Tapdeck_PlugInGetPropertyDataSize(inAddress, outDataSize);
-        case kObjectID_Device:        return Tapdeck_DeviceGetPropertyDataSize(inAddress, outDataSize);
-        case kObjectID_Stream_Input:
-        case kObjectID_Stream_Output: return Tapdeck_StreamGetPropertyDataSize(inAddress, outDataSize);
-        default:                      return kAudioHardwareBadObjectError;
+    if (inObjectID == kObjectID_PlugIn) return PlugInGetPropertyDataSize(inAddress, outDataSize);
+
+    UInt32 index = 0;
+    LockState();
+    int kind = ResolveObject(inObjectID, &index);
+    UnlockState();
+
+    switch (kind) {
+        case kObjectKind_Device:       return DeviceGetPropertyDataSize(index, inAddress, outDataSize);
+        case kObjectKind_InputStream:
+        case kObjectKind_OutputStream: return StreamGetPropertyDataSize(inAddress, outDataSize);
+        default:                       return kAudioHardwareBadObjectError;
     }
 }
 
 static OSStatus Tapdeck_GetPropertyData(AudioServerPlugInDriverRef inDriver,
-                                        AudioObjectID inObjectID,
-                                        pid_t inClientProcessID,
+                                        AudioObjectID inObjectID, pid_t inClientProcessID,
                                         const AudioObjectPropertyAddress* inAddress,
-                                        UInt32 inQualifierDataSize,
-                                        const void* inQualifierData,
-                                        UInt32 inDataSize,
-                                        UInt32* outDataSize,
-                                        void* outData)
+                                        UInt32 inQualifierDataSize, const void* inQualifierData,
+                                        UInt32 inDataSize, UInt32* outDataSize, void* outData)
 {
     (void)inDriver; (void)inClientProcessID;
     if (inAddress == NULL || outDataSize == NULL || outData == NULL)
         return kAudioHardwareIllegalOperationError;
+    if (inObjectID == kObjectID_PlugIn) {
+        return PlugInGetPropertyData(inAddress, inQualifierDataSize, inQualifierData,
+                                     inDataSize, outDataSize, outData);
+    }
 
-    switch (inObjectID) {
-        case kObjectID_PlugIn:
-            return Tapdeck_PlugInGetPropertyData(inAddress, inQualifierDataSize, inQualifierData,
-                                                 inDataSize, outDataSize, outData);
-        case kObjectID_Device:
-            return Tapdeck_DeviceGetPropertyData(inAddress, inDataSize, outDataSize, outData);
-        case kObjectID_Stream_Input:
-        case kObjectID_Stream_Output:
-            return Tapdeck_StreamGetPropertyData(inObjectID, inAddress, inDataSize,
-                                                 outDataSize, outData);
+    UInt32 index = 0;
+    LockState();
+    int kind = ResolveObject(inObjectID, &index);
+    UnlockState();
+
+    switch (kind) {
+        case kObjectKind_Device:
+            return DeviceGetPropertyData(index, inAddress, inDataSize, outDataSize, outData);
+        case kObjectKind_InputStream:
+            return StreamGetPropertyData(index, true, inAddress, inDataSize, outDataSize, outData);
+        case kObjectKind_OutputStream:
+            return StreamGetPropertyData(index, false, inAddress, inDataSize, outDataSize, outData);
         default:
             return kAudioHardwareBadObjectError;
     }
 }
 
 static OSStatus Tapdeck_SetPropertyData(AudioServerPlugInDriverRef inDriver,
-                                        AudioObjectID inObjectID,
-                                        pid_t inClientProcessID,
+                                        AudioObjectID inObjectID, pid_t inClientProcessID,
                                         const AudioObjectPropertyAddress* inAddress,
-                                        UInt32 inQualifierDataSize,
-                                        const void* inQualifierData,
-                                        UInt32 inDataSize,
-                                        const void* inData)
+                                        UInt32 inQualifierDataSize, const void* inQualifierData,
+                                        UInt32 inDataSize, const void* inData)
 {
     (void)inDriver; (void)inClientProcessID; (void)inQualifierDataSize; (void)inQualifierData;
     if (inAddress == NULL || inData == NULL) return kAudioHardwareIllegalOperationError;
 
-    if (inObjectID == kObjectID_Device
+    UInt32 index = 0;
+    LockState();
+    int kind = ResolveObject(inObjectID, &index);
+    UnlockState();
+    if (kind == kObjectKind_None) return kAudioHardwareBadObjectError;
+
+    Float64 requested = 0;
+    Boolean wantsRateChange = false;
+
+    if (kind == kObjectKind_Device
         && inAddress->mSelector == kAudioDevicePropertyNominalSampleRate) {
         if (inDataSize != sizeof(Float64)) return kAudioHardwareBadPropertySizeError;
-        Float64 requested = *((const Float64*)inData);
-        if (!TapdeckIsSupportedSampleRate(requested)) return kAudioHardwareIllegalOperationError;
-
-        TapdeckLockState();
-        Boolean changed = (requested != gSampleRate);
-        TapdeckUnlockState();
-
-        // サンプルレートの変更は即時には行えない。ホストに構成変更を依頼し、
-        // 折り返し PerformDeviceConfigurationChange で実際に切り替える。
-        if (changed && gHost != NULL) {
-            gHost->RequestDeviceConfigurationChange(gHost, kObjectID_Device,
-                                                    (UInt64)requested, NULL);
-        }
-        return 0;
-    }
-
-    if (inObjectID == kObjectID_Stream_Input || inObjectID == kObjectID_Stream_Output) {
+        requested = *((const Float64*)inData);
+        wantsRateChange = true;
+    } else if (kind == kObjectKind_InputStream || kind == kObjectKind_OutputStream) {
         switch (inAddress->mSelector) {
             case kAudioStreamPropertyIsActive: {
                 if (inDataSize != sizeof(UInt32)) return kAudioHardwareBadPropertySizeError;
                 UInt32 active = *((const UInt32*)inData);
-                TapdeckLockState();
-                if (inObjectID == kObjectID_Stream_Input) gInputStreamActive  = active;
-                else                                      gOutputStreamActive = active;
-                TapdeckUnlockState();
+                LockState();
+                if (kind == kObjectKind_InputStream) gDevices[index].inputStreamActive  = active;
+                else                                 gDevices[index].outputStreamActive = active;
+                UnlockState();
                 return 0;
             }
             case kAudioStreamPropertyVirtualFormat:
@@ -713,25 +978,39 @@ static OSStatus Tapdeck_SetPropertyData(AudioServerPlugInDriverRef inDriver,
                 if (inDataSize != sizeof(AudioStreamBasicDescription))
                     return kAudioHardwareBadPropertySizeError;
                 const AudioStreamBasicDescription* f = (const AudioStreamBasicDescription*)inData;
+                LockState();
+                UInt32 channels = gDevices[index].channelCount;
+                UnlockState();
                 if (f->mFormatID != kAudioFormatLinearPCM
-                    || f->mChannelsPerFrame != kChannelCount
-                    || !TapdeckIsSupportedSampleRate(f->mSampleRate)) {
+                    || f->mChannelsPerFrame != channels
+                    || !IsSupportedSampleRate(f->mSampleRate)) {
                     return kAudioDeviceUnsupportedFormatError;
                 }
-                TapdeckLockState();
-                Boolean changed = (f->mSampleRate != gSampleRate);
-                TapdeckUnlockState();
-                if (changed && gHost != NULL) {
-                    gHost->RequestDeviceConfigurationChange(gHost, kObjectID_Device,
-                                                            (UInt64)f->mSampleRate, NULL);
-                }
-                return 0;
+                requested = f->mSampleRate;
+                wantsRateChange = true;
+                break;
             }
-            default: break;
+            default:
+                return kAudioHardwareUnknownPropertyError;
         }
+    } else {
+        return kAudioHardwareUnknownPropertyError;
     }
 
-    return kAudioHardwareUnknownPropertyError;
+    if (!wantsRateChange) return kAudioHardwareUnknownPropertyError;
+    if (!IsSupportedSampleRate(requested)) return kAudioHardwareIllegalOperationError;
+
+    LockState();
+    Boolean changed = (requested != gDevices[index].sampleRate);
+    UnlockState();
+
+    // サンプルレートの変更は即時には行えない。ホストに構成変更を依頼し、
+    // 折り返し PerformDeviceConfigurationChange で実際に切り替える。
+    if (changed && gHost != NULL) {
+        gHost->RequestDeviceConfigurationChange(gHost, kDeviceObjectID(index),
+                                                (UInt64)requested, NULL);
+    }
+    return 0;
 }
 
 #pragma mark - ドライバインターフェース: ライフサイクル
@@ -745,14 +1024,21 @@ static OSStatus Tapdeck_Initialize(AudioServerPlugInDriverRef inDriver,
 {
     (void)inDriver;
     gHost = inHost;
-    TapdeckLockState();
-    TapdeckRecalculateHostTicksPerFrame();
-    memset(gRingBuffer, 0, sizeof(gRingBuffer));
-    TapdeckUnlockState();
+
+    TapdeckDeviceSpec specs[kMaxDevices];
+    UInt32 specCount = ReadConfiguration(specs, kMaxDevices);
+
+    LockState();
+    memset(gDevices, 0, sizeof(gDevices));
+    ApplyConfigurationLocked(specs, specCount);
+    UnlockState();
+
+    // 以後は設定ファイルの更新を巡回で拾い、デバイスを増減させる。
+    StartConfigurationWatch();
     return 0;
 }
 
-// このドライバは固定で1台のデバイスを公開するので、動的な作成/破棄は行わない。
+// 公開するデバイスは設定ファイルで決まる。HAL からの動的な作成は受けない。
 static OSStatus Tapdeck_CreateDevice(AudioServerPlugInDriverRef inDriver,
                                      CFDictionaryRef inDescription,
                                      const AudioServerPlugInClientInfo* inClientInfo,
@@ -774,7 +1060,11 @@ static OSStatus Tapdeck_AddDeviceClient(AudioServerPlugInDriverRef inDriver,
                                         const AudioServerPlugInClientInfo* inClientInfo)
 {
     (void)inDriver; (void)inClientInfo;
-    return (inDeviceObjectID == kObjectID_Device) ? 0 : kAudioHardwareBadObjectError;
+    UInt32 index = 0;
+    LockState();
+    int kind = ResolveObject(inDeviceObjectID, &index);
+    UnlockState();
+    return (kind == kObjectKind_Device) ? 0 : kAudioHardwareBadObjectError;
 }
 
 static OSStatus Tapdeck_RemoveDeviceClient(AudioServerPlugInDriverRef inDriver,
@@ -782,7 +1072,11 @@ static OSStatus Tapdeck_RemoveDeviceClient(AudioServerPlugInDriverRef inDriver,
                                            const AudioServerPlugInClientInfo* inClientInfo)
 {
     (void)inDriver; (void)inClientInfo;
-    return (inDeviceObjectID == kObjectID_Device) ? 0 : kAudioHardwareBadObjectError;
+    UInt32 index = 0;
+    LockState();
+    int kind = ResolveObject(inDeviceObjectID, &index);
+    UnlockState();
+    return (kind == kObjectKind_Device) ? 0 : kAudioHardwareBadObjectError;
 }
 
 /// サンプルレート変更の実行。SetPropertyData から依頼した変更がここに戻ってくる。
@@ -792,25 +1086,27 @@ static OSStatus Tapdeck_PerformDeviceConfigurationChange(AudioServerPlugInDriver
                                                          void* inChangeInfo)
 {
     (void)inDriver; (void)inChangeInfo;
-    if (inDeviceObjectID != kObjectID_Device) return kAudioHardwareBadObjectError;
+    UInt32 index = 0;
+    LockState();
+    int kind = ResolveObject(inDeviceObjectID, &index);
+    if (kind != kObjectKind_Device) { UnlockState(); return kAudioHardwareBadObjectError; }
 
     Float64 newRate = (Float64)inChangeAction;
-    if (!TapdeckIsSupportedSampleRate(newRate)) return kAudioHardwareIllegalOperationError;
+    if (!IsSupportedSampleRate(newRate)) { UnlockState(); return kAudioHardwareIllegalOperationError; }
 
-    TapdeckLockState();
-    gSampleRate = newRate;
-    TapdeckRecalculateHostTicksPerFrame();
-    gTimeStampCount = 0;
-    gAnchorHostTime = mach_absolute_time();
-    memset(gRingBuffer, 0, sizeof(gRingBuffer));
-    TapdeckUnlockState();
+    TapdeckDevice* device = &gDevices[index];
+    device->sampleRate = newRate;
+    RecalculateHostTicks(device);
+    device->timeStampCount = 0;
+    device->anchorHostTime = mach_absolute_time();
+    memset(device->ring, 0, sizeof(device->ring));
+    UnlockState();
     return 0;
 }
 
 static OSStatus Tapdeck_AbortDeviceConfigurationChange(AudioServerPlugInDriverRef inDriver,
                                                        AudioObjectID inDeviceObjectID,
-                                                       UInt64 inChangeAction,
-                                                       void* inChangeInfo)
+                                                       UInt64 inChangeAction, void* inChangeInfo)
 {
     (void)inDriver; (void)inDeviceObjectID; (void)inChangeAction; (void)inChangeInfo;
     return 0;
@@ -819,75 +1115,77 @@ static OSStatus Tapdeck_AbortDeviceConfigurationChange(AudioServerPlugInDriverRe
 #pragma mark - ドライバインターフェース: IO
 
 static OSStatus Tapdeck_StartIO(AudioServerPlugInDriverRef inDriver,
-                                AudioObjectID inDeviceObjectID,
-                                UInt32 inClientID)
+                                AudioObjectID inDeviceObjectID, UInt32 inClientID)
 {
     (void)inDriver; (void)inClientID;
-    if (inDeviceObjectID != kObjectID_Device) return kAudioHardwareBadObjectError;
+    UInt32 index = 0;
+    LockState();
+    int kind = ResolveObject(inDeviceObjectID, &index);
+    if (kind != kObjectKind_Device) { UnlockState(); return kAudioHardwareBadObjectError; }
 
-    TapdeckLockState();
-    if (gIORunningCount == 0) {
+    TapdeckDevice* device = &gDevices[index];
+    if (device->ioRunningCount == 0) {
         // 最初のクライアントが来たときだけ仮想クロックを張り直す。
-        memset(gRingBuffer, 0, sizeof(gRingBuffer));
-        TapdeckRecalculateHostTicksPerFrame();
-        gTimeStampCount = 0;
-        gAnchorHostTime = mach_absolute_time();
+        memset(device->ring, 0, sizeof(device->ring));
+        RecalculateHostTicks(device);
+        device->timeStampCount = 0;
+        device->anchorHostTime = mach_absolute_time();
     }
-    ++gIORunningCount;
-    TapdeckUnlockState();
+    ++device->ioRunningCount;
+    UnlockState();
     return 0;
 }
 
 static OSStatus Tapdeck_StopIO(AudioServerPlugInDriverRef inDriver,
-                               AudioObjectID inDeviceObjectID,
-                               UInt32 inClientID)
+                               AudioObjectID inDeviceObjectID, UInt32 inClientID)
 {
     (void)inDriver; (void)inClientID;
-    if (inDeviceObjectID != kObjectID_Device) return kAudioHardwareBadObjectError;
-
-    TapdeckLockState();
-    if (gIORunningCount > 0) --gIORunningCount;
-    TapdeckUnlockState();
+    UInt32 index = 0;
+    LockState();
+    int kind = ResolveObject(inDeviceObjectID, &index);
+    if (kind != kObjectKind_Device) { UnlockState(); return kAudioHardwareBadObjectError; }
+    if (gDevices[index].ioRunningCount > 0) --gDevices[index].ioRunningCount;
+    UnlockState();
     return 0;
 }
 
-/// 仮想クロック。実ハードウェアが無いので mach_absolute_time から時刻を合成する。
+/// 仮想クロック。実ハードウェアが無いので mach_absolute_time から合成する。
 /// リングバッファ1周ぶん進むごとにタイムスタンプを1つ発行する。
 static OSStatus Tapdeck_GetZeroTimeStamp(AudioServerPlugInDriverRef inDriver,
-                                         AudioObjectID inDeviceObjectID,
-                                         UInt32 inClientID,
-                                         Float64* outSampleTime,
-                                         UInt64* outHostTime,
+                                         AudioObjectID inDeviceObjectID, UInt32 inClientID,
+                                         Float64* outSampleTime, UInt64* outHostTime,
                                          UInt64* outSeed)
 {
+    // 実時間スレッドから毎周期呼ばれる。ロックは取らない。
     (void)inDriver; (void)inClientID;
-    if (inDeviceObjectID != kObjectID_Device) return kAudioHardwareBadObjectError;
+    UInt32 index = 0;
+    int kind = ResolveObject(inDeviceObjectID, &index);
+    if (kind != kObjectKind_Device) return kAudioHardwareBadObjectError;
 
-    TapdeckLockState();
-    UInt64  now                    = mach_absolute_time();
-    Float64 ticksPerRingBuffer     = gHostTicksPerFrame * (Float64)kRingBufferFrames;
-    Float64 offsetToNextTimeStamp  = (Float64)(gTimeStampCount + 1) * ticksPerRingBuffer;
-    UInt64  nextTimeStampHostTime  = gAnchorHostTime + (UInt64)offsetToNextTimeStamp;
+    TapdeckDevice* device = &gDevices[index];
+    UInt64  now                   = mach_absolute_time();
+    Float64 ticksPerRingBuffer    = device->hostTicksPerFrame * (Float64)kRingBufferFrames;
+    Float64 offsetToNextTimeStamp = (Float64)(device->timeStampCount + 1) * ticksPerRingBuffer;
+    UInt64  nextTimeStampHostTime = device->anchorHostTime + (UInt64)offsetToNextTimeStamp;
 
-    if (nextTimeStampHostTime <= now) ++gTimeStampCount;
+    if (nextTimeStampHostTime <= now) ++device->timeStampCount;
 
-    *outSampleTime = (Float64)(gTimeStampCount * kRingBufferFrames);
-    *outHostTime   = gAnchorHostTime
-                   + (UInt64)((Float64)gTimeStampCount * ticksPerRingBuffer);
+    *outSampleTime = (Float64)(device->timeStampCount * kRingBufferFrames);
+    *outHostTime   = device->anchorHostTime
+                   + (UInt64)((Float64)device->timeStampCount * ticksPerRingBuffer);
     *outSeed       = 1;
-    TapdeckUnlockState();
     return 0;
 }
 
 static OSStatus Tapdeck_WillDoIOOperation(AudioServerPlugInDriverRef inDriver,
-                                          AudioObjectID inDeviceObjectID,
-                                          UInt32 inClientID,
-                                          UInt32 inOperationID,
-                                          Boolean* outWillDo,
+                                          AudioObjectID inDeviceObjectID, UInt32 inClientID,
+                                          UInt32 inOperationID, Boolean* outWillDo,
                                           Boolean* outWillDoInPlace)
 {
     (void)inDriver; (void)inClientID;
-    if (inDeviceObjectID != kObjectID_Device) return kAudioHardwareBadObjectError;
+    UInt32 index = 0;
+    int kind = ResolveObject(inDeviceObjectID, &index);
+    if (kind != kObjectKind_Device) return kAudioHardwareBadObjectError;
 
     Boolean willDo = (inOperationID == kAudioServerPlugInIOOperationReadInput)
                   || (inOperationID == kAudioServerPlugInIOOperationWriteMix);
@@ -897,52 +1195,57 @@ static OSStatus Tapdeck_WillDoIOOperation(AudioServerPlugInDriverRef inDriver,
 }
 
 static OSStatus Tapdeck_BeginIOOperation(AudioServerPlugInDriverRef inDriver,
-                                         AudioObjectID inDeviceObjectID,
-                                         UInt32 inClientID,
-                                         UInt32 inOperationID,
-                                         UInt32 inIOBufferFrameSize,
+                                         AudioObjectID inDeviceObjectID, UInt32 inClientID,
+                                         UInt32 inOperationID, UInt32 inIOBufferFrameSize,
                                          const AudioServerPlugInIOCycleInfo* inIOCycleInfo)
 {
     (void)inDriver; (void)inClientID; (void)inOperationID;
     (void)inIOBufferFrameSize; (void)inIOCycleInfo;
-    return (inDeviceObjectID == kObjectID_Device) ? 0 : kAudioHardwareBadObjectError;
+    UInt32 index = 0;
+    int kind = ResolveObject(inDeviceObjectID, &index);
+    return (kind == kObjectKind_Device) ? 0 : kAudioHardwareBadObjectError;
 }
 
 /// ここがループバックの本体。
 /// 出力側に書かれたフレームをリングバッファへ置き、入力側はそこから読む。
 static OSStatus Tapdeck_DoIOOperation(AudioServerPlugInDriverRef inDriver,
                                       AudioObjectID inDeviceObjectID,
-                                      AudioObjectID inStreamObjectID,
-                                      UInt32 inClientID,
-                                      UInt32 inOperationID,
-                                      UInt32 inIOBufferFrameSize,
+                                      AudioObjectID inStreamObjectID, UInt32 inClientID,
+                                      UInt32 inOperationID, UInt32 inIOBufferFrameSize,
                                       const AudioServerPlugInIOCycleInfo* inIOCycleInfo,
-                                      void* ioMainBuffer,
-                                      void* ioSecondaryBuffer)
+                                      void* ioMainBuffer, void* ioSecondaryBuffer)
 {
     (void)inDriver; (void)inStreamObjectID; (void)inClientID; (void)ioSecondaryBuffer;
-    if (inDeviceObjectID != kObjectID_Device) return kAudioHardwareBadObjectError;
     if (ioMainBuffer == NULL || inIOCycleInfo == NULL) return 0;
 
+    // ここは実時間スレッド。ロックは取らない。
+    // 公開中かつ IO 実行中のデバイスは設定変更で外されないようにしてあるので、
+    // channelCount とリングバッファはこの区間で変化しない。
+    UInt32 index = 0;
+    int kind = ResolveObject(inDeviceObjectID, &index);
+    if (kind != kObjectKind_Device) return kAudioHardwareBadObjectError;
+
+    TapdeckDevice* device = &gDevices[index];
+    UInt32 channels = device->channelCount;
     Float32* buffer = (Float32*)ioMainBuffer;
 
     if (inOperationID == kAudioServerPlugInIOOperationWriteMix) {
         UInt64 start = (UInt64)inIOCycleInfo->mOutputTime.mSampleTime;
         for (UInt32 frame = 0; frame < inIOBufferFrameSize; ++frame) {
             UInt64 slot = (start + frame) % kRingBufferFrames;
-            for (UInt32 ch = 0; ch < kChannelCount; ++ch) {
-                gRingBuffer[slot * kChannelCount + ch] = buffer[frame * kChannelCount + ch];
+            for (UInt32 ch = 0; ch < channels; ++ch) {
+                device->ring[slot * channels + ch] = buffer[frame * channels + ch];
             }
         }
     } else if (inOperationID == kAudioServerPlugInIOOperationReadInput) {
         UInt64 start = (UInt64)inIOCycleInfo->mInputTime.mSampleTime;
         for (UInt32 frame = 0; frame < inIOBufferFrameSize; ++frame) {
             UInt64 slot = (start + frame) % kRingBufferFrames;
-            for (UInt32 ch = 0; ch < kChannelCount; ++ch) {
-                UInt64 index = slot * kChannelCount + ch;
-                buffer[frame * kChannelCount + ch] = gRingBuffer[index];
-                // 読んだら消す。出力側が止まったときに古い音が延々ループするのを防ぐ。
-                gRingBuffer[index] = 0.0f;
+            for (UInt32 ch = 0; ch < channels; ++ch) {
+                UInt64 offset = slot * channels + ch;
+                buffer[frame * channels + ch] = device->ring[offset];
+                // 読んだら消す。出力側が止まったときに古い音がループするのを防ぐ。
+                device->ring[offset] = 0.0f;
             }
         }
     }
@@ -950,15 +1253,15 @@ static OSStatus Tapdeck_DoIOOperation(AudioServerPlugInDriverRef inDriver,
 }
 
 static OSStatus Tapdeck_EndIOOperation(AudioServerPlugInDriverRef inDriver,
-                                       AudioObjectID inDeviceObjectID,
-                                       UInt32 inClientID,
-                                       UInt32 inOperationID,
-                                       UInt32 inIOBufferFrameSize,
+                                       AudioObjectID inDeviceObjectID, UInt32 inClientID,
+                                       UInt32 inOperationID, UInt32 inIOBufferFrameSize,
                                        const AudioServerPlugInIOCycleInfo* inIOCycleInfo)
 {
     (void)inDriver; (void)inClientID; (void)inOperationID;
     (void)inIOBufferFrameSize; (void)inIOCycleInfo;
-    return (inDeviceObjectID == kObjectID_Device) ? 0 : kAudioHardwareBadObjectError;
+    UInt32 index = 0;
+    int kind = ResolveObject(inDeviceObjectID, &index);
+    return (kind == kObjectKind_Device) ? 0 : kAudioHardwareBadObjectError;
 }
 
 #pragma mark - インターフェーステーブルとファクトリ
@@ -1000,12 +1303,11 @@ static HRESULT Tapdeck_QueryInterface(void* inDriver, REFIID inUUID, LPVOID* out
     Boolean matches = CFEqual(requested, IUnknownUUID)
                    || CFEqual(requested, kAudioServerPlugInDriverInterfaceUUID);
     CFRelease(requested);
-
     if (!matches) return E_NOINTERFACE;
 
-    TapdeckLockState();
+    LockState();
     ++gRefCount;
-    TapdeckUnlockState();
+    UnlockState();
     *outInterface = gDriverRef;
     return 0;
 }
@@ -1013,20 +1315,20 @@ static HRESULT Tapdeck_QueryInterface(void* inDriver, REFIID inUUID, LPVOID* out
 static ULONG Tapdeck_AddRef(void* inDriver)
 {
     if (inDriver != gDriverRef) return 0;
-    TapdeckLockState();
+    LockState();
     if (gRefCount < UINT32_MAX) ++gRefCount;
     ULONG result = gRefCount;
-    TapdeckUnlockState();
+    UnlockState();
     return result;
 }
 
 static ULONG Tapdeck_Release(void* inDriver)
 {
     if (inDriver != gDriverRef) return 0;
-    TapdeckLockState();
+    LockState();
     if (gRefCount > 0) --gRefCount;
     ULONG result = gRefCount;
-    TapdeckUnlockState();
+    UnlockState();
     return result;
 }
 

@@ -23,6 +23,11 @@ final class AudioEngineModel: ObservableObject {
     @Published private(set) var monitorStatus = ""
     @Published private(set) var monitorPeakDB: Double = -120
 
+    // MARK: - 仮想デバイスの管理
+
+    @Published private(set) var virtualDevices: [VirtualDeviceConfiguration.Device] = []
+    @Published private(set) var virtualDeviceStatus = ""
+
     enum Verdict {
         case unknown, passed, failed
     }
@@ -42,6 +47,56 @@ final class AudioEngineModel: ObservableObject {
         return dir.appendingPathComponent("loopback-test.wav")
     }
 
+    // MARK: - 仮想デバイス
+
+    func loadVirtualDevices() {
+        virtualDevices = VirtualDeviceConfiguration.load().devices
+    }
+
+    func addVirtualDevice(name: String, channels: Int = 2) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard virtualDevices.count < 8 else {
+            virtualDeviceStatus = "仮想デバイスは8台までです"
+            return
+        }
+        virtualDevices.append(.init(name: trimmed, channelCount: channels))
+        commitVirtualDevices()
+    }
+
+    func renameVirtualDevice(id: String, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let index = virtualDevices.firstIndex(where: { $0.id == id })
+        else { return }
+        virtualDevices[index].name = trimmed
+        commitVirtualDevices()
+    }
+
+    func removeVirtualDevice(id: String) {
+        guard virtualDevices.count > 1 else {
+            virtualDeviceStatus = "最低1台は残してください"
+            return
+        }
+        virtualDevices.removeAll { $0.id == id }
+        commitVirtualDevices()
+    }
+
+    private func commitVirtualDevices() {
+        do {
+            try VirtualDeviceConfiguration(devices: virtualDevices).save()
+            virtualDeviceStatus = "保存しました。数秒で反映されます。"
+            // ドライバは巡回で拾うので、少し待ってから一覧を取り直す。
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds:
+                    UInt64(VirtualDeviceConfiguration.propagationDelay * 1_000_000_000))
+                refresh()
+                virtualDeviceStatus = ""
+            }
+        } catch {
+            virtualDeviceStatus = error.localizedDescription
+        }
+    }
+
     // MARK: - 一覧
 
     func refresh() {
@@ -49,6 +104,7 @@ final class AudioEngineModel: ObservableObject {
             devices = try AudioDevice.all()
             tapdeck = devices.first { $0.uid == "TapdeckDevice" }
             processes = (try? AudioProcess.all()) ?? []
+            loadVirtualDevices()
 
             if tapdeck == nil {
                 status = "Tapdeck 仮想デバイスが見つかりません（ドライバ未インストール）"
@@ -99,7 +155,7 @@ final class AudioEngineModel: ObservableObject {
             meter.beginWriting(to: url)
 
             let meter = self.meter
-            try deviceInput.start { buffer in
+            try deviceInput.start { buffer, _ in
                 meter.accumulate(buffer)
             }
             input = deviceInput
@@ -175,7 +231,7 @@ final class AudioEngineModel: ObservableObject {
 
         do {
             let input = try DeviceInput(device: device)
-            try input.start { buffer in monitorMeter.accumulate(buffer) }
+            try input.start { buffer, _ in monitorMeter.accumulate(buffer) }
             monitorStatus = "\(device.name) の入力を録音中 …"
             try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             input.stop()

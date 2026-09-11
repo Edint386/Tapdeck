@@ -76,3 +76,29 @@ struct MixerConfiguration: Codable {
         }
     }
 }
+
+
+/// 名前を付けて保存したミキサー構成。
+/// 「会議用」「配信用」のように、用途ごとの組み合わせを切り替えるためのもの。
+struct MixerPreset: Codable, Identifiable {
+    var id = UUID()
+    var name: String
+    var configuration: MixerConfiguration
+}
+
+struct MixerPresetStore {
+    private static let storageKey = "mixerPresets"
+
+    static func load() -> [MixerPreset] {
+        guard let data = UserDefaults.standard.data(forKey: storageKey),
+              let presets = try? JSONDecoder().decode([MixerPreset].self, from: data) else {
+            return []
+        }
+        return presets
+    }
+
+    static func save(_ presets: [MixerPreset]) {
+        guard let data = try? JSONEncoder().encode(presets) else { return }
+        UserDefaults.standard.set(data, forKey: storageKey)
+    }
+}

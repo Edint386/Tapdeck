@@ -261,7 +261,7 @@ final class Mixer: @unchecked Sendable {
                 return
             }
             let input = try DeviceInput(device: device)
-            try input.start { [weak source] buffer in
+            try input.start { [weak source] buffer, _ in
                 source?.accept(buffer)
             }
             source.input = input
