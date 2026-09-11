@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct ContentView: View {
+struct RecorderPanelView: View {
     @EnvironmentObject private var rec: Recorder
 
     var body: some View {
@@ -150,7 +150,7 @@ struct ContentView: View {
         }
     }
 
-    private static func timecode(_ t: TimeInterval) -> String {
+    static func timecode(_ t: TimeInterval) -> String {
         let total = Int(t)
         return String(format: "%02d:%02d:%02d", total / 3600, (total % 3600) / 60, total % 60)
     }

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>              <string>Tapproof</string>
+    <key>CFBundleExecutable</key>        <string>tapproof</string>
+    <key>CFBundleIdentifier</key>        <string>dev.kosuke.Tapdeck.tapproof</string>
+    <key>CFBundlePackageType</key>       <string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>0.1.0</string>
+    <key>CFBundleVersion</key>           <string>1</string>
+    <key>LSMinimumSystemVersion</key>    <string>15.0</string>
+    <key>LSUIElement</key>               <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>仮想オーディオデバイスの入力を読み取って検証するためにマイク権限が必要です。</string>
+</dict>
+</plist>

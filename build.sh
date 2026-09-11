@@ -19,6 +19,17 @@ xcrun swiftc -O "${common_flags[@]}" \
   -o build/tapproof \
   Sources/Engine/*.swift Sources/CLI/*.swift
 
+# tapproof は入力デバイスを読むためマイク権限が要る。TCC はバンドルを持たない
+# 実行ファイルにプロンプトを出せないので、.app に包んでおく。
+# バンドル内のバイナリを直接起動すれば標準出力はそのまま使える。
+echo "→ Tapproof.app (TCC 用のバンドル)"
+PROOF="build/Tapproof.app"
+rm -rf "$PROOF"
+mkdir -p "$PROOF/Contents/MacOS"
+cp Resources/Tapproof-Info.plist "$PROOF/Contents/Info.plist"
+cp build/tapproof "$PROOF/Contents/MacOS/tapproof"
+codesign --force --sign "${TAPDECK_SIGN_ID:--}" "$PROOF"
+
 # ── 2. Tapdeck.app — 画面収録UI（Phase 1 の成果物）────────────────────
 echo "→ Tapdeck.app"
 APP="Tapdeck.app"
