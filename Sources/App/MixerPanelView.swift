@@ -4,172 +4,249 @@ struct MixerPanelView: View {
     @EnvironmentObject private var model: MixerModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            outputSection
-            Divider()
+        VStack(alignment: .leading, spacing: 0) {
             sourcesSection
             Divider()
-            transportSection
+            footer
         }
-        .padding(18)
-        .frame(width: 460)
+        .frame(width: 500)
         .task { model.refresh() }
-    }
-
-    // MARK: 出力先
-
-    private var outputSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("出力先").font(.headline)
-                Spacer()
-                Button("更新") { model.refresh() }.controlSize(.small)
-            }
-            Picker("", selection: $model.outputDeviceUID) {
-                ForEach(model.outputCandidates) { device in
-                    Text("\(device.name) — \(device.outputChannels)ch").tag(device.uid)
-                }
-            }
-            .labelsHidden()
-            .disabled(model.isRunning)
-
-            if model.outputDeviceUID == "TapdeckDevice" {
-                Text("Zoom や OBS の入力に「Tapdeck」を選ぶと、ここでミックスした音が渡ります。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
     }
 
     // MARK: ソース
 
     private var sourcesSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
                 Text("ソース").font(.headline)
+                if !model.rows.isEmpty {
+                    Text("\(model.rows.count)")
+                        .font(.caption2.monospacedDigit())
+                        .padding(.horizontal, 6).padding(.vertical, 1)
+                        .background(Color.secondary.opacity(0.15), in: Capsule())
+                }
                 Spacer()
+                quickAddButtons
                 addMenu
             }
 
-            // よく使う組み合わせはメニューを開かずに足せるようにする。
-            HStack(spacing: 6) {
-                Button("＋ システム音") { model.addSystemAudio() }
-                Button("＋ マイク")     { model.addDefaultMicrophone() }
-                Button("＋ 再生中のアプリ") { model.addPlayingApplications() }
-            }
-            .controlSize(.small)
-            .buttonStyle(.bordered)
-
             if model.rows.isEmpty {
-                Text("ソースがありません。右上の「追加」からアプリ・システム音・マイクを足してください。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(height: 120, alignment: .top)
+                emptyState
             } else {
                 ScrollView {
-                    VStack(spacing: 8) {
-                        ForEach(model.rows) { row in
-                            sourceRow(row)
-                        }
+                    VStack(spacing: 6) {
+                        ForEach(model.rows) { sourceRow($0) }
                     }
+                    .padding(.bottom, 2)
                 }
-                .frame(height: 160)
+                .frame(height: 218)
             }
         }
+        .padding(18)
+    }
+
+    private var quickAddButtons: some View {
+        HStack(spacing: 5) {
+            Button("システム音") { model.addSystemAudio() }
+            Button("マイク")     { model.addDefaultMicrophone() }
+            Button("再生中")     { model.addPlayingApplications() }
+        }
+        .controlSize(.small)
+        .buttonStyle(.bordered)
     }
 
     private var addMenu: some View {
-        Menu("追加") {
-            Button("システム全体の音") { model.addSystemAudio() }
-
+        Menu {
             Menu("アプリ") {
                 ForEach(model.availableProcesses) { process in
-                    Button(process.isPlayingAudio ? "♪ \(process.name)" : process.name) {
+                    Button(process.isPlayingAudio ? "♪  \(process.name)" : process.name) {
                         model.addApplication(process)
                     }
                 }
             }
-
-            Menu("マイク・入力デバイス") {
+            Menu("入力デバイス") {
                 ForEach(model.availableInputs) { device in
-                    Button("\(device.name) (\(device.inputChannels)ch)") {
+                    Button("\(device.name)（\(device.inputChannels)ch）") {
                         model.addInput(device)
                     }
                 }
             }
+            Divider()
+            Button("一覧を更新") { model.refresh() }
+        } label: {
+            Image(systemName: "plus")
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .fixedSize()
     }
 
-    private func sourceRow(_ row: MixerModel.Row) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Text(row.kindLabel)
-                    .font(.system(size: 9, weight: .medium))
-                    .padding(.horizontal, 5).padding(.vertical, 1)
-                    .background(Color.secondary.opacity(0.18), in: Capsule())
-
-                Text(row.label).font(.callout).lineLimit(1)
-                Spacer()
-
-                Button {
-                    model.toggleMute(row.id)
-                } label: {
-                    Image(systemName: row.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                        .foregroundStyle(row.isMuted ? .red : .secondary)
-                }
-                .buttonStyle(.borderless)
-
-                Button {
-                    model.remove(row.id)
-                } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
-                .buttonStyle(.borderless)
-            }
-
-            HStack(spacing: 8) {
-                Slider(value: Binding(
-                    get: { Double(row.gain) },
-                    set: { model.setGain(Float($0), for: row.id) }
-                ), in: 0...2)
-                .controlSize(.mini)
-                .disabled(row.isMuted)
-
-                LevelBar(level: row.isMuted ? 0 : row.level).frame(width: 70, height: 5)
-            }
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "waveform.badge.plus")
+                .font(.system(size: 30, weight: .light))
+                .foregroundStyle(.tertiary)
+            Text("ソースがありません")
+                .font(.callout).foregroundStyle(.secondary)
+            Text("「システム音」と「マイク」を足せば、\nビデオ会議でPCの音とマイクを同時に共有できます。")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.center)
         }
-        .padding(8)
-        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
+        .frame(maxWidth: .infinity)
+        .frame(height: 218)
     }
 
-    // MARK: 操作
+    private func sourceRow(_ row: MixerModel.Row) -> some View {
+        HStack(spacing: 10) {
+            icon(for: row)
 
-    private var transportSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 6) {
+                    Text(row.label)
+                        .font(.callout.weight(.medium))
+                        .lineLimit(1)
+                    if model.isRunning && !row.isAttached {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                    }
+                    Spacer(minLength: 0)
+                    Text(row.detail)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+
+                HStack(spacing: 8) {
+                    Slider(value: Binding(
+                        get: { Double(row.gain) },
+                        set: { model.setGain(Float($0), for: row.id) }
+                    ), in: 0...2)
+                    .controlSize(.mini)
+                    .disabled(row.isMuted)
+
+                    Text(gainLabel(row.gain))
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 38, alignment: .trailing)
+
+                    LevelBar(level: row.isMuted ? 0 : row.level)
+                        .frame(width: 64, height: 4)
+                }
+            }
+
+            Button {
+                model.toggleMute(row.id)
+            } label: {
+                Image(systemName: row.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .foregroundStyle(row.isMuted ? Color.red : Color.secondary)
+                    .frame(width: 16)
+            }
+            .buttonStyle(.borderless)
+            .help(row.isMuted ? "ミュート解除" : "ミュート")
+
+            Button {
+                model.remove(row.id)
+            } label: {
+                Image(systemName: "xmark").font(.caption2).foregroundStyle(.tertiary)
+            }
+            .buttonStyle(.borderless)
+            .help("このソースを外す")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .background(Color.secondary.opacity(0.09), in: RoundedRectangle(cornerRadius: 9))
+        .overlay(
+            RoundedRectangle(cornerRadius: 9)
+                .strokeBorder(model.isRunning && !row.isAttached
+                              ? Color.orange.opacity(0.45) : Color.clear, lineWidth: 1)
+        )
+        .opacity(row.isMuted ? 0.55 : 1)
+    }
+
+    @ViewBuilder
+    private func icon(for row: MixerModel.Row) -> some View {
+        if let appIcon = row.appIcon {
+            Image(nsImage: appIcon)
+                .resizable().frame(width: 26, height: 26)
+        } else {
+            Image(systemName: row.symbolName)
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+                .frame(width: 26, height: 26)
+                .background(Color.secondary.opacity(0.14), in: RoundedRectangle(cornerRadius: 6))
+        }
+    }
+
+    private func gainLabel(_ gain: Float) -> String {
+        guard gain > 0.001 else { return "−∞" }
+        return String(format: "%+.1f", 20 * log10(gain))
+    }
+
+    // MARK: 出力と操作
+
+    private var footer: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Text("出力先").font(.subheadline.weight(.medium))
+                Picker("", selection: $model.outputDeviceUID) {
+                    ForEach(model.outputCandidates) { device in
+                        Text(device.name).tag(device.uid)
+                    }
+                }
+                .labelsHidden()
+                .disabled(model.isRunning)
+                .frame(maxWidth: 210)
+                Spacer()
+                Button {
+                    model.refresh()
+                } label: { Image(systemName: "arrow.clockwise") }
+                .buttonStyle(.borderless)
+                .help("デバイスとアプリの一覧を更新")
+            }
+
+            if model.outputDeviceUID == "TapdeckDevice" {
+                Label("Zoom や OBS の入力に「Tapdeck」を選ぶと、ここでミックスした音が渡ります。",
+                      systemImage: "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             HStack(spacing: 12) {
                 Button {
-                    model.isRunning ? model.stop() : model.start()
+                    model.toggleRunning()
                 } label: {
                     Label(model.isRunning ? "停止" : "ミックス開始",
                           systemImage: model.isRunning ? "stop.fill" : "play.fill")
                         .frame(maxWidth: .infinity)
                 }
                 .controlSize(.large)
+                .buttonStyle(.borderedProminent)
+                .tint(model.isRunning ? .red : .accentColor)
                 .disabled(model.rows.isEmpty)
+                .keyboardShortcut("r", modifiers: .command)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("出力").font(.system(size: 9)).foregroundStyle(.secondary)
-                    LevelBar(level: model.masterLevel).frame(width: 90, height: 7)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("出力レベル").font(.system(size: 9)).foregroundStyle(.secondary)
+                    LevelBar(level: model.masterLevel).frame(width: 104, height: 6)
                 }
             }
-            Text(model.status).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+
+            if !model.status.isEmpty {
+                Text(model.status)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
+        .padding(18)
     }
 }
 
-/// 簡易レベルメーター。振幅をそのまま横幅にすると小さい音がほぼ見えないので、
+/// レベルメーター。振幅をそのまま幅にすると小さい音がほぼ見えないので、
 /// dB に変換して -60dB〜0dB を全幅に割り当てる。
 struct LevelBar: View {
     let level: Float
@@ -180,13 +257,18 @@ struct LevelBar: View {
         return min(1, max(0, (db + 60) / 60))
     }
 
+    private var color: Color {
+        fraction > 0.96 ? .red : (fraction > 0.82 ? .yellow : .green)
+    }
+
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
-                Capsule().fill(Color.secondary.opacity(0.2))
+                Capsule().fill(Color.secondary.opacity(0.22))
                 Capsule()
-                    .fill(fraction > 0.95 ? Color.red : (fraction > 0.8 ? Color.yellow : Color.green))
+                    .fill(color)
                     .frame(width: geometry.size.width * fraction)
+                    .animation(.linear(duration: 0.05), value: fraction)
             }
         }
     }

@@ -1,4 +1,5 @@
 import AVFoundation
+import AppKit
 import CoreAudio
 import Foundation
 
@@ -6,50 +7,93 @@ import Foundation
 ///
 /// Loopback でいう「仮想デバイスに複数ソースを束ねる」部分。
 /// 出力先を Tapdeck 仮想デバイスにすると、その入力側を Zoom や OBS が
-/// マイクとして選べるようになる ＝「マイク＋コンピューターオーディオを共有」。
+/// マイクとして選べる ＝「マイク＋コンピューターオーディオを共有」。
 ///
 ///     アプリ音声 (Process Tap) ┐
-///     システム全体             ├→ [リングバッファ] → 加算 → 出力デバイス
+///     システム全体             ├→ [変換] → [リングバッファ] → 加算 → 出力デバイス
 ///     マイク / 外部入力        ┘
 final class Mixer: @unchecked Sendable {
 
-    enum SourceKind {
-        case application(AudioProcess)
+    /// ソースが何を指しているか。
+    ///
+    /// 実体（AudioProcess / AudioDevice）は開始時に解決する。アプリは再起動で
+    /// PID が変わるため、同定はバンドルIDで行う。こうしないと設定を保存しても
+    /// 次回の起動で繋がらない。
+    enum Target: Equatable {
+        case application(bundleID: String?, name: String)
         case systemAudio
-        case inputDevice(AudioDevice)
+        case inputDevice(uid: String, name: String)
+
+        var label: String {
+            switch self {
+            case .application(_, let name): return name
+            case .systemAudio:              return "システム全体の音"
+            case .inputDevice(_, let name): return name
+            }
+        }
+
+        var kindLabel: String {
+            switch self {
+            case .application: return "アプリ"
+            case .systemAudio: return "システム"
+            case .inputDevice: return "入力"
+            }
+        }
+
+        /// 保存できるか。バンドルIDを持たないプロセスは次回起動時に同定できない。
+        var isPersistable: Bool {
+            switch self {
+            case .application(let bundleID, _): return bundleID != nil
+            case .systemAudio, .inputDevice:    return true
+            }
+        }
     }
 
     /// ミキサーに登録された音源1つ。
     final class Source: Identifiable {
         let id = UUID()
-        let kind: SourceKind
-        let label: String
+        let target: Target
         let ring: AudioRingBuffer
 
         var gain: Float = 1.0
         var isMuted = false
+
+        /// 対象が見つからず接続できていない状態。
+        /// アプリを終了していても行は残り、起動したら繋がる。
+        private(set) var isAttached = false
+        private(set) var detachReason: String?
 
         fileprivate var tap: ProcessTap?
 
         /// 診断用。
         var tapForDiagnostics: ProcessTap? { tap }
         fileprivate var input: DeviceInput?
-
-        /// 音源のフォーマットが出力先と違うときだけ入る。
         fileprivate var converter: FormatConverter?
 
-        /// 診断用。音源が実際に吐いているフォーマット。
-        private(set) var sourceFormatDescription = "—"
+        private(set) var formatDescription = "—"
 
-        fileprivate func prepareConverter(sourceFormat: AVAudioFormat?,
-                                          targetFormat: AVAudioFormat) {
+        var label: String { target.label }
+
+        fileprivate init(target: Target, channels: Int) {
+            self.target = target
+            self.ring = AudioRingBuffer(channels: channels)
+        }
+
+        fileprivate func markAttached(sourceFormat: AVAudioFormat?, targetFormat: AVAudioFormat) {
+            isAttached = true
+            detachReason = nil
             guard let sourceFormat else { return }
-            sourceFormatDescription =
-                "\(Int(sourceFormat.sampleRate)) Hz / \(sourceFormat.channelCount)ch"
+            formatDescription = "\(Int(sourceFormat.sampleRate)) Hz / \(sourceFormat.channelCount)ch"
             converter = FormatConverter(from: sourceFormat, to: targetFormat)
             if converter != nil {
-                sourceFormatDescription += " → \(Int(targetFormat.sampleRate)) Hz に変換"
+                formatDescription += " → \(Int(targetFormat.sampleRate)) Hz"
             }
+        }
+
+        fileprivate func markDetached(_ reason: String) {
+            isAttached = false
+            detachReason = reason
+            formatDescription = "—"
         }
 
         /// 音源から届いたバッファを、必要なら変換してリングバッファへ積む。
@@ -62,16 +106,11 @@ final class Mixer: @unchecked Sendable {
             }
         }
 
-        fileprivate init(kind: SourceKind, label: String, channels: Int) {
-            self.kind = kind
-            self.label = label
-            self.ring = AudioRingBuffer(channels: channels)
-        }
-
         fileprivate func stop() {
             tap?.stop(); tap = nil
             input?.stop(); input = nil
             converter = nil
+            isAttached = false
             ring.clear()
         }
     }
@@ -85,7 +124,6 @@ final class Mixer: @unchecked Sendable {
     private let sourceLock = NSLock()
     private let channelCount = 2
 
-    /// 出力側のピーク（メーター用）。
     private var masterPeak: Float = 0
     private let meterLock = NSLock()
 
@@ -94,25 +132,12 @@ final class Mixer: @unchecked Sendable {
     // MARK: - ソースの管理
 
     @discardableResult
-    func addApplication(_ process: AudioProcess) -> Source {
-        add(Source(kind: .application(process), label: process.name, channels: channelCount))
-    }
-
-    @discardableResult
-    func addSystemAudio() -> Source {
-        add(Source(kind: .systemAudio, label: "システム全体の音", channels: channelCount))
-    }
-
-    @discardableResult
-    func addInputDevice(_ device: AudioDevice) -> Source {
-        add(Source(kind: .inputDevice(device), label: device.name, channels: channelCount))
-    }
-
-    private func add(_ source: Source) -> Source {
+    func add(_ target: Target) -> Source {
+        let source = Source(target: target, channels: channelCount)
         sourceLock.lock()
         sources.append(source)
         sourceLock.unlock()
-        if isRunning { try? startSource(source) }
+        if isRunning { try? attach(source) }
         return source
     }
 
@@ -126,12 +151,43 @@ final class Mixer: @unchecked Sendable {
         source.stop()
     }
 
+    /// 並べ替え。SwiftUI の move(fromOffsets:toOffset:) は使わない
+    /// （エンジンが UI フレームワークに依存しないようにするため）。
+    func move(from offsets: IndexSet, to destination: Int) {
+        sourceLock.lock()
+        defer { sourceLock.unlock() }
+
+        let moving = offsets.sorted().compactMap { sources.indices.contains($0) ? sources[$0] : nil }
+        guard !moving.isEmpty else { return }
+
+        let insertionIndex = destination - offsets.filter { $0 < destination }.count
+        for index in offsets.sorted(by: >) where sources.indices.contains(index) {
+            sources.remove(at: index)
+        }
+        sources.insert(contentsOf: moving, at: max(0, min(insertionIndex, sources.count)))
+    }
+
     func removeAll() {
         sourceLock.lock()
         let all = sources
         sources.removeAll()
         sourceLock.unlock()
         all.forEach { $0.stop() }
+    }
+
+    /// 未接続のソースを繋ぎ直す。対象アプリが後から起動した場合に使う。
+    @discardableResult
+    func reattachDetached() -> Int {
+        guard isRunning else { return 0 }
+        sourceLock.lock()
+        let pending = sources.filter { !$0.isAttached }
+        sourceLock.unlock()
+
+        var reattached = 0
+        for source in pending where (try? attach(source)) != nil {
+            if source.isAttached { reattached += 1 }
+        }
+        return reattached
     }
 
     // MARK: - 開始と停止
@@ -147,9 +203,7 @@ final class Mixer: @unchecked Sendable {
         sourceLock.lock()
         let snapshot = sources
         sourceLock.unlock()
-        for source in snapshot {
-            try startSource(source)
-        }
+        for source in snapshot { try? attach(source) }
 
         try deviceOutput.start { [weak self] channels, frameCount in
             self?.render(into: channels, frameCount: frameCount)
@@ -172,37 +226,55 @@ final class Mixer: @unchecked Sendable {
         targetFormat = nil
     }
 
-    private func startSource(_ source: Source) throws {
-        switch source.kind {
-        case .application(let process):
+    /// ソースを実体に結びつける。対象が居なければ未接続のまま残す。
+    private func attach(_ source: Source) throws {
+        guard let targetFormat else { return }
+        guard !source.isAttached else { return }
+
+        switch source.target {
+        case .application(let bundleID, let name):
+            guard let process = try locateProcess(bundleID: bundleID, name: name) else {
+                source.markDetached("\(name) は起動していません")
+                return
+            }
             let tap = ProcessTap()
-            // クロックは指定しない（＝既定の出力デバイス）。出力先を指定すると
-            // レートは揃うが、そこへ流れていない音は拾えなくなる（実測で無音になった）。
             try tap.start(mode: .include([process])) { [weak source] buffer in
                 source?.accept(buffer)
             }
             source.tap = tap
-            if let targetFormat { source.prepareConverter(sourceFormat: tap.format, targetFormat: targetFormat) }
+            source.markAttached(sourceFormat: tap.format, targetFormat: targetFormat)
 
         case .systemAudio:
-            // 自分自身の出力は除外する。含めるとミキサーの出力が
-            // そのまま入力に戻ってフィードバックループになる。
+            // 自分自身の出力は除外する。含めるとミキサーの出力がそのまま
+            // 入力に戻ってフィードバックループになる。
             let me = try? AudioProcess.find(pid: ProcessInfo.processInfo.processIdentifier)
             let tap = ProcessTap()
             try tap.start(mode: .excluding(me.map { [$0] } ?? [])) { [weak source] buffer in
                 source?.accept(buffer)
             }
             source.tap = tap
-            if let targetFormat { source.prepareConverter(sourceFormat: tap.format, targetFormat: targetFormat) }
+            source.markAttached(sourceFormat: tap.format, targetFormat: targetFormat)
 
-        case .inputDevice(let device):
+        case .inputDevice(let uid, let name):
+            guard let device = try AudioDevice.find(uid: uid) else {
+                source.markDetached("\(name) が見つかりません")
+                return
+            }
             let input = try DeviceInput(device: device)
             try input.start { [weak source] buffer in
                 source?.accept(buffer)
             }
             source.input = input
-            if let targetFormat { source.prepareConverter(sourceFormat: input.format, targetFormat: targetFormat) }
+            source.markAttached(sourceFormat: input.format, targetFormat: targetFormat)
         }
+    }
+
+    private func locateProcess(bundleID: String?, name: String) throws -> AudioProcess? {
+        let all = try AudioProcess.all()
+        if let bundleID {
+            return all.first { $0.bundleID == bundleID }
+        }
+        return all.first { $0.name == name }
     }
 
     // MARK: - 合成
@@ -222,7 +294,7 @@ final class Mixer: @unchecked Sendable {
             source.ring.mixInto(channels, frameCount: frameCount, gain: gain)
         }
 
-        // クリッピング防止。加算した結果が ±1 を超えたら潰れるので頭を抑える。
+        // クリッピング防止。加算結果が ±1 を超えると潰れる。
         var peak: Float = 0
         for channel in channels {
             for frame in 0..<frameCount {
@@ -239,7 +311,6 @@ final class Mixer: @unchecked Sendable {
         meterLock.unlock()
     }
 
-    /// 出力のピークを取り出して 0 に戻す。
     func takeMasterPeak() -> Float {
         meterLock.lock(); defer { meterLock.unlock() }
         let value = masterPeak

@@ -337,12 +337,12 @@ func runMix(target: String, seconds: Double) throws {
     }
 
     let mixer = Mixer()
-    let entry = mixer.addApplication(source)
+    let entry = mixer.add(.application(bundleID: source.bundleID, name: source.name))
     print("ソース   : \(source.name) (PID \(source.pid))")
     print("出力先   : \(device.name) — \(Int(device.sampleRate)) Hz")
 
     try mixer.start(to: device)
-    print("ソース形式: \(entry.sourceFormatDescription)")
+    print("ソース形式: \(entry.formatDescription)")
     print("送出中   : \(seconds) 秒 …")
 
     // 1秒ごとにソース側と出力側のピークを出して、どこで切れているかを見る。
@@ -357,6 +357,7 @@ func runMix(target: String, seconds: Double) throws {
         if let tap = entry.tapForDiagnostics {
             print("         Tap の時刻飛び: \(tap.discontinuityCount) 回")
         }
+
     }
 
     mixer.stop()

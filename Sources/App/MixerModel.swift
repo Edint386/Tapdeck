@@ -1,4 +1,5 @@
 import AVFoundation
+import AppKit
 import Combine
 import Foundation
 
@@ -6,28 +7,48 @@ import Foundation
 @MainActor
 final class MixerModel: ObservableObject {
 
-    /// 表示用のソース1行ぶん。エンジン側の Source を UI の都合に合わせて写したもの。
+    /// 表示用のソース1行ぶん。
     struct Row: Identifiable {
         let id: UUID
         let label: String
         let kindLabel: String
+        let symbolName: String
+        let appIcon: NSImage?
         var gain: Float
         var isMuted: Bool
         var level: Float
+        var isAttached: Bool
+        var detail: String
     }
 
     @Published private(set) var rows: [Row] = []
     @Published private(set) var isRunning = false
-    @Published private(set) var status = "ソースを追加してください"
+    @Published private(set) var status = ""
     @Published private(set) var masterLevel: Float = 0
 
     @Published private(set) var availableProcesses: [AudioProcess] = []
     @Published private(set) var availableInputs: [AudioDevice] = []
     @Published private(set) var outputCandidates: [AudioDevice] = []
-    @Published var outputDeviceUID = "TapdeckDevice"
+
+    @Published var outputDeviceUID = "TapdeckDevice" {
+        didSet { if oldValue != outputDeviceUID { persist() } }
+    }
 
     private let mixer = Mixer()
     private var meterTimer: Timer?
+    private var iconCache: [String: NSImage] = [:]
+
+    init() {
+        let configuration = MixerConfiguration.load()
+        outputDeviceUID = configuration.outputDeviceUID
+        for entry in configuration.targets {
+            let source = mixer.add(entry.target)
+            source.gain = entry.gain
+            source.isMuted = entry.isMuted
+        }
+        syncRows()
+        status = rows.isEmpty ? "ソースを追加してください" : "前回の構成を復元しました"
+    }
 
     // MARK: - 一覧の更新
 
@@ -37,27 +58,36 @@ final class MixerModel: ObservableObject {
         let devices = (try? AudioDevice.all()) ?? []
         availableInputs = devices.filter(\.canInput)
         outputCandidates = devices.filter(\.canOutput)
+
         if outputCandidates.first(where: { $0.uid == outputDeviceUID }) == nil {
-            outputDeviceUID = outputCandidates.first(where: { $0.uid == "TapdeckDevice" })?.uid
+            outputDeviceUID = outputCandidates.first { $0.uid == "TapdeckDevice" }?.uid
                 ?? outputCandidates.first?.uid ?? ""
         }
+
+        // 動作中なら、後から起動したアプリに繋ぎ直す。
+        if isRunning {
+            let reattached = mixer.reattachDetached()
+            if reattached > 0 { status = "\(reattached) 件のソースに接続しました" }
+        }
+        syncRows()
     }
 
     // MARK: - ソースの追加と削除
 
     func addApplication(_ process: AudioProcess) {
-        mixer.addApplication(process)
-        syncRows()
+        add(.application(bundleID: process.bundleID, name: process.name))
     }
 
     func addSystemAudio() {
-        mixer.addSystemAudio()
-        syncRows()
+        guard !mixer.sources.contains(where: { $0.target == .systemAudio }) else {
+            status = "システム全体の音は既に追加されています"
+            return
+        }
+        add(.systemAudio)
     }
 
     func addInput(_ device: AudioDevice) {
-        mixer.addInputDevice(device)
-        syncRows()
+        add(.inputDevice(uid: device.uid, name: device.name))
     }
 
     /// 既定のマイクを1クリックで足す。「マイク＋コンピューターオーディオ」が
@@ -81,44 +111,79 @@ final class MixerModel: ObservableObject {
             status = "いま音を出しているアプリはありません"
             return
         }
-        playing.forEach { mixer.addApplication($0) }
-        syncRows()
+        playing.forEach { addApplication($0) }
         status = "\(playing.count) 個のアプリを追加しました"
+    }
+
+    private func add(_ target: Mixer.Target) {
+        mixer.add(target)
+        syncRows()
+        persist()
     }
 
     func remove(_ id: UUID) {
         mixer.remove(id: id)
         syncRows()
+        persist()
     }
 
     func setGain(_ gain: Float, for id: UUID) {
         mixer.sources.first { $0.id == id }?.gain = gain
         syncRows()
+        persist()
     }
 
     func toggleMute(_ id: UUID) {
         guard let source = mixer.sources.first(where: { $0.id == id }) else { return }
         source.isMuted.toggle()
         syncRows()
+        persist()
     }
+
+    private func persist() {
+        MixerConfiguration(sources: mixer.sources, outputDeviceUID: outputDeviceUID).save()
+    }
+
+    // MARK: - 表示用の変換
 
     private func syncRows() {
         rows = mixer.sources.map { source in
             Row(id: source.id,
                 label: source.label,
-                kindLabel: Self.kindLabel(source.kind),
+                kindLabel: source.target.kindLabel,
+                symbolName: Self.symbolName(for: source.target),
+                appIcon: icon(for: source.target),
                 gain: source.gain,
                 isMuted: source.isMuted,
-                level: rows.first { $0.id == source.id }?.level ?? 0)
+                level: rows.first { $0.id == source.id }?.level ?? 0,
+                isAttached: source.isAttached,
+                detail: detail(for: source))
         }
     }
 
-    private static func kindLabel(_ kind: Mixer.SourceKind) -> String {
-        switch kind {
-        case .application: return "アプリ"
-        case .systemAudio: return "システム"
-        case .inputDevice: return "入力"
+    private func detail(for source: Mixer.Source) -> String {
+        if !isRunning { return "" }
+        if let reason = source.detachReason { return reason }
+        return source.formatDescription
+    }
+
+    private static func symbolName(for target: Mixer.Target) -> String {
+        switch target {
+        case .application: return "app.badge"
+        case .systemAudio: return "speaker.wave.3.fill"
+        case .inputDevice: return "mic.fill"
         }
+    }
+
+    /// アプリのアイコンはバンドルIDから引く。起動していなくても取得できる。
+    private func icon(for target: Mixer.Target) -> NSImage? {
+        guard case .application(let bundleID, _) = target, let bundleID else { return nil }
+        if let cached = iconCache[bundleID] { return cached }
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
+        else { return nil }
+        let image = NSWorkspace.shared.icon(forFile: url.path)
+        iconCache[bundleID] = image
+        return image
     }
 
     // MARK: - 開始と停止
@@ -136,7 +201,11 @@ final class MixerModel: ObservableObject {
         do {
             try mixer.start(to: device)
             isRunning = true
-            status = "\(device.name) へ \(mixer.sources.count) ソースを送出中"
+            let attached = mixer.sources.filter(\.isAttached).count
+            status = attached == mixer.sources.count
+                ? "\(device.name) へ \(attached) ソースを送出中"
+                : "\(device.name) へ送出中（\(attached)/\(mixer.sources.count) 接続）"
+            syncRows()
             startMetering()
         } catch {
             status = "開始できませんでした: \(error.localizedDescription)"
@@ -148,9 +217,12 @@ final class MixerModel: ObservableObject {
         isRunning = false
         stopMetering()
         masterLevel = 0
-        rows = rows.map { var r = $0; r.level = 0; return r }
+        syncRows()
+        rows = rows.map { var row = $0; row.level = 0; return row }
         status = "停止しました"
     }
+
+    func toggleRunning() { isRunning ? stop() : start() }
 
     // MARK: - メーター
 
@@ -171,11 +243,10 @@ final class MixerModel: ObservableObject {
             mixer.sources.map { ($0.id, $0.ring.takePeak()) })
         rows = rows.map { row in
             var updated = row
-            let peak = peaks[row.id] ?? 0
             // 落ちるときだけ緩やかに。跳ね上がりは即座に反映する。
-            updated.level = max(peak, row.level * 0.7)
+            updated.level = max(peaks[row.id] ?? 0, row.level * 0.72)
             return updated
         }
-        masterLevel = max(mixer.takeMasterPeak(), masterLevel * 0.7)
+        masterLevel = max(mixer.takeMasterPeak(), masterLevel * 0.72)
     }
 }
