@@ -48,6 +48,10 @@ func usage() -> Never {
       tapproof devices
           オーディオデバイスを一覧表示
 
+      tapproof mix <PID または アプリ名> <秒数>
+          指定アプリの音を Mixer 経由で Tapdeck 仮想デバイスへ送る
+          （検証は別途 ffmpeg -f avfoundation -i ":0" で録音する）
+
       tapproof loopback <秒数> [出力.wav]
           Tapdeck 仮想デバイスの出力側に 440Hz を流し込み、
           同じデバイスの入力側から読み返せるか検証する
@@ -318,6 +322,47 @@ func runLoopback(seconds: Double, output: URL) throws {
     Log.line("✅ 出力側に流した音を入力側から読み返せました。")
 }
 
+
+// MARK: - mix: ミキサーの検証
+
+func runMix(target: String, seconds: Double) throws {
+    guard let device = try AudioDevice.tapdeck() else {
+        print("Tapdeck 仮想デバイスが見つかりません。"); exit(1)
+    }
+    let process: AudioProcess?
+    if let pid = pid_t(target) { process = try AudioProcess.find(pid: pid) }
+    else { process = try AudioProcess.find(matching: target) }
+    guard let source = process else {
+        print("「\(target)」に一致するプロセスが見つかりません。"); exit(1)
+    }
+
+    let mixer = Mixer()
+    let entry = mixer.addApplication(source)
+    print("ソース   : \(source.name) (PID \(source.pid))")
+    print("出力先   : \(device.name) — \(Int(device.sampleRate)) Hz")
+
+    try mixer.start(to: device)
+    print("ソース形式: \(entry.sourceFormatDescription)")
+    print("送出中   : \(seconds) 秒 …")
+
+    // 1秒ごとにソース側と出力側のピークを出して、どこで切れているかを見る。
+    let steps = max(1, Int(seconds))
+    for step in 1...steps {
+        Thread.sleep(forTimeInterval: 1)
+        let sourcePeak = entry.ring.takePeak()
+        let masterPeak = mixer.takeMasterPeak()
+        print(String(format: "  %2d秒  ソース %@   出力 %@   枯渇 %d  溢れ %d  滞留 %d frames",
+                     step, db(Double(sourcePeak)), db(Double(masterPeak)),
+                     entry.ring.underruns, entry.ring.overruns, entry.ring.fill))
+        if let tap = entry.tapForDiagnostics {
+            print("         Tap の時刻飛び: \(tap.discontinuityCount) 回")
+        }
+    }
+
+    mixer.stop()
+    print("停止しました。")
+}
+
 // MARK: - entry
 
 setvbuf(stdout, nil, _IOLBF, 0)
@@ -357,6 +402,10 @@ do {
                       label: "\(target.name) (PID \(target.pid))",
                       seconds: seconds,
                       output: out)
+
+    case "mix":
+        guard args.count >= 3, let seconds = Double(args[2]) else { usage() }
+        try runMix(target: args[1], seconds: seconds)
 
     case "loopback":
         guard args.count >= 2, let seconds = Double(args[1]) else { usage() }

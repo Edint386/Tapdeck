@@ -19,6 +19,9 @@ final class AudioEngineModel: ObservableObject {
     @Published private(set) var receivedSamples = 0
     @Published private(set) var verdict: Verdict = .unknown
     @Published private(set) var capturedFile: URL?
+    @Published private(set) var isMonitoring = false
+    @Published private(set) var monitorStatus = ""
+    @Published private(set) var monitorPeakDB: Double = -120
 
     enum Verdict {
         case unknown, passed, failed
@@ -138,6 +141,54 @@ final class AudioEngineModel: ObservableObject {
         case .authorized:    return true
         case .notDetermined: return await AVCaptureDevice.requestAccess(for: .audio)
         default:             return false
+        }
+    }
+
+    // MARK: - 入力のモニタ録音
+
+    /// 仮想デバイスの入力側をそのまま録音する。
+    /// ミキサーが送出している内容を、外部ツールを介さずに確かめるための機能。
+    /// （ffmpeg の avfoundation 経由の録音は取りこぼしがあり、測定に使えない）
+    static var monitorURL: URL {
+        captureURL.deletingLastPathComponent().appendingPathComponent("monitor.wav")
+    }
+
+    func recordInput(seconds: Double = 4) async {
+        guard !isMonitoring, !isTesting else { return }
+        guard let device = tapdeck else {
+            monitorStatus = "Tapdeck 仮想デバイスがありません"
+            return
+        }
+        guard await ensureMicrophoneAccess() else {
+            monitorStatus = "マイクの使用が許可されていません"
+            return
+        }
+
+        isMonitoring = true
+        monitorPeakDB = -120
+        defer { isMonitoring = false }
+
+        let monitorMeter = LevelAccumulator()
+        let url = Self.monitorURL
+        try? FileManager.default.removeItem(at: url)
+        monitorMeter.beginWriting(to: url)
+
+        do {
+            let input = try DeviceInput(device: device)
+            try input.start { buffer in monitorMeter.accumulate(buffer) }
+            monitorStatus = "\(device.name) の入力を録音中 …"
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            input.stop()
+            monitorMeter.finishWriting()
+
+            let (peak, _, count) = monitorMeter.snapshot()
+            monitorPeakDB = peak > 0 ? 20 * log10(Double(peak)) : -120
+            monitorStatus = count > 0
+                ? "録音しました（\(count) サンプル、ピーク \(String(format: "%.1f", monitorPeakDB)) dB）"
+                : "何も届きませんでした"
+        } catch {
+            monitorMeter.finishWriting()
+            monitorStatus = "録音に失敗: \(error.localizedDescription)"
         }
     }
 

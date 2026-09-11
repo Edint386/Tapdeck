@@ -39,7 +39,15 @@ final class ProcessTap {
 
     // MARK: - 開始
 
+    /// - Parameter clock: 集約デバイスのクロック源に使うデバイス。
+    ///   省略すると既定の出力デバイス。
+    ///
+    ///   ミキサーのように出力先が決まっている場合は、**出力先と同じデバイスを
+    ///   指定すること**。クロックが揃うのでサンプルレート変換が不要になり、
+    ///   ドリフトも起きない。別クロックのまま変換で辻褄を合わせると、
+    ///   IOバッファ境界（512フレーム単位）で位相が飛ぶ。
     func start(mode: Mode,
+               clock: AudioDevice? = nil,
                mute: CATapMuteBehavior = .unmuted,
                onAudio: @escaping (AVAudioPCMBuffer) -> Void) throws {
         guard !isRunning else { return }
@@ -49,7 +57,7 @@ final class ProcessTap {
             try createTap(mode: mode, mute: mute)
             // 集約デバイスを先に作る。実フォーマットは Tap ではなく
             // 集約デバイスから読む必要があるため（下の resolveFormat 参照）。
-            try createAggregateDevice()
+            try createAggregateDevice(clockUID: clock?.uid)
             let fmt = try resolveFormat()
             try attachIOProc(format: fmt)
             isRunning = true
@@ -118,6 +126,11 @@ final class ProcessTap {
     /// Tap の申告レートと集約デバイスの実レートが食い違った場合の記録。
     private(set) var sampleRateCorrection: (declared: Float64, actual: Float64)?
 
+    /// IOProc に渡されるサンプル時刻が連続していなかった回数。
+    /// ここが増えるなら、音が飛ぶ原因はミキサーより手前にある。
+    private(set) var discontinuityCount = 0
+    private var lastEndSampleTime: Float64?
+
     /// Tap が実際に吐く形式（インターリーブ）。デバッグ表示用。
     private(set) var rawFormat: AVAudioFormat?
 
@@ -147,11 +160,11 @@ final class ProcessTap {
 
     /// Tap を含む private な集約デバイスを作る。
     /// クロック源が要るので、既定の出力デバイスをサブデバイスとして必ず含める。
-    private func createAggregateDevice() throws {
+    private func createAggregateDevice(clockUID: String? = nil) throws {
         guard let tapUID = AudioObjectID(tapID).readString(kAudioTapPropertyUID) else {
             throw CoreAudioError.missing("Tap の UID")
         }
-        let outputUID = try defaultOutputDeviceUID()
+        let outputUID = try clockUID ?? defaultOutputDeviceUID()
 
         let description: [String: Any] = [
             kAudioAggregateDeviceNameKey: "Tapdeck Capture",
@@ -179,11 +192,21 @@ final class ProcessTap {
     private func attachIOProc(format rawFmt: AVAudioFormat) throws {
         try ca("IOProc の作成") {
             AudioDeviceCreateIOProcIDWithBlock(&ioProcID, aggregateID, queue) {
-                [weak self] _, inInputData, _, _, _ in
+                [weak self] _, inInputData, inInputTime, _, _ in
                 guard let self, let handler = self.handler else { return }
                 guard let raw = AVAudioPCMBuffer(pcmFormat: rawFmt,
                                                  bufferListNoCopy: inInputData),
                       let buffer = self.normalize(raw) else { return }
+
+                // サンプル時刻の連続性を確かめる。前回の終端と今回の始端が
+                // 一致しなければ、Core Audio 側で既に音が飛んでいる。
+                let start = inInputTime.pointee.mSampleTime
+                if let previousEnd = self.lastEndSampleTime,
+                   abs(start - previousEnd) > 0.5 {
+                    self.discontinuityCount += 1
+                }
+                self.lastEndSampleTime = start + Float64(buffer.frameLength)
+
                 handler(buffer)
             }
         }
@@ -209,5 +232,6 @@ final class ProcessTap {
         }
         handler = nil
         isRunning = false
+        lastEndSampleTime = nil
     }
 }

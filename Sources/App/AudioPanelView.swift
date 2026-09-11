@@ -99,6 +99,23 @@ struct AudioPanelView: View {
                 .font(.caption)
             }
 
+            Divider().padding(.vertical, 2)
+
+            HStack(spacing: 10) {
+                Button {
+                    Task { await model.recordInput() }
+                } label: {
+                    Label(model.isMonitoring ? "録音中 …" : "入力をモニタ録音",
+                          systemImage: "waveform.badge.mic")
+                }
+                .disabled(model.isMonitoring || model.isTesting || model.tapdeck == nil)
+                if model.isMonitoring { ProgressView().controlSize(.small) }
+            }
+            if !model.monitorStatus.isEmpty {
+                Text(model.monitorStatus).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             HStack(spacing: 6) {
                 switch model.verdict {
                 case .passed: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
