@@ -424,11 +424,17 @@ do {
                 print("  \(device.name)  (\(device.uid), in \(device.inputChannels)ch / out \(device.outputChannels)ch)")
             }
         } else {
+            // Keep each device's UID stable across edits. Apps such as Zoom and
+            // OBS remember the chosen device by UID, so renumbering by position
+            // would silently move them onto a different device when one in the
+            // middle is removed.
+            let existing = VirtualDeviceConfiguration.load().devices
             let names = Array(args.dropFirst())
-            let devices = names.enumerated().map { index, name in
-                VirtualDeviceConfiguration.Device(
-                    uid: index == 0 ? "TapdeckDevice" : "TapdeckDevice-\(index)",
-                    name: name)
+            let devices = names.map { name -> VirtualDeviceConfiguration.Device in
+                if let match = existing.first(where: { $0.name == name }) {
+                    return match
+                }
+                return VirtualDeviceConfiguration.Device(name: name)
             }
             try VirtualDeviceConfiguration(devices: devices).save()
             print("Sent \(devices.count) device(s).")
