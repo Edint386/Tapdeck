@@ -40,6 +40,15 @@
 #define kManufacturerName   "Tapdeck"
 #define kConfigurationPath  "/Library/Preferences/Audio/Tapdeck/Devices.plist"
 
+/// Custom property the app uses to hand us the device list.
+///
+/// A file would be simpler, but the plug-in runs inside
+/// com.apple.audio.Core-Audio-Driver-Service.helper, which is sandboxed so
+/// tightly that it cannot read the paths an unprivileged app can write.
+/// Core Audio custom properties travel through the HAL itself, so no file
+/// system access is involved on either side.
+#define kTapdeckProperty_DeviceList ((AudioObjectPropertySelector)'tpdv')
+
 #define kMaxDevices         8
 #define kMaxChannels        16
 #define kDefaultChannels    2
@@ -185,7 +194,53 @@ static void CopyCFString(CFStringRef string, char* buffer, size_t capacity)
     CFStringGetCString(string, buffer, (CFIndex)capacity, kCFStringEncodingUTF8);
 }
 
-/// 設定ファイルを読む。無ければ既定の1台を返す（初回インストール直後など）。
+/// Interpret an array of device descriptions.
+/// Each element is a dictionary with UID, Name and Channels.
+static UInt32 ParseDeviceSpecs(CFArrayRef array, TapdeckDeviceSpec* specs, UInt32 capacity)
+{
+    UInt32 count = 0;
+    if (array == NULL || CFGetTypeID(array) != CFArrayGetTypeID()) return 0;
+
+    CFIndex total = CFArrayGetCount(array);
+    for (CFIndex i = 0; i < total && count < capacity; ++i) {
+        CFDictionaryRef entry = (CFDictionaryRef)CFArrayGetValueAtIndex(array, i);
+        if (entry == NULL || CFGetTypeID(entry) != CFDictionaryGetTypeID()) continue;
+
+        TapdeckDeviceSpec spec;
+        memset(&spec, 0, sizeof(spec));
+        CopyCFString(CFDictionaryGetValue(entry, CFSTR("UID")), spec.uid, sizeof(spec.uid));
+        CopyCFString(CFDictionaryGetValue(entry, CFSTR("Name")), spec.name, sizeof(spec.name));
+
+        spec.channelCount = kDefaultChannels;
+        CFNumberRef channels = CFDictionaryGetValue(entry, CFSTR("Channels"));
+        if (channels != NULL && CFGetTypeID(channels) == CFNumberGetTypeID()) {
+            int value = kDefaultChannels;
+            CFNumberGetValue(channels, kCFNumberIntType, &value);
+            if (value < 1) value = 1;
+            if (value > kMaxChannels) value = kMaxChannels;
+            spec.channelCount = (UInt32)value;
+        }
+
+        if (spec.uid[0] == '\0') continue;
+        if (spec.name[0] == '\0') strlcpy(spec.name, spec.uid, sizeof(spec.name));
+        specs[count++] = spec;
+    }
+    return count;
+}
+
+/// Fall back to a single device so something exists before the app connects.
+static UInt32 DefaultDeviceSpecs(TapdeckDeviceSpec* specs)
+{
+    memset(&specs[0], 0, sizeof(TapdeckDeviceSpec));
+    strlcpy(specs[0].uid,  "TapdeckDevice", sizeof(specs[0].uid));
+    strlcpy(specs[0].name, "Tapdeck",       sizeof(specs[0].name));
+    specs[0].channelCount = kDefaultChannels;
+    return 1;
+}
+
+/// Read the configuration file, if this process is allowed to see it.
+/// Kept as a best-effort fallback; the app normally pushes the list through
+/// the custom property instead.
 static UInt32 ReadConfiguration(TapdeckDeviceSpec* specs, UInt32 capacity)
 {
     UInt32 count = 0;
@@ -198,54 +253,18 @@ static UInt32 ReadConfiguration(TapdeckDeviceSpec* specs, UInt32 capacity)
             CFPropertyListRef plist = CFPropertyListCreateWithStream(
                 NULL, stream, 0, kCFPropertyListImmutable, NULL, NULL);
             CFReadStreamClose(stream);
-
             if (plist != NULL) {
-                if (CFGetTypeID(plist) == CFArrayGetTypeID()) {
-                    CFArrayRef array = (CFArrayRef)plist;
-                    CFIndex total = CFArrayGetCount(array);
-                    for (CFIndex i = 0; i < total && count < capacity; ++i) {
-                        CFDictionaryRef entry = (CFDictionaryRef)CFArrayGetValueAtIndex(array, i);
-                        if (entry == NULL || CFGetTypeID(entry) != CFDictionaryGetTypeID()) continue;
-
-                        TapdeckDeviceSpec spec;
-                        memset(&spec, 0, sizeof(spec));
-                        CopyCFString(CFDictionaryGetValue(entry, CFSTR("UID")),
-                                     spec.uid, sizeof(spec.uid));
-                        CopyCFString(CFDictionaryGetValue(entry, CFSTR("Name")),
-                                     spec.name, sizeof(spec.name));
-
-                        spec.channelCount = kDefaultChannels;
-                        CFNumberRef channels = CFDictionaryGetValue(entry, CFSTR("Channels"));
-                        if (channels != NULL && CFGetTypeID(channels) == CFNumberGetTypeID()) {
-                            int value = kDefaultChannels;
-                            CFNumberGetValue(channels, kCFNumberIntType, &value);
-                            if (value < 1) value = 1;
-                            if (value > kMaxChannels) value = kMaxChannels;
-                            spec.channelCount = (UInt32)value;
-                        }
-
-                        if (spec.uid[0] == '\0') continue;
-                        if (spec.name[0] == '\0') {
-                            strlcpy(spec.name, spec.uid, sizeof(spec.name));
-                        }
-                        specs[count++] = spec;
-                    }
-                }
+                count = ParseDeviceSpecs((CFArrayRef)plist, specs, capacity);
                 CFRelease(plist);
             }
+        } else {
+            TAPLOG("configuration file not readable from this process");
         }
         if (stream != NULL) CFRelease(stream);
         CFRelease(url);
     }
 
-    if (count == 0) {
-        // 設定が無いときの既定。v0.1 と同じ1台。
-        memset(&specs[0], 0, sizeof(TapdeckDeviceSpec));
-        strlcpy(specs[0].uid,  "TapdeckDevice", sizeof(specs[0].uid));
-        strlcpy(specs[0].name, "Tapdeck",       sizeof(specs[0].name));
-        specs[0].channelCount = kDefaultChannels;
-        count = 1;
-    }
+    if (count == 0) count = DefaultDeviceSpecs(specs);
     return count;
 }
 
@@ -383,6 +402,7 @@ static Boolean PlugInHasProperty(const AudioObjectPropertyAddress* address)
         case kAudioPlugInPropertyTranslateUIDToDevice:
         case kAudioPlugInPropertyResourceBundle:
         case kAudioObjectPropertyCustomPropertyInfoList:
+        case kTapdeckProperty_DeviceList:
             return true;
         default:
             return false;
@@ -409,10 +429,41 @@ static OSStatus PlugInGetPropertyDataSize(const AudioObjectPropertyAddress* addr
             UnlockState();
             return 0;
         case kAudioObjectPropertyCustomPropertyInfoList:
-            *outDataSize = 0; return 0;
+            *outDataSize = sizeof(AudioServerPlugInCustomPropertyInfo); return 0;
+        case kTapdeckProperty_DeviceList:
+            *outDataSize = sizeof(CFPropertyListRef); return 0;
         default:
             return kAudioHardwareUnknownPropertyError;
     }
+}
+
+/// Build the current device list as a property list, so the app can read back
+/// what the driver actually publishes.
+static CFArrayRef CopyPublishedDeviceList(void)
+{
+    CFMutableArrayRef array = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
+    if (array == NULL) return NULL;
+
+    LockState();
+    for (UInt32 i = 0; i < kMaxDevices; ++i) {
+        if (!gDevices[i].isPublished) continue;
+        CFStringRef uid = CFStringCreateWithCString(NULL, gDevices[i].uid, kCFStringEncodingUTF8);
+        CFStringRef name = CFStringCreateWithCString(NULL, gDevices[i].name, kCFStringEncodingUTF8);
+        int channels = (int)gDevices[i].channelCount;
+        CFNumberRef channelCount = CFNumberCreate(NULL, kCFNumberIntType, &channels);
+
+        const void* keys[]   = { CFSTR("UID"), CFSTR("Name"), CFSTR("Channels") };
+        const void* values[] = { uid, name, channelCount };
+        CFDictionaryRef entry = CFDictionaryCreate(NULL, keys, values, 3,
+                                                   &kCFTypeDictionaryKeyCallBacks,
+                                                   &kCFTypeDictionaryValueCallBacks);
+        if (entry != NULL) { CFArrayAppendValue(array, entry); CFRelease(entry); }
+        if (uid != NULL) CFRelease(uid);
+        if (name != NULL) CFRelease(name);
+        if (channelCount != NULL) CFRelease(channelCount);
+    }
+    UnlockState();
+    return array;
 }
 
 static OSStatus PlugInGetPropertyData(const AudioObjectPropertyAddress* address,
@@ -483,8 +534,24 @@ static OSStatus PlugInGetPropertyData(const AudioObjectPropertyAddress* address,
             CFRetain(*((CFStringRef*)outData));
             *outDataSize = sizeof(CFStringRef); return 0;
 
-        case kAudioObjectPropertyCustomPropertyInfoList:
-            *outDataSize = 0; return 0;
+        case kAudioObjectPropertyCustomPropertyInfoList: {
+            if (inDataSize < sizeof(AudioServerPlugInCustomPropertyInfo)) {
+                *outDataSize = 0; return 0;
+            }
+            AudioServerPlugInCustomPropertyInfo* info =
+                (AudioServerPlugInCustomPropertyInfo*)outData;
+            info->mSelector          = kTapdeckProperty_DeviceList;
+            info->mPropertyDataType  = kAudioServerPlugInCustomPropertyDataTypeCFPropertyList;
+            info->mQualifierDataType = kAudioServerPlugInCustomPropertyDataTypeNone;
+            *outDataSize = sizeof(AudioServerPlugInCustomPropertyInfo);
+            return 0;
+        }
+
+        case kTapdeckProperty_DeviceList:
+            if (inDataSize < sizeof(CFPropertyListRef)) return kAudioHardwareBadPropertySizeError;
+            *((CFPropertyListRef*)outData) = CopyPublishedDeviceList();
+            *outDataSize = sizeof(CFPropertyListRef);
+            return 0;
 
         default:
             return kAudioHardwareUnknownPropertyError;
@@ -888,6 +955,11 @@ static OSStatus Tapdeck_IsPropertySettable(AudioServerPlugInDriverRef inDriver,
     (void)inDriver; (void)inClientProcessID;
     if (inAddress == NULL || outIsSettable == NULL) return kAudioHardwareIllegalOperationError;
 
+    if (inObjectID == kObjectID_PlugIn) {
+        *outIsSettable = (inAddress->mSelector == kTapdeckProperty_DeviceList);
+        return 0;
+    }
+
     UInt32 index = 0;
     LockState();
     int kind = ResolveObject(inObjectID, &index);
@@ -971,6 +1043,28 @@ static OSStatus Tapdeck_SetPropertyData(AudioServerPlugInDriverRef inDriver,
 {
     (void)inDriver; (void)inClientProcessID; (void)inQualifierDataSize; (void)inQualifierData;
     if (inAddress == NULL || inData == NULL) return kAudioHardwareIllegalOperationError;
+
+    // The app pushes the device list here. This is the primary configuration
+    // path; the file on disk is only a fallback for the initial load.
+    if (inObjectID == kObjectID_PlugIn) {
+        if (inAddress->mSelector != kTapdeckProperty_DeviceList) {
+            return kAudioHardwareUnknownPropertyError;
+        }
+        if (inDataSize != sizeof(CFPropertyListRef)) return kAudioHardwareBadPropertySizeError;
+
+        CFArrayRef array = (CFArrayRef)(*((const CFPropertyListRef*)inData));
+        TapdeckDeviceSpec specs[kMaxDevices];
+        UInt32 specCount = ParseDeviceSpecs(array, specs, kMaxDevices);
+        if (specCount == 0) specCount = DefaultDeviceSpecs(specs);
+
+        LockState();
+        Boolean changed = ApplyConfigurationLocked(specs, specCount);
+        UnlockState();
+
+        TAPLOG("device list set by app: %u requested, changed=%d", specCount, (int)changed);
+        if (changed) NotifyDeviceListChanged();
+        return 0;
+    }
 
     UInt32 index = 0;
     LockState();

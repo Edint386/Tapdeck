@@ -84,11 +84,11 @@ final class AudioEngineModel: ObservableObject {
     private func commitVirtualDevices() {
         do {
             try VirtualDeviceConfiguration(devices: virtualDevices).save()
-            virtualDeviceStatus = "保存しました。数秒で反映されます。"
-            // ドライバは巡回で拾うので、少し待ってから一覧を取り直す。
+            virtualDeviceStatus = "保存しました"
+            // The driver applies it immediately, but the HAL needs a moment to
+            // republish the device list to clients.
             Task { @MainActor in
-                try? await Task.sleep(nanoseconds:
-                    UInt64(VirtualDeviceConfiguration.propagationDelay * 1_000_000_000))
+                try? await Task.sleep(nanoseconds: 700_000_000)
                 refresh()
                 virtualDeviceStatus = ""
             }

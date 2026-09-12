@@ -1,3 +1,4 @@
+import CoreAudio
 import Foundation
 
 /// ドライバが公開する仮想デバイスの一覧。
@@ -70,23 +71,33 @@ struct VirtualDeviceConfiguration {
     enum WriteError: LocalizedError {
         case cannotCreateDirectory(String)
         case cannotWrite(String)
+        case driverUnavailable
+        case rejected(OSStatus)
 
         var errorDescription: String? {
             switch self {
             case .cannotCreateDirectory(let detail):
-                return "設定の置き場所を作れませんでした: \(detail)"
+                return "Could not create the configuration directory: \(detail)"
             case .cannotWrite(let detail):
-                return "設定を書き込めませんでした: \(detail)"
+                return "Could not write the configuration: \(detail)"
+            case .driverUnavailable:
+                return "The Tapdeck driver is not installed. Run: sudo ./install-driver.sh"
+            case .rejected(let status):
+                return "The driver rejected the device list (OSStatus \(status))"
             }
         }
     }
 
     func save() throws {
-        let raw = devices.map { device -> [String: Any] in
-            ["UID": device.uid, "Name": device.name, "Channels": device.channelCount]
-        }
-        try Self.write(raw: raw)
+        let raw = propertyListRepresentation
         UserDefaults.standard.set(raw, forKey: Self.mirrorKey)
+
+        // Hand the list to the driver first — that is what actually takes effect.
+        try push()
+
+        // Keep a copy on disk as well. The driver cannot read it from its
+        // sandbox today, but it costs nothing and documents the current state.
+        try? Self.write(raw: raw)
     }
 
     private static func write(raw: [[String: Any]]) throws {
@@ -106,6 +117,58 @@ struct VirtualDeviceConfiguration {
         }
     }
 
-    /// ドライバは2秒ごとに設定を読み直す。書いてから反映されるまでの目安。
-    static let propagationDelay: TimeInterval = 3
+    // MARK: - Handing the list to the driver
+
+    /// Bundle identifier of the HAL plug-in, used to locate its object.
+    static let driverBundleID = "dev.kosuke.Tapdeck.driver"
+
+    /// Custom property the driver exposes to receive the device list ('tpdv').
+    static let deviceListSelector: AudioObjectPropertySelector = 0x74706476
+
+    /// Locate the plug-in object that our driver registered with the HAL.
+    static func plugInObjectID() throws -> AudioObjectID {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyTranslateBundleIDToPlugIn,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+
+        var bundleID = driverBundleID as CFString
+        var objectID = AudioObjectID(kAudioObjectUnknown)
+        var size = UInt32(MemoryLayout<AudioObjectID>.size)
+
+        let status = withUnsafeMutablePointer(to: &bundleID) { qualifier in
+            AudioObjectGetPropertyData(AudioObjectID.system, &address,
+                                       UInt32(MemoryLayout<CFString>.size), qualifier,
+                                       &size, &objectID)
+        }
+        guard status == noErr, objectID != AudioObjectID(kAudioObjectUnknown) else {
+            throw WriteError.driverUnavailable
+        }
+        return objectID
+    }
+
+    /// Push the list straight to the driver through the HAL.
+    ///
+    /// The driver runs inside a heavily sandboxed helper process that cannot
+    /// read files an unprivileged app is able to write, so a configuration file
+    /// alone never reaches it. A custom property travels through Core Audio
+    /// itself and takes effect immediately.
+    func push() throws {
+        let plugIn = try Self.plugInObjectID()
+        var address = AudioObjectPropertyAddress(
+            mSelector: Self.deviceListSelector,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+
+        var payload: CFPropertyList = propertyListRepresentation as CFArray
+        let status = withUnsafeMutablePointer(to: &payload) { pointer in
+            AudioObjectSetPropertyData(plugIn, &address, 0, nil,
+                                       UInt32(MemoryLayout<CFPropertyList>.size), pointer)
+        }
+        guard status == noErr else { throw WriteError.rejected(status) }
+    }
+
+    var propertyListRepresentation: [[String: Any]] {
+        devices.map { ["UID": $0.uid, "Name": $0.name, "Channels": $0.channelCount] }
+    }
 }

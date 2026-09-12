@@ -48,6 +48,9 @@ func usage() -> Never {
       tapproof devices
           オーディオデバイスを一覧表示
 
+      tapproof virtual [名前 ...]
+          仮想デバイスの一覧表示。名前を並べると、その構成に置き換える。
+
       tapproof mix <PID または アプリ名> <秒数>
           指定アプリの音を Mixer 経由で Tapdeck 仮想デバイスへ送る
           （検証は別途 ffmpeg -f avfoundation -i ":0" で録音する）
@@ -407,6 +410,35 @@ do {
     case "mix":
         guard args.count >= 3, let seconds = Double(args[2]) else { usage() }
         try runMix(target: args[1], seconds: seconds)
+
+    case "virtual":
+        if args.count == 1 {
+            let configuration = VirtualDeviceConfiguration.load()
+            print("設定上の仮想デバイス:")
+            for device in configuration.devices {
+                print("  \(device.name)  (\(device.uid), \(device.channelCount)ch)")
+            }
+            let live = try AudioDevice.all().filter { $0.uid.hasPrefix("TapdeckDevice") }
+            print("実際に見えている仮想デバイス:")
+            for device in live {
+                print("  \(device.name)  (\(device.uid), 入力\(device.inputChannels)ch/出力\(device.outputChannels)ch)")
+            }
+        } else {
+            let names = Array(args.dropFirst())
+            let devices = names.enumerated().map { index, name in
+                VirtualDeviceConfiguration.Device(
+                    uid: index == 0 ? "TapdeckDevice" : "TapdeckDevice-\(index)",
+                    name: name)
+            }
+            try VirtualDeviceConfiguration(devices: devices).save()
+            print("\(devices.count) 台を送信しました。")
+            Thread.sleep(forTimeInterval: 1)
+            let live = try AudioDevice.all().filter { $0.uid.hasPrefix("TapdeckDevice") }
+            print("実際に見えている仮想デバイス:")
+            for device in live {
+                print("  \(device.name)  (\(device.uid), 入力\(device.inputChannels)ch/出力\(device.outputChannels)ch)")
+            }
+        }
 
     case "loopback":
         guard args.count >= 2, let seconds = Double(args[1]) else { usage() }
