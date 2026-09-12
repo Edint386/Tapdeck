@@ -1,32 +1,32 @@
 #!/bin/bash
-# 安定したコード署名IDを1つ作ってキーチェーンに入れる。
+# Create one stable code signing identity and put it in the keychain.
 #
-# なぜ必要か:
-#   ad-hoc 署名 (codesign -s -) はビルドのたびに署名が変わる。macOS から見ると
-#   毎回「別のアプリ」なので、マイク・画面収録・オーディオ録音の許可が
-#   その都度リセットされる。固定の証明書で署名すれば許可が維持される。
+# Why this is needed: an ad-hoc signature (codesign -s -) changes on every
+# build. macOS then treats each build as a different application and resets the
+# permissions it was granted — microphone, screen recording, audio capture.
+# Signing with a fixed certificate keeps them.
 #
-# 配布には Apple Developer Program の Developer ID と公証が必要。
-# これは「自分の Mac で使う」ためのもの。
+# Distribution needs a Developer ID from the Apple Developer Program plus
+# notarisation. This is for running on your own Mac.
 set -euo pipefail
 
 NAME="Tapdeck Local"
 KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
 
 if security find-certificate -c "$NAME" >/dev/null 2>&1; then
-  echo "✓ 「$NAME」は既にキーチェーンにあります"
+  echo "\"$NAME\" is already in the keychain"
   exit 0
 fi
 
-# macOS 同梱の LibreSSL を使う。Homebrew の OpenSSL 3 が作る PKCS#12 は
-# 既定のアルゴリズムが新しすぎて、security コマンドが読み込めない
-# （MAC verification failed になる）。
+# Use the LibreSSL that ships with macOS. PKCS#12 bundles from Homebrew's
+# OpenSSL 3 use newer default algorithms that the security command cannot read
+# (it fails with "MAC verification failed").
 OPENSSL=/usr/bin/openssl
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-echo "→ 自己署名の証明書を作成中 …"
+echo "-> Creating a self-signed certificate…"
 "$OPENSSL" req -x509 -newkey rsa:2048 -nodes -days 3650 \
   -keyout "$WORK/key.pem" -out "$WORK/cert.pem" \
   -subj "/CN=$NAME/O=Tapdeck" \
@@ -38,8 +38,8 @@ echo "→ 自己署名の証明書を作成中 …"
   -inkey "$WORK/key.pem" -in "$WORK/cert.pem" \
   -name "$NAME" -passout pass:tapdeck 2>/dev/null
 
-echo "→ キーチェーンへ登録します（パスワードを聞かれたらログインパスワードを入れてください）"
+echo "-> Adding it to the keychain (enter your login password if asked)"
 security import "$WORK/bundle.p12" -k "$KEYCHAIN" -P tapdeck \
   -T /usr/bin/codesign -T /usr/bin/security -A
 
-echo "✓ 「$NAME」を登録しました。build.sh が自動でこれを使います。"
+echo "Added \"$NAME\". build.sh will pick it up automatically."

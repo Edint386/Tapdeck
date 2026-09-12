@@ -22,29 +22,30 @@ struct TapdeckApp: App {
     }
 }
 
-/// メニューバーの常駐項目を立ち上げる。
+/// Brings up the menu bar item.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppModels.shared.menuBar.install()
     }
 
-    /// ウインドウを閉じても終了しない。ミキサーは出しっぱなしで使うため。
+    /// Closing the window does not quit: a mixer is meant to be left running.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
 }
 
-/// ミキサー（＝エンジンの本体）、デバイス状態、画面収録（＝エンジンの利用者）。
+/// The mixer (the engine itself), device status, and screen recording (one of
+/// the engine's consumers).
 struct ContentView: View {
     var body: some View {
         TabView {
             MixerPanelView()
-                .tabItem { Label("ミキサー", systemImage: "slider.vertical.3") }
+                .tabItem { Label("Mixer", systemImage: "slider.vertical.3") }
             AudioPanelView()
-                .tabItem { Label("デバイス", systemImage: "waveform") }
+                .tabItem { Label("Devices", systemImage: "waveform") }
             RecorderPanelView()
-                .tabItem { Label("画面収録", systemImage: "record.circle") }
+                .tabItem { Label("Recording", systemImage: "record.circle") }
         }
         .frame(width: 536)
         .padding(.top, 6)

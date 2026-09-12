@@ -1,8 +1,8 @@
 import CoreAudio
 import Foundation
 
-// Core Audio の C API を Swift から扱うための最小限の下地。
-// AudioObjectGetPropertyData の呼び出しは定型が長いので、ここに集約する。
+// The minimum needed to drive Core Audio's C API from Swift.
+// Calls to AudioObjectGetPropertyData are verbose, so they are gathered here.
 
 enum CoreAudioError: LocalizedError {
     case status(String, OSStatus)
@@ -18,9 +18,9 @@ enum CoreAudioError: LocalizedError {
                     return s.isLetter || s.isNumber || s.isPunctuation ? s : "?"
                 }
             }
-            return "\(label) が失敗しました (OSStatus \(st) '\(String(chars))')"
+            return "\(label) failed (OSStatus \(st) '\(String(chars))')"
         case .missing(let what):
-            return "\(what) が見つかりません"
+            return "\(what) was not found"
         }
     }
 }
@@ -50,18 +50,18 @@ extension AudioObjectID {
     ) throws -> UInt32 {
         var addr = Self.address(selector, scope)
         var size: UInt32 = 0
-        try ca("プロパティサイズの取得") {
+        try ca("reading the property size") {
             AudioObjectGetPropertyDataSize(self, &addr, 0, nil, &size)
         }
         return size
     }
 
-    /// 固定長の値を1つ読む。
+    /// Read a single fixed-size value.
     func read<T>(
         _ selector: AudioObjectPropertySelector,
         scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal,
         as type: T.Type = T.self,
-        label: String = "プロパティの読み取り"
+        label: String = "reading a property"
     ) throws -> T {
         var addr = Self.address(selector, scope)
         var size = UInt32(MemoryLayout<T>.size)
@@ -71,12 +71,12 @@ extension AudioObjectID {
         return buf.pointee
     }
 
-    /// 可変長の配列を読む（AudioObjectID の一覧など）。
+    /// Read a variable-length array, such as a list of AudioObjectIDs.
     func readArray<T>(
         _ selector: AudioObjectPropertySelector,
         scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal,
         as type: T.Type = T.self,
-        label: String = "配列プロパティの読み取り"
+        label: String = "reading an array property"
     ) throws -> [T] {
         let size = try propertySize(selector, scope: scope)
         let count = Int(size) / MemoryLayout<T>.stride
@@ -93,7 +93,7 @@ extension AudioObjectID {
         return Array(buf.prefix(Int(mutableSize) / MemoryLayout<T>.stride))
     }
 
-    /// CFString で返るプロパティを読む。値が無い場合は nil。
+    /// Read a property that comes back as a CFString, or nil if absent.
     func readString(
         _ selector: AudioObjectPropertySelector,
         scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal
@@ -117,13 +117,14 @@ extension AudioObjectID {
     }
 }
 
-/// システムの既定出力デバイスの UID。集約デバイスのクロック源として必要。
+/// UID of the system default output device, needed as the clock for an
+/// aggregate device.
 func defaultOutputDeviceUID() throws -> String {
     let deviceID: AudioDeviceID = try AudioObjectID.system.read(
         kAudioHardwarePropertyDefaultOutputDevice,
-        label: "既定の出力デバイスの取得")
+        label: "reading the default output device")
     guard let uid = AudioObjectID(deviceID).readString(kAudioDevicePropertyDeviceUID) else {
-        throw CoreAudioError.missing("既定出力デバイスの UID")
+        throw CoreAudioError.missing("the default output device UID")
     }
     return uid
 }

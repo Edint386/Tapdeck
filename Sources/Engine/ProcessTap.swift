@@ -2,28 +2,30 @@ import AVFoundation
 import CoreAudio
 import Foundation
 
-/// Core Audio の Process Tap (macOS 14.2+) のラッパ。
+/// Wrapper around Core Audio's process tap API (macOS 14.2+).
 ///
-/// これが Loopback 相当を実現する上での中核。仮想オーディオドライバも
-/// カーネル拡張も使わずに、指定したアプリの音声だけを取り出せる。
+/// This is the heart of what makes a Loopback-style tool possible: it pulls out
+/// the audio of one chosen app, with no virtual audio driver and no kernel
+/// extension involved.
 ///
-/// 仕組み:
-///   1. CATapDescription で「どのプロセスの音が欲しいか」を宣言し Tap を作る
-///   2. Tap は単体では読めないので、Tap をサブデバイスとして含む
-///      「private な集約デバイス」を組み立てる
-///   3. その集約デバイスに IOProc を挿して音を受け取る
+/// How it works:
+///   1. Declare which processes are wanted with a CATapDescription, and create
+///      the tap.
+///   2. A tap cannot be read on its own, so build a private aggregate device
+///      that contains the tap as a sub-device.
+///   3. Attach an IOProc to that aggregate device to receive the audio.
 final class ProcessTap {
 
     enum Mode {
-        /// 指定したプロセスの音だけを取り出す。
+        /// Capture only the audio of the given processes.
         case include([AudioProcess])
-        /// 指定したプロセス以外の、システム全体の音を取り出す。
+        /// Capture all system audio except the given processes.
         case excluding([AudioProcess])
     }
 
-    /// ハンドラに渡されるバッファの形式。
-    /// Tap の生フォーマットはインターリーブだが、ここでは常に
-    /// 非インターリーブ Float32 に正規化して渡す（ミキサー側が扱いやすいため）。
+    /// Format of the buffers handed to the callback.
+    /// A tap's own format is interleaved, but buffers are always normalised to
+    /// non-interleaved Float32 here because that is what the mixer wants.
     private(set) var format: AVAudioFormat?
     private(set) var isRunning = false
 
@@ -37,15 +39,14 @@ final class ProcessTap {
 
     deinit { stop() }
 
-    // MARK: - 開始
+    // MARK: - Starting
 
-    /// - Parameter clock: 集約デバイスのクロック源に使うデバイス。
-    ///   省略すると既定の出力デバイス。
+    /// - Parameter clock: the device to clock the aggregate from. Defaults to
+    ///   the default output device.
     ///
-    ///   ミキサーのように出力先が決まっている場合は、**出力先と同じデバイスを
-    ///   指定すること**。クロックが揃うのでサンプルレート変換が不要になり、
-    ///   ドリフトも起きない。別クロックのまま変換で辻褄を合わせると、
-    ///   IOバッファ境界（512フレーム単位）で位相が飛ぶ。
+    ///   Note that pointing the clock at some other device stops the tap from
+    ///   hearing audio that is not flowing there — measured as complete
+    ///   silence — so this is left at the default in practice.
     func start(mode: Mode,
                clock: AudioDevice? = nil,
                mute: CATapMuteBehavior = .unmuted,
@@ -55,8 +56,8 @@ final class ProcessTap {
 
         do {
             try createTap(mode: mode, mute: mute)
-            // 集約デバイスを先に作る。実フォーマットは Tap ではなく
-            // 集約デバイスから読む必要があるため（下の resolveFormat 参照）。
+            // Create the aggregate first: the real format has to be read from
+            // it rather than from the tap. See resolveFormat below.
             try createAggregateDevice(clockUID: clock?.uid)
             let fmt = try resolveFormat()
             try attachIOProc(format: fmt)
@@ -81,27 +82,28 @@ final class ProcessTap {
         description.uuid = UUID()
         description.muteBehavior = mute
 
-        try ca("Process Tap の作成") {
+        try ca("creating the process tap") {
             AudioHardwareCreateProcessTap(description, &tapID)
         }
-        guard tapID != 0 else { throw CoreAudioError.missing("作成された Tap") }
+        guard tapID != 0 else { throw CoreAudioError.missing("the created tap") }
     }
 
     private func resolveFormat() throws -> AVAudioFormat {
         var asbd: AudioStreamBasicDescription = try AudioObjectID(tapID)
-            .read(kAudioTapPropertyFormat, label: "Tap のフォーマット取得")
+            .read(kAudioTapPropertyFormat, label: "reading the tap format")
 
-        // ここが落とし穴。IOProc に実際に流れてくるのは集約デバイスの入力ストリームで、
-        // 集約デバイスのクロックは主サブデバイス（＝既定の出力デバイス）に従う。
-        // そのため Tap が申告するサンプルレートと実レートが食い違うことがある。
+        // This is the trap. What actually reaches the IOProc is the aggregate
+        // device's input stream, and the aggregate follows the clock of its
+        // main sub-device — the default output device. So the rate the tap
+        // reports can disagree with the rate the audio arrives at.
         //
-        // 実測例: 内蔵スピーカーは 44100 Hz で動作しているのに
-        //         kAudioTapPropertyFormat は 48000 Hz と申告した。
-        //         これを信じると録音が 48000/44100 = 8.8% ピッチシフトする
-        //         （440 Hz の音が 479 Hz になる）。
+        // Measured: the built-in speakers ran at 44100 Hz while
+        // kAudioTapPropertyFormat reported 48000 Hz. Trusting the tap shifts
+        // every recording by 48000/44100 = 8.8%, turning a 440 Hz tone into
+        // 479 Hz.
         if let deviceRate: Float64 = try? AudioObjectID(aggregateID)
             .read(kAudioDevicePropertyNominalSampleRate,
-                  label: "集約デバイスのサンプルレート取得"),
+                  label: "reading the aggregate sample rate"),
            deviceRate > 0,
            abs(deviceRate - asbd.mSampleRate) > 1 {
             sampleRateCorrection = (declared: asbd.mSampleRate, actual: deviceRate)
@@ -109,7 +111,7 @@ final class ProcessTap {
         }
 
         guard let raw = AVAudioFormat(streamDescription: &asbd) else {
-            throw CoreAudioError.missing("Tap のフォーマット")
+            throw CoreAudioError.missing("the tap format")
         }
         rawFormat = raw
 
@@ -117,26 +119,26 @@ final class ProcessTap {
                                              sampleRate: raw.sampleRate,
                                              channels: raw.channelCount,
                                              interleaved: false) else {
-            throw CoreAudioError.missing("正規化後のフォーマット")
+            throw CoreAudioError.missing("the normalised format")
         }
         format = normalized
         return raw
     }
 
-    /// Tap の申告レートと集約デバイスの実レートが食い違った場合の記録。
+    /// Records a disagreement between the tap's reported rate and the real one.
     private(set) var sampleRateCorrection: (declared: Float64, actual: Float64)?
 
-    /// IOProc に渡されるサンプル時刻が連続していなかった回数。
-    /// ここが増えるなら、音が飛ぶ原因はミキサーより手前にある。
+    /// How often the sample times handed to the IOProc were discontinuous.
+    /// If this climbs, audio is being dropped before it reaches the mixer.
     private(set) var discontinuityCount = 0
     private var lastEndSampleTime: Float64?
 
-    /// Tap が実際に吐く形式（インターリーブ）。デバッグ表示用。
+    /// The format the tap actually produces (interleaved), for diagnostics.
     private(set) var rawFormat: AVAudioFormat?
 
-    /// インターリーブされたバッファをチャンネルごとに分離する。
-    /// Core Audio の Tap は必ずインターリーブで来るのに対し、AVAudioFile も
-    /// AVAudioEngine も非インターリーブを前提にしているため、ここで揃える。
+    /// Split an interleaved buffer into one plane per channel.
+    /// Taps always arrive interleaved while AVAudioFile and AVAudioEngine both
+    /// expect the opposite, so they are reconciled here.
     private func normalize(_ src: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
         guard let outFormat = format else { return nil }
         guard src.format.isInterleaved else { return src }
@@ -158,11 +160,12 @@ final class ProcessTap {
         return dst
     }
 
-    /// Tap を含む private な集約デバイスを作る。
-    /// クロック源が要るので、既定の出力デバイスをサブデバイスとして必ず含める。
+    /// Build a private aggregate device containing the tap.
+    /// It needs a clock, so the default output device is always included as a
+    /// sub-device.
     private func createAggregateDevice(clockUID: String? = nil) throws {
         guard let tapUID = AudioObjectID(tapID).readString(kAudioTapPropertyUID) else {
-            throw CoreAudioError.missing("Tap の UID")
+            throw CoreAudioError.missing("the tap UID")
         }
         let outputUID = try clockUID ?? defaultOutputDeviceUID()
 
@@ -184,13 +187,13 @@ final class ProcessTap {
             ],
         ]
 
-        try ca("集約デバイスの作成") {
+        try ca("creating the aggregate device") {
             AudioHardwareCreateAggregateDevice(description as CFDictionary, &aggregateID)
         }
     }
 
     private func attachIOProc(format rawFmt: AVAudioFormat) throws {
-        try ca("IOProc の作成") {
+        try ca("creating the IOProc") {
             AudioDeviceCreateIOProcIDWithBlock(&ioProcID, aggregateID, queue) {
                 [weak self] _, inInputData, inInputTime, _, _ in
                 guard let self, let handler = self.handler else { return }
@@ -198,8 +201,9 @@ final class ProcessTap {
                                                  bufferListNoCopy: inInputData),
                       let buffer = self.normalize(raw) else { return }
 
-                // サンプル時刻の連続性を確かめる。前回の終端と今回の始端が
-                // 一致しなければ、Core Audio 側で既に音が飛んでいる。
+                // Check the sample times run continuously. If this block does
+                // not start where the last one ended, audio was already
+                // dropped upstream of us.
                 let start = inInputTime.pointee.mSampleTime
                 if let previousEnd = self.lastEndSampleTime,
                    abs(start - previousEnd) > 0.5 {
@@ -210,10 +214,10 @@ final class ProcessTap {
                 handler(buffer)
             }
         }
-        try ca("集約デバイスの開始") { AudioDeviceStart(aggregateID, ioProcID) }
+        try ca("starting the aggregate device") { AudioDeviceStart(aggregateID, ioProcID) }
     }
 
-    // MARK: - 停止
+    // MARK: - Stopping
 
     func stop() {
         if let ioProcID, aggregateID != 0 {

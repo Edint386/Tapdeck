@@ -1,9 +1,10 @@
 import Foundation
 
-/// ミキサーの構成を次回起動へ持ち越すための保存形式。
+/// How a mixer configuration is stored so it survives to the next launch.
 ///
-/// アプリは再起動で PID が変わるので、同定はバンドルIDで行う。
-/// バンドルIDを持たないプロセス（コマンドラインツールなど）は保存しない。
+/// Applications get a new PID every launch, so they are identified by bundle
+/// identifier. Processes without one, such as command line tools, are not
+/// saved at all.
 struct MixerConfiguration: Codable {
 
     struct Source: Codable {
@@ -11,7 +12,7 @@ struct MixerConfiguration: Codable {
             case application, systemAudio, inputDevice
         }
         var kind: Kind
-        /// アプリならバンドルID、入力デバイスならデバイスUID。
+        /// Bundle identifier for an app, device UID for an input device.
         var identifier: String?
         var name: String
         var gain: Float
@@ -21,7 +22,7 @@ struct MixerConfiguration: Codable {
     var sources: [Source] = []
     var outputDeviceUID: String = "TapdeckDevice"
 
-    // MARK: - 保存と読み出し
+    // MARK: - Loading and saving
 
     private static let storageKey = "mixerConfiguration"
 
@@ -38,7 +39,7 @@ struct MixerConfiguration: Codable {
         UserDefaults.standard.set(data, forKey: Self.storageKey)
     }
 
-    // MARK: - エンジン側の型との変換
+    // MARK: - Conversion to and from the engine's types
 
     init() {}
 
@@ -51,7 +52,7 @@ struct MixerConfiguration: Codable {
                 return Source(kind: .application, identifier: bundleID, name: name,
                               gain: source.gain, isMuted: source.isMuted)
             case .systemAudio:
-                return Source(kind: .systemAudio, identifier: nil, name: "システム全体の音",
+                return Source(kind: .systemAudio, identifier: nil, name: "All system audio",
                               gain: source.gain, isMuted: source.isMuted)
             case .inputDevice(let uid, let name):
                 return Source(kind: .inputDevice, identifier: uid, name: name,
@@ -78,8 +79,8 @@ struct MixerConfiguration: Codable {
 }
 
 
-/// 名前を付けて保存したミキサー構成。
-/// 「会議用」「配信用」のように、用途ごとの組み合わせを切り替えるためのもの。
+/// A named mixer configuration, for switching between setups such as
+/// "Meetings" and "Streaming".
 struct MixerPreset: Codable, Identifiable {
     var id = UUID()
     var name: String

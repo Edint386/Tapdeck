@@ -3,22 +3,24 @@ import AppKit
 import CoreAudio
 import Foundation
 
-/// 複数の音源を合成して1つの出力デバイスへ流す。
+/// Combines several sources into one output device.
 ///
-/// Loopback でいう「仮想デバイスに複数ソースを束ねる」部分。
-/// 出力先を Tapdeck 仮想デバイスにすると、その入力側を Zoom や OBS が
-/// マイクとして選べる ＝「マイク＋コンピューターオーディオを共有」。
+/// This is the part Loopback calls bundling sources onto a virtual device.
+/// Point the output at a Tapdeck virtual device and Zoom or OBS can pick its
+/// input side as a microphone, which is how "share my mic and my computer
+/// audio" works.
 ///
-///     アプリ音声 (Process Tap) ┐
-///     システム全体             ├→ [変換] → [リングバッファ] → 加算 → 出力デバイス
-///     マイク / 外部入力        ┘
+///     app audio (process tap) ┐
+///     all system audio        ├→ [convert] → [ring buffer] → sum → output device
+///     microphone / interface  ┘
 final class Mixer: @unchecked Sendable {
 
-    /// ソースが何を指しているか。
+    /// What a source refers to.
     ///
-    /// 実体（AudioProcess / AudioDevice）は開始時に解決する。アプリは再起動で
-    /// PID が変わるため、同定はバンドルIDで行う。こうしないと設定を保存しても
-    /// 次回の起動で繋がらない。
+    /// The concrete AudioProcess or AudioDevice is resolved when the mixer
+    /// starts. Applications get a new PID every launch, so they are identified
+    /// by bundle identifier; without that, a saved configuration would fail to
+    /// reconnect next time.
     enum Target: Equatable {
         case application(bundleID: String?, name: String)
         case systemAudio
@@ -27,20 +29,21 @@ final class Mixer: @unchecked Sendable {
         var label: String {
             switch self {
             case .application(_, let name): return name
-            case .systemAudio:              return "システム全体の音"
+            case .systemAudio:              return "All system audio"
             case .inputDevice(_, let name): return name
             }
         }
 
         var kindLabel: String {
             switch self {
-            case .application: return "アプリ"
-            case .systemAudio: return "システム"
-            case .inputDevice: return "入力"
+            case .application: return "App"
+            case .systemAudio: return "System"
+            case .inputDevice: return "Input"
             }
         }
 
-        /// 保存できるか。バンドルIDを持たないプロセスは次回起動時に同定できない。
+        /// Whether this can be saved. A process with no bundle identifier
+        /// cannot be found again on the next launch.
         var isPersistable: Bool {
             switch self {
             case .application(let bundleID, _): return bundleID != nil
@@ -49,7 +52,7 @@ final class Mixer: @unchecked Sendable {
         }
     }
 
-    /// ミキサーに登録された音源1つ。
+    /// One source registered with the mixer.
     final class Source: Identifiable {
         let id = UUID()
         let target: Target
@@ -58,14 +61,14 @@ final class Mixer: @unchecked Sendable {
         var gain: Float = 1.0
         var isMuted = false
 
-        /// 対象が見つからず接続できていない状態。
-        /// アプリを終了していても行は残り、起動したら繋がる。
+        /// The target could not be found, so nothing is connected. The row
+        /// stays even while the app is closed, and attaches once it starts.
         private(set) var isAttached = false
         private(set) var detachReason: String?
 
         fileprivate var tap: ProcessTap?
 
-        /// 診断用。
+        /// For diagnostics.
         var tapForDiagnostics: ProcessTap? { tap }
         fileprivate var input: DeviceInput?
         fileprivate var converter: FormatConverter?
@@ -96,7 +99,7 @@ final class Mixer: @unchecked Sendable {
             formatDescription = "—"
         }
 
-        /// 音源から届いたバッファを、必要なら変換してリングバッファへ積む。
+        /// Take a buffer from the source, convert it if needed, and queue it.
         fileprivate func accept(_ buffer: AVAudioPCMBuffer) {
             if let converter {
                 guard let converted = converter.convert(buffer) else { return }
@@ -129,7 +132,7 @@ final class Mixer: @unchecked Sendable {
 
     deinit { stop() }
 
-    // MARK: - ソースの管理
+    // MARK: - Managing sources
 
     @discardableResult
     func add(_ target: Target) -> Source {
@@ -151,8 +154,8 @@ final class Mixer: @unchecked Sendable {
         source.stop()
     }
 
-    /// 並べ替え。SwiftUI の move(fromOffsets:toOffset:) は使わない
-    /// （エンジンが UI フレームワークに依存しないようにするため）。
+    /// Reorder. SwiftUI's move(fromOffsets:toOffset:) is deliberately avoided
+    /// so the engine does not depend on a UI framework.
     func move(from offsets: IndexSet, to destination: Int) {
         sourceLock.lock()
         defer { sourceLock.unlock() }
@@ -175,7 +178,8 @@ final class Mixer: @unchecked Sendable {
         all.forEach { $0.stop() }
     }
 
-    /// 未接続のソースを繋ぎ直す。対象アプリが後から起動した場合に使う。
+    /// Reconnect sources that are not attached, for when the target app
+    /// starts up later.
     @discardableResult
     func reattachDetached() -> Int {
         guard isRunning else { return 0 }
@@ -190,13 +194,13 @@ final class Mixer: @unchecked Sendable {
         return reattached
     }
 
-    // MARK: - 開始と停止
+    // MARK: - Starting and stopping
 
     func start(to device: AudioDevice) throws {
         guard !isRunning else { return }
         outputDevice = device
 
-        // 出力先を先に作る。各ソースの変換器を組むのに出力フォーマットが要るため。
+        // Build the output first: each source's converter needs its format.
         let deviceOutput = try DeviceOutput(device: device, channels: channelCount)
         targetFormat = deviceOutput.outputFormat
 
@@ -226,7 +230,8 @@ final class Mixer: @unchecked Sendable {
         targetFormat = nil
     }
 
-    /// ソースを実体に結びつける。対象が居なければ未接続のまま残す。
+    /// Bind a source to something concrete, leaving it detached if the target
+    /// is not present.
     private func attach(_ source: Source) throws {
         guard let targetFormat else { return }
         guard !source.isAttached else { return }
@@ -234,7 +239,7 @@ final class Mixer: @unchecked Sendable {
         switch source.target {
         case .application(let bundleID, let name):
             guard let process = try locateProcess(bundleID: bundleID, name: name) else {
-                source.markDetached("\(name) は起動していません")
+                source.markDetached("\(name) is not running")
                 return
             }
             let tap = ProcessTap()
@@ -245,8 +250,8 @@ final class Mixer: @unchecked Sendable {
             source.markAttached(sourceFormat: tap.format, targetFormat: targetFormat)
 
         case .systemAudio:
-            // 自分自身の出力は除外する。含めるとミキサーの出力がそのまま
-            // 入力に戻ってフィードバックループになる。
+            // Exclude ourselves. Including our own output would feed the mix
+            // straight back into the input and loop.
             let me = try? AudioProcess.find(pid: ProcessInfo.processInfo.processIdentifier)
             let tap = ProcessTap()
             try tap.start(mode: .excluding(me.map { [$0] } ?? [])) { [weak source] buffer in
@@ -257,7 +262,7 @@ final class Mixer: @unchecked Sendable {
 
         case .inputDevice(let uid, let name):
             guard let device = try AudioDevice.find(uid: uid) else {
-                source.markDetached("\(name) が見つかりません")
+                source.markDetached("\(name) was not found")
                 return
             }
             let input = try DeviceInput(device: device)
@@ -277,9 +282,9 @@ final class Mixer: @unchecked Sendable {
         return all.first { $0.name == name }
     }
 
-    // MARK: - 合成
+    // MARK: - Mixing
 
-    /// 出力デバイスのコールバックから呼ばれる。全ソースを加算する。
+    /// Called from the output device's callback. Sums every source.
     private func render(into channels: [UnsafeMutablePointer<Float>], frameCount: Int) {
         for channel in channels {
             for frame in 0..<frameCount { channel[frame] = 0 }
@@ -294,7 +299,7 @@ final class Mixer: @unchecked Sendable {
             source.ring.mixInto(channels, frameCount: frameCount, gain: gain)
         }
 
-        // クリッピング防止。加算結果が ±1 を超えると潰れる。
+        // Guard against clipping: anything past ±1 would be squashed.
         var peak: Float = 0
         for channel in channels {
             for frame in 0..<frameCount {

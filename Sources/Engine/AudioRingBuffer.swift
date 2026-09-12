@@ -1,14 +1,16 @@
 import AVFoundation
 import Foundation
 
-/// 音源1つぶんのリングバッファ。
+/// A ring buffer for one source.
 ///
-/// ミキサーの各ソースは互いに独立したクロックで動く（Process Tap は既定出力の
-/// クロック、マイクは自分のクロック）。出力側のコールバックとは周期も位相も
-/// 揃わないため、間にこれを挟んで速度差を吸収する。
+/// Every mixer source runs on its own clock — a process tap follows the default
+/// output device, a microphone follows itself — and none of them line up with
+/// the output callback in period or phase. This sits between them and absorbs
+/// the difference in rate.
 ///
-/// 溢れたら古いものを捨て、足りなければ無音を返す。音が途切れるより
-/// 遅延が溜まり続ける方が体感的に悪いため、この方針を採る。
+/// On overflow the oldest frames are dropped; on underflow silence is returned.
+/// Latency that keeps growing sounds worse than an occasional gap, which is why
+/// it drops rather than stretches.
 final class AudioRingBuffer: @unchecked Sendable {
 
     private let capacityFrames: Int
@@ -19,18 +21,21 @@ final class AudioRingBuffer: @unchecked Sendable {
     private var filledFrames = 0
     private let lock = NSLock()
 
-    /// 読み出しを始める前に溜めておくフレーム数（＝意図的な遅延）。
+    /// Frames to accumulate before reading starts — deliberate latency.
     ///
-    /// 音源と出力先は別クロックで動くため、レートを揃えても位相は揃わない。
-    /// 溜めずに読み出すとバッファが常に空寸前になり、わずかな揺らぎのたびに
-    /// 波形へ隙間が入る。全体の音量は合っているのに特定の周波数成分だけが
-    /// 落ちる、という形で現れる（実測: 440Hz 正弦波が -21.1 dB のはずが -39.2 dB）。
+    /// Source and output run on different clocks, so matching their rates still
+    /// leaves their phase unmatched. Reading without a cushion keeps the buffer
+    /// permanently near empty and every small wobble punches a gap in the
+    /// waveform. It shows up as the overall level being right while one
+    /// frequency drops: a 440 Hz sine measured -39.2 dB where -21.1 dB was
+    /// expected.
     private let primeFrames: Int
 
-    /// 溜まりきって読み出しを開始したか。枯れたら false に戻して溜め直す。
+    /// Whether enough has accumulated for reading to begin. Reset on underflow
+    /// so the cushion is rebuilt.
     private var isPrimed = false
 
-    /// 直近に書き込まれた区間のピーク。メーター表示用。
+    /// Peak of the most recently written span, for metering.
     private var recentPeak: Float = 0
 
     init(channels: Int, capacityFrames: Int = 16384, primeFrames: Int = 2048) {
@@ -40,10 +45,11 @@ final class AudioRingBuffer: @unchecked Sendable {
         self.storage = [Float](repeating: 0, count: self.channelCount * self.capacityFrames)
     }
 
-    /// 読み出しが枯れた回数。多いなら primeFrames を増やすべき。
+    /// How often reading ran dry. If this climbs, raise primeFrames.
     private(set) var underrunCount = 0
 
-    /// 未読データを上書きしてしまった回数。振幅は保たれたまま位相が飛ぶ原因。
+    /// How often unread data was overwritten. Causes phase jumps while the
+    /// amplitude still looks correct.
     private(set) var overrunCount = 0
 
     var availableFrames: Int {
@@ -63,7 +69,7 @@ final class AudioRingBuffer: @unchecked Sendable {
         lock.unlock()
     }
 
-    /// 直近のピークを取り出して 0 に戻す。
+    /// Take the recent peak and reset it to zero.
     func takePeak() -> Float {
         lock.lock(); defer { lock.unlock() }
         let value = recentPeak
@@ -71,10 +77,11 @@ final class AudioRingBuffer: @unchecked Sendable {
         return value
     }
 
-    // MARK: - 書き込み
+    // MARK: - Writing
 
-    /// 音源から届いたバッファを書き込む。
-    /// チャンネル数が合わない場合はモノラルを複製、または先頭チャンネルを採用する。
+    /// Write a buffer that arrived from the source.
+    /// When the channel counts differ, a mono source is duplicated across
+    /// channels and a wider one is mapped from its first channels.
     func write(_ buffer: AVAudioPCMBuffer) {
         guard let data = buffer.floatChannelData else { return }
         let frames = Int(buffer.frameLength)
@@ -88,7 +95,7 @@ final class AudioRingBuffer: @unchecked Sendable {
         for frame in 0..<frames {
             let slot = (writePosition + frame) % capacityFrames
             for channel in 0..<channelCount {
-                // モノラル音源はそのまま全チャンネルへ。多チャンネルは先頭から対応づける。
+                // Mono fans out to every channel; wider sources map from the front.
                 let sourceChannel = sourceChannels == 1 ? 0 : min(channel, sourceChannels - 1)
                 let value = data[sourceChannel][frame]
                 storage[channel * capacityFrames + slot] = value
@@ -103,10 +110,10 @@ final class AudioRingBuffer: @unchecked Sendable {
         if peak > recentPeak { recentPeak = peak }
     }
 
-    // MARK: - 読み出し
+    // MARK: - Reading
 
-    /// 出力先のバッファへ加算する。ミキサーはこれを全ソースぶん呼ぶ。
-    /// 溜まっている量が足りない分は何も加算しない（＝その区間は無音）。
+    /// Add into the output buffer. The mixer calls this once per source.
+    /// Whatever is not yet buffered contributes nothing, leaving silence.
     func mixInto(_ destination: [UnsafeMutablePointer<Float>],
                  frameCount: Int,
                  gain: Float) {
@@ -115,7 +122,8 @@ final class AudioRingBuffer: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
 
-        // 溜まりきるまでは出さない。中途半端に出すと隙間の連続になる。
+        // Hold everything back until the cushion is full; partial reads just
+        // produce a run of gaps.
         if !isPrimed {
             guard filledFrames >= primeFrames else { return }
             isPrimed = true
@@ -128,7 +136,7 @@ final class AudioRingBuffer: @unchecked Sendable {
             return
         }
 
-        // filledFrames ぶん遡った位置が読み出し開始点。
+        // Reading starts filledFrames behind the write position.
         let readStart = ((writePosition - filledFrames) % capacityFrames + capacityFrames)
                         % capacityFrames
 
@@ -142,7 +150,7 @@ final class AudioRingBuffer: @unchecked Sendable {
         filledFrames -= usable
     }
 
-    /// ミュート中のソースを進めるだけ進める（遅延が溜まらないように）。
+    /// Advance a muted source so latency does not accumulate behind it.
     private func consume(_ frameCount: Int) {
         lock.lock()
         filledFrames = max(0, filledFrames - frameCount)
@@ -159,7 +167,7 @@ final class AudioRingBuffer: @unchecked Sendable {
         return overrunCount
     }
 
-    /// いま溜まっているフレーム数（遅延の目安）。
+    /// Frames currently buffered, as a rough measure of latency.
     var fill: Int {
         lock.lock(); defer { lock.unlock() }
         return filledFrames

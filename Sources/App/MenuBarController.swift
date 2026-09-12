@@ -2,19 +2,20 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// メニューバーの常駐項目。
+/// The menu bar item.
 ///
-/// SwiftUI の MenuBarExtra は、この構成（swiftc で組んだバンドル、Window シーンと
-/// 併存）では項目が作られなかったため、AppKit の NSStatusItem で直接組む。
-/// 動作状態に応じてアイコンを変えられる利点もある。
+/// SwiftUI's MenuBarExtra never created an item in this setup — a bundle built
+/// with swiftc, alongside a Window scene — so this uses AppKit's NSStatusItem
+/// directly. It also makes the icon easy to change with the running state.
 @MainActor
 final class MenuBarController: NSObject, ObservableObject, NSPopoverDelegate {
 
-    /// メニューバーに場所を確保できたか。
+    /// Whether the menu bar found room for the item.
     ///
-    /// ノッチ付きの画面では項目を置ける範囲が狭く、他アプリで埋まっていると
-    /// macOS はスロットを割り当てず、項目のウインドウを画面外へ追いやる。
-    /// エラーにはならないので、こちらで検知して利用者に伝える。
+    /// A notched display leaves only a narrow strip for status items, and once
+    /// other apps have filled it macOS allocates no slot and pushes the item's
+    /// window off screen. Nothing reports an error, so detect it here and tell
+    /// the user.
     @Published private(set) var isPlaced = true
 
     private var statusItem: NSStatusItem?
@@ -29,7 +30,8 @@ final class MenuBarController: NSObject, ObservableObject, NSPopoverDelegate {
         item.button?.action = #selector(togglePopover(_:))
         item.button?.toolTip = "Tapdeck"
         if item.button?.image == nil {
-            // シンボルが取れない環境向けの保険。幅ゼロだと項目が見えなくなる。
+            // Fallback for when the symbol is unavailable: a zero-width item
+            // would be invisible.
             item.button?.title = "Tapdeck"
         }
         statusItem = item
@@ -41,7 +43,7 @@ final class MenuBarController: NSObject, ObservableObject, NSPopoverDelegate {
             rootView: MenuBarPanelView()
                 .environmentObject(AppModels.shared.mixer))
 
-        // 送出中はアイコンを塗りつぶして、ひと目で分かるようにする。
+        // Fill the icon while running so the state is obvious at a glance.
         AppModels.shared.mixer.$isRunning
             .removeDuplicates()
             .sink { [weak self] running in
@@ -50,13 +52,14 @@ final class MenuBarController: NSObject, ObservableObject, NSPopoverDelegate {
             }
             .store(in: &cancellables)
 
-        // 配置は即座には決まらないので、少し置いてから確かめる。
+        // Placement is not settled immediately, so check a moment later.
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
             self?.checkPlacement()
         }
     }
 
-    /// 置き場所が無いと、ウインドウがメニューバーの外（負の座標）へ追いやられる。
+    /// With no room, the window is pushed outside the menu bar to a negative
+    /// coordinate.
     private func checkPlacement() {
         guard let frame = statusItem?.button?.window?.frame else { return }
         isPlaced = frame.origin.y >= 0

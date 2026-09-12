@@ -1,22 +1,24 @@
 import AVFoundation
 import Foundation
 
-/// 音源と出力先のフォーマットが食い違うときに挟む変換器。
+/// Sits between a source and the output when their formats disagree.
 ///
-/// ミキサーの各ソースは別々のクロックで動く。特に Process Tap は
-/// 「既定の出力デバイス」のクロックに従うため、出力先が別のデバイス
-/// （例: Tapdeck 仮想デバイスの 48000 Hz）だとサンプルレートがずれる。
+/// Every mixer source runs on its own clock. A process tap in particular
+/// follows the clock of the default output device, so its sample rate differs
+/// whenever the mixer feeds some other device (a Tapdeck virtual device at
+/// 48000 Hz, say).
 ///
-/// 変換しないとリングバッファが枯れたり溢れたりして、波形に隙間が入る。
-/// 音量は合っているのに特定の周波数成分だけが激しく落ちる、という形で現れる
-/// （実測: 440Hz の正弦波が全体ピーク -21.1 dB に対し 440Hz 成分 -52.8 dB）。
+/// Without conversion the ring buffer starves or overruns and gaps appear in
+/// the waveform. It shows up as the overall level being right while one
+/// frequency collapses: a measured 440 Hz sine peaked at -21.1 dB overall but
+/// its 440 Hz component sat at -52.8 dB.
 final class FormatConverter: @unchecked Sendable {
 
     private let converter: AVAudioConverter
     private let targetFormat: AVAudioFormat
     let sourceFormat: AVAudioFormat
 
-    /// フォーマットが同一なら nil を返す（変換不要）。
+    /// Returns nil when the formats already match and no conversion is needed.
     init?(from source: AVAudioFormat, to target: AVAudioFormat) {
         guard source.sampleRate != target.sampleRate
                 || source.channelCount != target.channelCount

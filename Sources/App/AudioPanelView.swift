@@ -18,12 +18,12 @@ struct AudioPanelView: View {
         .task { model.refresh() }
     }
 
-    // MARK: 仮想デバイス
+    // MARK: Virtual devices
 
     private var virtualDeviceSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("仮想デバイス").font(.headline)
+                Text("Virtual Devices").font(.headline)
                 Spacer()
                 Button {
                     newDeviceName = ""
@@ -31,8 +31,8 @@ struct AudioPanelView: View {
                 } label: { Image(systemName: "plus") }
                 .buttonStyle(.borderless)
                 .disabled(model.virtualDevices.count >= 8)
-                .help("仮想デバイスを追加")
-                Button("更新") { model.refresh() }
+                .help("Add a virtual device")
+                Button("Refresh") { model.refresh() }
                     .controlSize(.small)
                     .disabled(model.isTesting)
             }
@@ -40,7 +40,7 @@ struct AudioPanelView: View {
             if model.tapdeck == nil && model.virtualDevices.count <= 1 {
                 HStack(spacing: 6) {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
-                    Text("ドライバが未インストールです。").font(.callout)
+                    Text("The driver is not installed.").font(.callout)
                 }
                 Text("sudo ./install-driver.sh")
                     .font(.system(.caption2, design: .monospaced))
@@ -54,7 +54,7 @@ struct AudioPanelView: View {
                 }
             }
 
-            Text("用途ごとにデバイスを分けられます（「Zoom用」「配信用」など）。\n追加・削除は数秒で反映されます。")
+            Text("Keep a separate device per purpose — Meetings, Streaming, and so on.\nChanges take effect right away.")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -65,15 +65,15 @@ struct AudioPanelView: View {
         }
         .popover(isPresented: $isAddingDevice, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("仮想デバイスの名前").font(.subheadline.weight(.medium))
-                TextField("Zoom用 / 配信用 など", text: $newDeviceName)
+                Text("Device name").font(.subheadline.weight(.medium))
+                TextField("Meetings, Streaming, …", text: $newDeviceName)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 220)
                     .onSubmit { commitNewDevice() }
                 HStack {
                     Spacer()
-                    Button("キャンセル") { isAddingDevice = false }
-                    Button("追加") { commitNewDevice() }
+                    Button("Cancel") { isAddingDevice = false }
+                    Button("Add") { commitNewDevice() }
                         .buttonStyle(.borderedProminent)
                         .disabled(newDeviceName.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
@@ -102,11 +102,11 @@ struct AudioPanelView: View {
             .font(.callout)
 
             if let live {
-                Text("入力 \(live.inputChannels)ch / 出力 \(live.outputChannels)ch / \(Int(live.sampleRate)) Hz")
+                Text("in \(live.inputChannels)ch / out \(live.outputChannels)ch / \(Int(live.sampleRate)) Hz")
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundStyle(.tertiary)
             } else {
-                Text("反映待ち").font(.system(size: 9)).foregroundStyle(.tertiary)
+                Text("pending").font(.system(size: 9)).foregroundStyle(.tertiary)
             }
 
             Button {
@@ -119,12 +119,12 @@ struct AudioPanelView: View {
         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
     }
 
-    // MARK: ループバック検証
+    // MARK: Loopback check
 
     private var loopbackSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("ループバック検証").font(.headline)
-            Text("仮想デバイスの出力側に 440Hz を流し、同じデバイスの入力側から読み返せるかを確かめます。")
+            Text("Loopback Check").font(.headline)
+            Text("Sends 440 Hz into the virtual device's output and checks that it can be read back from the same device's input.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -133,7 +133,7 @@ struct AudioPanelView: View {
                 Button {
                     Task { await model.runLoopbackTest() }
                 } label: {
-                    Label(model.isTesting ? "検証中 …" : "検証を実行",
+                    Label(model.isTesting ? "Checking…" : "Run Check",
                           systemImage: "waveform.path.ecg")
                         .frame(maxWidth: .infinity)
                 }
@@ -146,12 +146,12 @@ struct AudioPanelView: View {
             if model.receivedSamples > 0 {
                 Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 3) {
                     GridRow {
-                        Text("取得サンプル数").foregroundStyle(.secondary)
+                        Text("Samples").foregroundStyle(.secondary)
                         Text("\(model.receivedSamples)")
                             .font(.system(.caption, design: .monospaced))
                     }
                     GridRow {
-                        Text("ピーク").foregroundStyle(.secondary)
+                        Text("Peak").foregroundStyle(.secondary)
                         Text(String(format: "%.1f dB", model.peakDB))
                             .font(.system(.caption, design: .monospaced))
                     }
@@ -162,7 +162,7 @@ struct AudioPanelView: View {
                     }
                     if model.capturedFile != nil {
                         GridRow {
-                            Text("録音").foregroundStyle(.secondary)
+                            Text("File").foregroundStyle(.secondary)
                             Text("loopback-test.wav")
                                 .font(.system(.caption, design: .monospaced))
                         }
@@ -177,7 +177,7 @@ struct AudioPanelView: View {
                 Button {
                     Task { await model.recordInput() }
                 } label: {
-                    Label(model.isMonitoring ? "録音中 …" : "入力をモニタ録音",
+                    Label(model.isMonitoring ? "Recording…" : "Record the Input",
                           systemImage: "waveform.badge.mic")
                 }
                 .disabled(model.isMonitoring || model.isTesting || model.tapdeck == nil)
@@ -202,11 +202,11 @@ struct AudioPanelView: View {
         }
     }
 
-    // MARK: デバイス一覧
+    // MARK: Device list
 
     private var deviceListSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("オーディオデバイス").font(.headline)
+            Text("Audio Devices").font(.headline)
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(model.devices) { device in

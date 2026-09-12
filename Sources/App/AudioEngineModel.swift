@@ -3,8 +3,8 @@ import Combine
 import CoreAudio
 import Foundation
 
-/// アプリ側からオーディオエンジンを操作するモデル。
-/// 現状はデバイス一覧と、仮想デバイスのループバック検証を担当する。
+/// Drives the audio engine from the app side.
+/// Today that means the device list and the virtual device loopback check.
 @MainActor
 final class AudioEngineModel: ObservableObject {
 
@@ -13,7 +13,7 @@ final class AudioEngineModel: ObservableObject {
     @Published private(set) var processes: [AudioProcess] = []
 
     @Published private(set) var isTesting = false
-    @Published private(set) var status = "準備完了"
+    @Published private(set) var status = "Ready"
     @Published private(set) var peakDB: Double = -120
     @Published private(set) var rmsDB: Double = -120
     @Published private(set) var receivedSamples = 0
@@ -23,7 +23,7 @@ final class AudioEngineModel: ObservableObject {
     @Published private(set) var monitorStatus = ""
     @Published private(set) var monitorPeakDB: Double = -120
 
-    // MARK: - 仮想デバイスの管理
+    // MARK: - Managing virtual devices
 
     @Published private(set) var virtualDevices: [VirtualDeviceConfiguration.Device] = []
     @Published private(set) var virtualDeviceStatus = ""
@@ -35,11 +35,12 @@ final class AudioEngineModel: ObservableObject {
     private var input: DeviceInput?
     private var output: DeviceOutput?
 
-    /// レベル計測と録音はオーディオスレッドから書き込まれるため、
-    /// MainActor 隔離の外に置く必要がある。
+    /// Metering and recording are written from the audio thread, so they have
+    /// to live outside the main actor.
     private let meter = LevelAccumulator()
 
-    /// 検証で取り込んだ音の保存先。振幅だけでなく周波数も後から確かめられるようにする。
+    /// Where the captured audio is written, so frequency can be checked later
+    /// as well as level.
     static var captureURL: URL {
         let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("dev.kosuke.Tapdeck", isDirectory: true)
@@ -47,7 +48,7 @@ final class AudioEngineModel: ObservableObject {
         return dir.appendingPathComponent("loopback-test.wav")
     }
 
-    // MARK: - 仮想デバイス
+    // MARK: - Virtual devices
 
     func loadVirtualDevices() {
         virtualDevices = VirtualDeviceConfiguration.load().devices
@@ -57,7 +58,7 @@ final class AudioEngineModel: ObservableObject {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         guard virtualDevices.count < 8 else {
-            virtualDeviceStatus = "仮想デバイスは8台までです"
+            virtualDeviceStatus = "Up to 8 virtual devices"
             return
         }
         virtualDevices.append(.init(name: trimmed, channelCount: channels))
@@ -74,7 +75,7 @@ final class AudioEngineModel: ObservableObject {
 
     func removeVirtualDevice(id: String) {
         guard virtualDevices.count > 1 else {
-            virtualDeviceStatus = "最低1台は残してください"
+            virtualDeviceStatus = "Keep at least one device"
             return
         }
         virtualDevices.removeAll { $0.id == id }
@@ -84,7 +85,7 @@ final class AudioEngineModel: ObservableObject {
     private func commitVirtualDevices() {
         do {
             try VirtualDeviceConfiguration(devices: virtualDevices).save()
-            virtualDeviceStatus = "保存しました"
+            virtualDeviceStatus = "Saved"
             // The driver applies it immediately, but the HAL needs a moment to
             // republish the device list to clients.
             Task { @MainActor in
@@ -97,7 +98,7 @@ final class AudioEngineModel: ObservableObject {
         }
     }
 
-    // MARK: - 一覧
+    // MARK: - Lists
 
     func refresh() {
         do {
@@ -107,25 +108,25 @@ final class AudioEngineModel: ObservableObject {
             loadVirtualDevices()
 
             if tapdeck == nil {
-                status = "Tapdeck 仮想デバイスが見つかりません（ドライバ未インストール）"
+                status = "No Tapdeck virtual device — the driver is not installed"
                 verdict = .failed
             } else if verdict == .unknown {
-                // 検証済みの結果は上書きしない。
-                status = "準備完了"
+                // Do not overwrite a finished check.
+                status = "Ready"
             }
         } catch {
-            status = "デバイス一覧の取得に失敗: \(error.localizedDescription)"
+            status = "Could not read the device list: \(error.localizedDescription)"
         }
     }
 
-    // MARK: - ループバック検証
+    // MARK: - Loopback check
 
-    /// 仮想デバイスの出力側に 440Hz を流し、同じデバイスの入力側から読み返す。
-    /// 読み返せればドライバのリングバッファが正しく機能している。
+    /// Send 440 Hz into the virtual device's output and read it back from the
+    /// same device's input. Getting it back means the driver's ring buffer works.
     func runLoopbackTest(seconds: Double = 4) async {
         guard !isTesting else { return }
         guard let device = tapdeck else {
-            status = "Tapdeck 仮想デバイスがありません"
+            status = "No Tapdeck virtual device"
             verdict = .failed
             return
         }
@@ -139,16 +140,16 @@ final class AudioEngineModel: ObservableObject {
 
         defer { isTesting = false }
 
-        // 入力デバイスの読み取りにはマイク許可が要る。
-        // GUI アプリなのでここで普通にプロンプトが出る。
+        // Reading an input device needs microphone permission. This is a GUI
+        // app, so the prompt appears normally.
         guard await ensureMicrophoneAccess() else {
-            status = "マイクの使用が許可されていません。システム設定 > プライバシーとセキュリティ > マイク を確認してください。"
+            status = "Microphone access is not allowed. Check System Settings > Privacy & Security > Microphone."
             verdict = .failed
             return
         }
 
         do {
-            status = "入力側を開いています …"
+            status = "Opening the input side…"
             let deviceInput = try DeviceInput(device: device)
             let url = Self.captureURL
             try? FileManager.default.removeItem(at: url)
@@ -160,7 +161,7 @@ final class AudioEngineModel: ObservableObject {
             }
             input = deviceInput
 
-            status = "出力側へ 440Hz を送出中 …"
+            status = "Sending 440 Hz to the output side…"
             let deviceOutput = try DeviceOutput(device: device)
             let rate = deviceOutput.outputFormat.sampleRate
             var phase = 0.0
@@ -187,7 +188,7 @@ final class AudioEngineModel: ObservableObject {
         } catch {
             input?.stop(); input = nil
             output?.stop(); output = nil
-            status = "検証に失敗: \(error.localizedDescription)"
+            status = "Check failed: \(error.localizedDescription)"
             verdict = .failed
         }
     }
@@ -200,11 +201,12 @@ final class AudioEngineModel: ObservableObject {
         }
     }
 
-    // MARK: - 入力のモニタ録音
+    // MARK: - Monitoring an input
 
-    /// 仮想デバイスの入力側をそのまま録音する。
-    /// ミキサーが送出している内容を、外部ツールを介さずに確かめるための機能。
-    /// （ffmpeg の avfoundation 経由の録音は取りこぼしがあり、測定に使えない）
+    /// Record the virtual device's input side as-is.
+    /// This is how the mixer's output gets checked without an external tool —
+    /// ffmpeg's avfoundation capture drops blocks and cannot be measured
+    /// against.
     static var monitorURL: URL {
         captureURL.deletingLastPathComponent().appendingPathComponent("monitor.wav")
     }
@@ -212,11 +214,11 @@ final class AudioEngineModel: ObservableObject {
     func recordInput(seconds: Double = 4) async {
         guard !isMonitoring, !isTesting else { return }
         guard let device = tapdeck else {
-            monitorStatus = "Tapdeck 仮想デバイスがありません"
+            monitorStatus = "No Tapdeck virtual device"
             return
         }
         guard await ensureMicrophoneAccess() else {
-            monitorStatus = "マイクの使用が許可されていません"
+            monitorStatus = "Microphone access is not allowed"
             return
         }
 
@@ -232,7 +234,7 @@ final class AudioEngineModel: ObservableObject {
         do {
             let input = try DeviceInput(device: device)
             try input.start { buffer, _ in monitorMeter.accumulate(buffer) }
-            monitorStatus = "\(device.name) の入力を録音中 …"
+            monitorStatus = "Recording the input of \(device.name)…"
             try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             input.stop()
             monitorMeter.finishWriting()
@@ -240,15 +242,15 @@ final class AudioEngineModel: ObservableObject {
             let (peak, _, count) = monitorMeter.snapshot()
             monitorPeakDB = peak > 0 ? 20 * log10(Double(peak)) : -120
             monitorStatus = count > 0
-                ? "録音しました（\(count) サンプル、ピーク \(String(format: "%.1f", monitorPeakDB)) dB）"
-                : "何も届きませんでした"
+                ? "Recorded \(count) samples, peak \(String(format: "%.1f", monitorPeakDB)) dB"
+                : "Nothing arrived"
         } catch {
             monitorMeter.finishWriting()
-            monitorStatus = "録音に失敗: \(error.localizedDescription)"
+            monitorStatus = "Recording failed: \(error.localizedDescription)"
         }
     }
 
-    // MARK: - 計測
+    // MARK: - Measurement
 
     private func resetMetrics() { meter.reset() }
 
@@ -259,7 +261,7 @@ final class AudioEngineModel: ObservableObject {
         let (finalPeak, finalSum, n) = meter.snapshot()
         receivedSamples = n
         guard n > 0 else {
-            status = "入力側に音が1サンプルも届きませんでした。"
+            status = "Not a single sample reached the input side."
             verdict = .failed
             return
         }
@@ -269,18 +271,18 @@ final class AudioEngineModel: ObservableObject {
         rmsDB  = rms > 0 ? 20 * log10(rms) : -120
 
         if finalPeak < 1e-5 {
-            status = "無音でした。ループバックが繋がっていません。"
+            status = "Silence — the loopback is not connected."
             verdict = .failed
         } else {
-            status = "出力側に流した音を入力側から読み返せました。"
+            status = "Read back the audio sent to the output side."
             verdict = .passed
         }
     }
 }
 
 
-/// オーディオスレッドから安全に書き込めるレベル計測器。
-/// MainActor には属さない。
+/// A level meter that is safe to write from the audio thread.
+/// Deliberately not on the main actor.
 final class LevelAccumulator: @unchecked Sendable {
     private let lock = NSLock()
     private var peak: Float = 0
@@ -326,8 +328,8 @@ final class LevelAccumulator: @unchecked Sendable {
         total += count
 
         if file == nil, let destination {
-            // 処理フォーマットを入力の実フォーマットに完全一致させる。
-            // ずれていると write(from:) が毎回失敗し、ヘッダだけのファイルになる。
+            // Match the processing format to the input exactly. Any mismatch
+            // makes every write(from:) fail and leaves a header-only file.
             file = try? AVAudioFile(forWriting: destination,
                                     settings: buffer.format.settings,
                                     commonFormat: buffer.format.commonFormat,

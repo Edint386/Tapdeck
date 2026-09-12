@@ -3,10 +3,10 @@ import CoreAudio
 import Darwin
 import Foundation
 
-/// Core Audio が「音を扱っている」と認識しているプロセス1つ分。
+/// One process that Core Audio considers to be dealing with audio.
 ///
-/// 重要: Process Tap に渡すのは PID ではなく `objectID`（AudioObjectID）。
-/// PID から引くには kAudioHardwarePropertyTranslatePIDToProcessObject を使う。
+/// Note that a process tap takes `objectID` (an AudioObjectID), not a PID.
+/// Use kAudioHardwarePropertyTranslatePIDToProcessObject to go from a PID.
 struct AudioProcess: Identifiable, Hashable {
     var id: AudioObjectID { objectID }
 
@@ -16,17 +16,17 @@ struct AudioProcess: Identifiable, Hashable {
     let name: String
     let isPlayingAudio: Bool
 
-    /// Core Audio が知っている全プロセスを列挙する。
+    /// Enumerate every process Core Audio knows about.
     static func all() throws -> [AudioProcess] {
         let ids: [AudioObjectID] = try AudioObjectID.system.readArray(
             kAudioHardwarePropertyProcessObjectList,
-            label: "オーディオプロセス一覧の取得")
+            label: "reading the audio process list")
 
         return ids.compactMap { obj -> AudioProcess? in
             guard let pid: pid_t = try? obj.read(kAudioProcessPropertyPID,
-                                                 label: "PID の取得") else { return nil }
-            // 空文字で返ることがある。そのまま持つと「バンドルIDあり」と
-            // 誤判定し、保存・復元で別プロセスと取り違える。
+                                                 label: "reading the PID") else { return nil }
+            // This can come back as an empty string. Keeping it would count as
+            // "has a bundle ID" and match the wrong process when restoring.
             let bundleID = obj.readString(kAudioProcessPropertyBundleID)
                 .flatMap { $0.isEmpty ? nil : $0 }
             let running: UInt32 = (try? obj.read(kAudioProcessPropertyIsRunningOutput)) ?? 0
@@ -45,11 +45,11 @@ struct AudioProcess: Identifiable, Hashable {
         }
     }
 
-    /// 表示名を決める。
+    /// Work out a name to show.
     ///
-    /// GUI アプリでない音源（コマンドラインツール、ヘルパープロセス）は
-    /// NSRunningApplication から名前を取れない。空文字が返ることもあるので、
-    /// 実行ファイル名まで順に辿る。
+    /// Sources that are not GUI applications (command line tools, helper
+    /// processes) have no name in NSRunningApplication, and it can hand back an
+    /// empty string, so fall through as far as the executable name.
     private static func displayName(pid: pid_t, bundleID: String?) -> String {
         if let localized = NSRunningApplication(processIdentifier: pid)?.localizedName,
            !localized.isEmpty {
@@ -64,7 +64,7 @@ struct AudioProcess: Identifiable, Hashable {
         return "PID \(pid)"
     }
 
-    /// libproc から実行ファイル名を引く。
+    /// Ask libproc for the executable name.
     private static func executableName(pid: pid_t) -> String? {
         var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
         let length = proc_name(pid, &buffer, UInt32(buffer.count))
@@ -72,12 +72,12 @@ struct AudioProcess: Identifiable, Hashable {
         return String(cString: buffer)
     }
 
-    /// PID から探す。見つからなければ nil。
+    /// Find by PID, or nil if there is no such process.
     static func find(pid: pid_t) throws -> AudioProcess? {
         try all().first { $0.pid == pid }
     }
 
-    /// バンドルIDまたは表示名の部分一致で探す。
+    /// Find by bundle identifier, or by a partial match on the display name.
     static func find(matching needle: String) throws -> AudioProcess? {
         let procs = try all()
         if let exact = procs.first(where: { $0.bundleID == needle }) { return exact }

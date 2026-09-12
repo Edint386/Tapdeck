@@ -1,8 +1,8 @@
 import CoreAudio
 import Foundation
 
-/// システムに存在するオーディオデバイス1台ぶん。
-/// ミキサーはここで得たデバイスを入力源・出力先として扱う。
+/// One audio device present on the system.
+/// The mixer uses these as its sources and as its output destination.
 struct AudioDevice: Identifiable, Hashable {
     var id: AudioDeviceID { deviceID }
 
@@ -18,7 +18,7 @@ struct AudioDevice: Identifiable, Hashable {
 
     static func all() throws -> [AudioDevice] {
         let ids: [AudioDeviceID] = try AudioObjectID.system.readArray(
-            kAudioHardwarePropertyDevices, label: "デバイス一覧の取得")
+            kAudioHardwarePropertyDevices, label: "reading the device list")
 
         return ids.compactMap { id -> AudioDevice? in
             let obj = AudioObjectID(id)
@@ -36,8 +36,8 @@ struct AudioDevice: Identifiable, Hashable {
         .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
-    /// ストリーム構成からチャンネル数を数える。
-    /// kAudioDevicePropertyStreamConfiguration は可変長の AudioBufferList を返す。
+    /// Count channels from the stream configuration.
+    /// kAudioDevicePropertyStreamConfiguration returns a variable-length AudioBufferList.
     private static func channelCount(_ obj: AudioObjectID,
                                      scope: AudioObjectPropertyScope) -> Int {
         var addr = AudioObjectPropertyAddress(
@@ -70,7 +70,7 @@ struct AudioDevice: Identifiable, Hashable {
             ?? devices.first { $0.name.localizedCaseInsensitiveContains(needle) }
     }
 
-    /// Tapdeck ドライバが公開している仮想デバイス。
+    /// The virtual device published by the Tapdeck driver.
     static func tapdeck() throws -> AudioDevice? {
         try find(uid: "TapdeckDevice")
     }

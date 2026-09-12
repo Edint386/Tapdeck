@@ -11,14 +11,15 @@
     <key>CFBundleDevelopmentRegion</key> <string>en</string>
     <key>NSHumanReadableCopyright</key>  <string>Tapdeck</string>
 
-    <!-- CFPlugIn のファクトリ登録。値は TapdeckDriver.c のエントリ関数名。 -->
+    <!-- CFPlugIn factory registration. The value is the entry function
+         name in TapdeckDriver.c. -->
     <key>CFPlugInFactories</key>
     <dict>
         <key>ACAAB673-587F-451B-81EE-35713AD47F32</key>
         <string>TapdeckDriver_Create</string>
     </dict>
 
-    <!-- 443ABAB8-... は kAudioServerPlugInTypeUUID（固定値）。 -->
+    <!-- 443ABAB8-... is kAudioServerPlugInTypeUUID, a fixed value. -->
     <key>CFPlugInTypes</key>
     <dict>
         <key>443ABAB8-E7B3-491A-B985-BEB9187030DB</key>

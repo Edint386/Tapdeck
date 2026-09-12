@@ -5,10 +5,10 @@ import CoreMedia
 import Foundation
 import ScreenCaptureKit
 
-/// ScreenCaptureKit を直接叩く収録エンジン。
-/// 仮想オーディオドライバ (BlackHole / Soundflower) は一切使わない。
-/// システム音声は SCStreamConfiguration.capturesAudio、
-/// マイクは captureMicrophone (macOS 15+) でそれぞれ直接取得する。
+/// Screen recording driven straight from ScreenCaptureKit.
+/// No virtual audio driver is involved at all. System audio comes from
+/// SCStreamConfiguration.capturesAudio and the microphone from
+/// captureMicrophone (macOS 15+).
 @MainActor
 final class Recorder: NSObject, ObservableObject {
 
@@ -31,34 +31,34 @@ final class Recorder: NSObject, ObservableObject {
 
         var errorDescription: String? {
             switch self {
-            case .noContent: return "共有可能なコンテンツを取得できませんでした。画面収録の許可を確認してください。"
-            case .noTarget:  return "収録対象が見つかりません。一覧を更新してください。"
-            case .micDenied: return "マイクの使用が許可されていません。システム設定 > プライバシーとセキュリティ > マイク を確認してください。"
+            case .noContent: return "Could not read the shareable content. Check the screen recording permission."
+            case .noTarget:  return "The capture target is gone. Refresh the list."
+            case .micDenied: return "Microphone access is not allowed. Check System Settings > Privacy & Security > Microphone."
             }
         }
     }
 
-    // MARK: - 一覧
+    // MARK: - Lists
 
     @Published private(set) var displayOptions: [Option] = []
     @Published private(set) var windowOptions: [Option] = []
     @Published private(set) var appOptions: [Option] = []
 
-    // MARK: - 状態
+    // MARK: - State
 
     @Published private(set) var isRecording = false
     @Published private(set) var elapsed: TimeInterval = 0
     @Published private(set) var lastOutput: URL?
-    @Published private(set) var status = "準備完了"
+    @Published private(set) var status = "Ready"
     @Published private(set) var outputSize: CGSize = .zero
 
-    // MARK: - 音源の選択
+    // MARK: - Choosing the audio source
 
-    /// 収録に乗せる音をどこから取るか。
+    /// Where the recording's audio comes from.
     ///
-    /// ScreenCaptureKit の SCRecordingOutput は音声も面倒を見てくれるが、
-    /// 音源が「システム音声」と「マイク」に固定される。ミキサーで組んだ音を
-    /// 乗せたい場合は、映像と音声を自前で多重化する必要がある。
+    /// ScreenCaptureKit's SCRecordingOutput handles audio for you, but only
+    /// from system audio and the microphone. Carrying a mix instead means
+    /// muxing video and audio ourselves.
     static let screenCaptureKitSourceID = ""
 
     @Published private(set) var audioDeviceOptions: [AudioDevice] = []
@@ -66,7 +66,7 @@ final class Recorder: NSObject, ObservableObject {
 
     var usesMixerOutput: Bool { audioSourceID != Self.screenCaptureKitSourceID }
 
-    // MARK: - 設定
+    // MARK: - Settings
 
     @Published var selectedID = ""
     @Published var scalePercent = 100
@@ -75,7 +75,7 @@ final class Recorder: NSObject, ObservableObject {
     @Published var microphone = false
     @Published var showsCursor = true
 
-    // MARK: - 内部
+    // MARK: - Internals
 
     private var content: SCShareableContent?
     private var stream: SCStream?
@@ -89,7 +89,7 @@ final class Recorder: NSObject, ObservableObject {
 
     private var allOptions: [Option] { displayOptions + appOptions + windowOptions }
 
-    // MARK: - 収録対象の列挙
+    // MARK: - Enumerating capture targets
 
     func refreshContent() async {
         do {
@@ -99,7 +99,7 @@ final class Recorder: NSObject, ObservableObject {
 
             displayOptions = c.displays.map { d in
                 Option(id: "display:\(d.displayID)",
-                       label: "画面全体 — \(d.width)×\(d.height)",
+                       label: "Entire screen — \(d.width)×\(d.height)",
                        target: .display(d.displayID))
             }
 
@@ -109,7 +109,7 @@ final class Recorder: NSObject, ObservableObject {
                 .filter { app in c.windows.contains { $0.owningApplication?.processID == app.processID } }
                 .sorted { $0.applicationName.localizedCaseInsensitiveCompare($1.applicationName) == .orderedAscending }
                 .map { Option(id: "app:\($0.processID)",
-                              label: "アプリ: \($0.applicationName)",
+                              label: "App: \($0.applicationName)",
                               target: .app($0.processID)) }
 
             windowOptions = c.windows
@@ -119,7 +119,7 @@ final class Recorder: NSObject, ObservableObject {
                 .map { w in
                     let owner = w.owningApplication?.applicationName ?? "?"
                     return Option(id: "window:\(w.windowID)",
-                                  label: "ウインドウ: \(owner) — \(w.title ?? "")",
+                                  label: "Window: \(owner) — \(w.title ?? "")",
                                   target: .window(w.windowID))
                 }
 
@@ -133,13 +133,13 @@ final class Recorder: NSObject, ObservableObject {
                 selectedID = displayOptions.first?.id ?? ""
             }
             updateOutputSize()
-            status = "準備完了"
+            status = "Ready"
         } catch {
-            status = "画面収録の許可が必要です: \(error.localizedDescription)"
+            status = "Screen recording permission is required: \(error.localizedDescription)"
         }
     }
 
-    // MARK: - フィルタと解像度
+    // MARK: - Filter and output size
 
     private func makeFilter() throws -> SCContentFilter {
         guard let content else { throw Failure.noContent }
@@ -149,7 +149,8 @@ final class Recorder: NSObject, ObservableObject {
         switch opt.target {
         case .display(let id):
             guard let d = content.displays.first(where: { $0.displayID == id }) else { throw Failure.noTarget }
-            // 自分自身のウインドウは映さない（収録UIが写り込むのを防ぐ）
+            // Leave our own window out so the recording UI does not appear in
+            // the capture.
             let own = content.applications.filter { $0.processID == ownPID }
             return SCContentFilter(display: d, excludingApplications: own, exceptingWindows: [])
 
@@ -165,8 +166,9 @@ final class Recorder: NSObject, ObservableObject {
         }
     }
 
-    /// 選択中の対象を、指定倍率で収録したときの実ピクセルサイズ。
-    /// H.264 は偶数サイズしか受け付けないので 2 の倍数に丸める。
+    /// Pixel size of the current target at the chosen scale.
+    /// H.264 only accepts even dimensions, so both are rounded to a multiple
+    /// of two.
     private func pixelSize(for filter: SCContentFilter) -> (Int, Int) {
         let rect = filter.contentRect
         let scale = CGFloat(filter.pointPixelScale)
@@ -182,7 +184,7 @@ final class Recorder: NSObject, ObservableObject {
         outputSize = CGSize(width: w, height: h)
     }
 
-    // MARK: - 収録
+    // MARK: - Recording
 
     func start() async {
         guard !isRecording else { return }
@@ -202,7 +204,8 @@ final class Recorder: NSObject, ObservableObject {
             cfg.queueDepth = 6
             cfg.pixelFormat = kCVPixelFormatType_32BGRA
 
-            // ここが「マイクしか選べない」を解消している部分
+            // This is what lifts the built-in recorder's "microphone only"
+            // limitation.
             cfg.capturesAudio = systemAudio
             cfg.excludesCurrentProcessAudio = true
             cfg.captureMicrophone = microphone
@@ -211,8 +214,8 @@ final class Recorder: NSObject, ObservableObject {
             let s = SCStream(filter: filter, configuration: cfg, delegate: self)
 
             if usesMixerOutput {
-                // 映像は SCStream から受け取り、音声は指定デバイスから取って
-                // AVAssetWriter で多重化する。
+                // Take video from the SCStream and audio from the chosen
+                // device, then mux them with AVAssetWriter.
                 guard let device = audioDeviceOptions.first(where: { $0.uid == audioSourceID })
                 else { throw Failure.noTarget }
 
@@ -253,11 +256,11 @@ final class Recorder: NSObject, ObservableObject {
             elapsed = 0
             isRecording = true
             status = usesMixerOutput
-                ? "収録中 — \(w)×\(h) @ \(fps)fps / 音声は \(audioSourceName)"
-                : "収録中 — \(w)×\(h) @ \(fps)fps / 音声は ScreenCaptureKit"
+                ? "Recording \(w)×\(h) at \(fps) fps — audio from \(audioSourceName)"
+                : "Recording \(w)×\(h) at \(fps) fps — audio from ScreenCaptureKit"
             startTicker()
         } catch {
-            status = "開始できませんでした: \(error.localizedDescription)"
+            status = "Could not start: \(error.localizedDescription)"
         }
     }
 
@@ -270,7 +273,7 @@ final class Recorder: NSObject, ObservableObject {
         do {
             try await s.stopCapture()
         } catch {
-            status = "停止時にエラー: \(error.localizedDescription)"
+            status = "Error while stopping: \(error.localizedDescription)"
         }
 
         deviceInput?.stop()
@@ -280,12 +283,12 @@ final class Recorder: NSObject, ObservableObject {
             await muxer.finish()
             muxerBox.value = nil
             if let failure = muxer.failure {
-                status = "書き出しに失敗: \(failure.localizedDescription)"
+                status = "Writing failed: \(failure.localizedDescription)"
             } else {
-                status = "保存しました: \(lastOutput?.lastPathComponent ?? "")"
+                status = "Saved \(lastOutput?.lastPathComponent ?? "")"
             }
         } else {
-            status = "保存しました: \(lastOutput?.lastPathComponent ?? "")"
+            status = "Saved \(lastOutput?.lastPathComponent ?? "")"
         }
 
         stream = nil
@@ -301,7 +304,7 @@ final class Recorder: NSObject, ObservableObject {
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
-    // MARK: - 補助
+    // MARK: - Helpers
 
     private func startTicker() {
         ticker?.invalidate()
@@ -340,7 +343,7 @@ final class Recorder: NSObject, ObservableObject {
 extension Recorder: SCStreamDelegate {
     nonisolated func stream(_ stream: SCStream, didStopWithError error: Error) {
         Task { @MainActor in
-            self.status = "ストリームが停止しました: \(error.localizedDescription)"
+            self.status = "The stream stopped: \(error.localizedDescription)"
             self.isRecording = false
             self.ticker?.invalidate()
         }
@@ -349,25 +352,25 @@ extension Recorder: SCStreamDelegate {
 
 extension Recorder: SCRecordingOutputDelegate {
     nonisolated func recordingOutputDidStartRecording(_ recordingOutput: SCRecordingOutput) {
-        Task { @MainActor in self.status = "収録開始" }
+        Task { @MainActor in self.status = "Recording started" }
     }
 
     nonisolated func recordingOutput(_ recordingOutput: SCRecordingOutput, didFailWithError error: Error) {
         Task { @MainActor in
-            self.status = "書き出し失敗: \(error.localizedDescription)"
+            self.status = "Writing failed: \(error.localizedDescription)"
             self.isRecording = false
             self.ticker?.invalidate()
         }
     }
 
     nonisolated func recordingOutputDidFinishRecording(_ recordingOutput: SCRecordingOutput) {
-        Task { @MainActor in self.status = "書き出し完了: \(self.lastOutput?.lastPathComponent ?? "")" }
+        Task { @MainActor in self.status = "Finished writing \(self.lastOutput?.lastPathComponent ?? "")" }
     }
 }
 
 
-/// 実時間のコールバックから多重化器へ届けるための受け皿。
-/// SCStreamOutput も AUHAL も MainActor の外から呼ばれる。
+/// Holds the muxer so real-time callbacks can reach it.
+/// Both SCStreamOutput and the AUHAL are called from outside the main actor.
 final class MuxerBox: @unchecked Sendable {
     private let lock = NSLock()
     private var storage: MuxedRecorder?
@@ -384,7 +387,8 @@ extension Recorder: SCStreamOutput {
                             of type: SCStreamOutputType) {
         guard type == .screen else { return }
 
-        // 画面に変化が無い周期でも呼ばれる。完成フレーム以外は捨てる。
+        // This fires even on cycles where the screen did not change. Anything
+        // but a complete frame is dropped.
         guard let attachments = CMSampleBufferGetSampleAttachmentsArray(
                   sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
               let raw = attachments.first?[.status] as? Int,

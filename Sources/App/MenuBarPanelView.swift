@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// メニューバーから開くパネル。
-/// ミキサーは出しっぱなしで使うものなので、ウインドウを開かずに
-/// 開始・停止、レベル確認、プリセット切り替えができるようにする。
+/// The panel that opens from the menu bar.
+/// A mixer is meant to be left running, so starting and stopping, checking
+/// levels and switching presets all work without opening the window.
 struct MenuBarPanelView: View {
     @EnvironmentObject private var model: MixerModel
     @Environment(\.openWindow) private var openWindow
@@ -24,7 +24,7 @@ struct MenuBarPanelView: View {
         .task { model.refresh() }
     }
 
-    // MARK: 上部
+    // MARK: Header
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -32,7 +32,7 @@ struct MenuBarPanelView: View {
                 Circle()
                     .fill(model.isRunning ? Color.green : Color.secondary.opacity(0.5))
                     .frame(width: 7, height: 7)
-                Text(model.isRunning ? "送出中" : "停止中")
+                Text(model.isRunning ? "Running" : "Stopped")
                     .font(.subheadline.weight(.semibold))
                 Spacer()
                 Text(outputName)
@@ -45,7 +45,7 @@ struct MenuBarPanelView: View {
                 Button {
                     model.toggleRunning()
                 } label: {
-                    Label(model.isRunning ? "停止" : "開始",
+                    Label(model.isRunning ? "Stop" : "Start",
                           systemImage: model.isRunning ? "stop.fill" : "play.fill")
                         .frame(maxWidth: .infinity)
                 }
@@ -62,12 +62,12 @@ struct MenuBarPanelView: View {
         model.outputCandidates.first { $0.uid == model.outputDeviceUID }?.name ?? "—"
     }
 
-    // MARK: ソース
+    // MARK: Sources
 
     private var sources: some View {
         VStack(alignment: .leading, spacing: 6) {
             if model.rows.isEmpty {
-                Text("ソースがありません")
+                Text("No sources")
                     .font(.caption).foregroundStyle(.secondary)
             } else {
                 ForEach(model.rows) { row in
@@ -101,11 +101,11 @@ struct MenuBarPanelView: View {
         }
     }
 
-    // MARK: プリセット
+    // MARK: Presets
 
     private var presets: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text("プリセット").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+            Text("Presets").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
             ForEach(model.presets) { preset in
                 Button {
                     model.applyPreset(preset.id)
@@ -126,17 +126,17 @@ struct MenuBarPanelView: View {
         }
     }
 
-    // MARK: 下部
+    // MARK: Footer
 
     private var footer: some View {
         HStack {
-            Button("ウインドウを開く") {
+            Button("Open Window") {
                 openWindow(id: "main")
                 NSApp.activate(ignoringOtherApps: true)
             }
             .font(.caption)
             Spacer()
-            Button("終了") { NSApp.terminate(nil) }
+            Button("Quit") { NSApp.terminate(nil) }
                 .font(.caption)
         }
         .buttonStyle(.borderless)

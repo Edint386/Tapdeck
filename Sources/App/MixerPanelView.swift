@@ -16,13 +16,13 @@ struct MixerPanelView: View {
         .task { model.refresh() }
     }
 
-    // MARK: ソース
+    // MARK: Sources
 
     private var sourcesSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             presetBar
             HStack(spacing: 8) {
-                Text("ソース").font(.headline)
+                Text("Sources").font(.headline)
                 if !model.rows.isEmpty {
                     Text("\(model.rows.count)")
                         .font(.caption2.monospacedDigit())
@@ -49,12 +49,12 @@ struct MixerPanelView: View {
         .padding(18)
     }
 
-    /// プリセット。用途ごとの組み合わせを切り替える。
+    /// Presets, for switching between setups.
     private var presetBar: some View {
         HStack(spacing: 8) {
             Menu {
                 if model.presets.isEmpty {
-                    Text("保存されたプリセットはありません")
+                    Text("No saved presets")
                 } else {
                     ForEach(model.presets) { preset in
                         Button {
@@ -68,19 +68,19 @@ struct MixerPanelView: View {
                         }
                     }
                     Divider()
-                    Menu("削除") {
+                    Menu("Delete") {
                         ForEach(model.presets) { preset in
                             Button(preset.name) { model.deletePreset(preset.id) }
                         }
                     }
                 }
                 Divider()
-                Button("いまの構成を保存 …") {
+                Button("Save Current Setup…") {
                     presetName = model.presets.first { $0.id == model.activePresetID }?.name ?? ""
                     isNamingPreset = true
                 }
                 .disabled(model.rows.isEmpty)
-                Button("ソースをすべて外す") { model.clearSources() }
+                Button("Remove All Sources") { model.clearSources() }
                     .disabled(model.rows.isEmpty)
             } label: {
                 Label(activePresetLabel, systemImage: "square.stack.3d.up")
@@ -92,15 +92,15 @@ struct MixerPanelView: View {
         }
         .popover(isPresented: $isNamingPreset, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("プリセット名").font(.subheadline.weight(.medium))
-                TextField("会議用 / 配信用 など", text: $presetName)
+                Text("Preset name").font(.subheadline.weight(.medium))
+                TextField("Meetings, Streaming, …", text: $presetName)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 220)
                     .onSubmit { commitPreset() }
                 HStack {
                     Spacer()
-                    Button("キャンセル") { isNamingPreset = false }
-                    Button("保存") { commitPreset() }
+                    Button("Cancel") { isNamingPreset = false }
+                    Button("Save") { commitPreset() }
                         .buttonStyle(.borderedProminent)
                         .disabled(presetName.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
@@ -110,7 +110,7 @@ struct MixerPanelView: View {
     }
 
     private var activePresetLabel: String {
-        model.presets.first { $0.id == model.activePresetID }?.name ?? "プリセット"
+        model.presets.first { $0.id == model.activePresetID }?.name ?? "Presets"
     }
 
     private func commitPreset() {
@@ -120,9 +120,9 @@ struct MixerPanelView: View {
 
     private var quickAddButtons: some View {
         HStack(spacing: 5) {
-            Button("システム音") { model.addSystemAudio() }
-            Button("マイク")     { model.addDefaultMicrophone() }
-            Button("再生中")     { model.addPlayingApplications() }
+            Button("System") { model.addSystemAudio() }
+            Button("Mic")    { model.addDefaultMicrophone() }
+            Button("Playing") { model.addPlayingApplications() }
         }
         .controlSize(.small)
         .buttonStyle(.bordered)
@@ -130,14 +130,14 @@ struct MixerPanelView: View {
 
     private var addMenu: some View {
         Menu {
-            Menu("アプリ") {
+            Menu("Application") {
                 ForEach(model.availableProcesses) { process in
                     Button(process.isPlayingAudio ? "♪  \(process.name)" : process.name) {
                         model.addApplication(process)
                     }
                 }
             }
-            Menu("入力デバイス") {
+            Menu("Input Device") {
                 ForEach(model.availableInputs) { device in
                     Button("\(device.name)（\(device.inputChannels)ch）") {
                         model.addInput(device)
@@ -145,7 +145,7 @@ struct MixerPanelView: View {
                 }
             }
             Divider()
-            Button("一覧を更新") { model.refresh() }
+            Button("Refresh Lists") { model.refresh() }
         } label: {
             Image(systemName: "plus")
         }
@@ -159,9 +159,9 @@ struct MixerPanelView: View {
             Image(systemName: "waveform.badge.plus")
                 .font(.system(size: 30, weight: .light))
                 .foregroundStyle(.tertiary)
-            Text("ソースがありません")
+            Text("No sources yet")
                 .font(.callout).foregroundStyle(.secondary)
-            Text("「システム音」と「マイク」を足せば、\nビデオ会議でPCの音とマイクを同時に共有できます。")
+            Text("Add System and Mic to share your computer audio and your\nmicrophone together on a video call.")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
@@ -217,7 +217,7 @@ struct MixerPanelView: View {
                     .frame(width: 16)
             }
             .buttonStyle(.borderless)
-            .help(row.isMuted ? "ミュート解除" : "ミュート")
+            .help(row.isMuted ? "Unmute" : "Mute")
 
             Button {
                 model.remove(row.id)
@@ -225,7 +225,7 @@ struct MixerPanelView: View {
                 Image(systemName: "xmark").font(.caption2).foregroundStyle(.tertiary)
             }
             .buttonStyle(.borderless)
-            .help("このソースを外す")
+            .help("Remove this source")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 9)
@@ -257,12 +257,12 @@ struct MixerPanelView: View {
         return String(format: "%+.1f", 20 * log10(gain))
     }
 
-    // MARK: 出力と操作
+    // MARK: Output and transport
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Text("出力先").font(.subheadline.weight(.medium))
+                Text("Output").font(.subheadline.weight(.medium))
                 Picker("", selection: $model.outputDeviceUID) {
                     ForEach(model.outputCandidates) { device in
                         Text(device.name).tag(device.uid)
@@ -276,11 +276,11 @@ struct MixerPanelView: View {
                     model.refresh()
                 } label: { Image(systemName: "arrow.clockwise") }
                 .buttonStyle(.borderless)
-                .help("デバイスとアプリの一覧を更新")
+                .help("Refresh the device and application lists")
             }
 
             if model.outputDeviceUID == "TapdeckDevice" {
-                Label("Zoom や OBS の入力に「Tapdeck」を選ぶと、ここでミックスした音が渡ります。",
+                Label("Choose Tapdeck as the input in Zoom or OBS and it receives this mix.",
                       systemImage: "info.circle")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -291,7 +291,7 @@ struct MixerPanelView: View {
                 Button {
                     model.toggleRunning()
                 } label: {
-                    Label(model.isRunning ? "停止" : "ミックス開始",
+                    Label(model.isRunning ? "Stop" : "Start Mixing",
                           systemImage: model.isRunning ? "stop.fill" : "play.fill")
                         .frame(maxWidth: .infinity)
                 }
@@ -302,13 +302,13 @@ struct MixerPanelView: View {
                 .keyboardShortcut("r", modifiers: .command)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("出力レベル").font(.system(size: 9)).foregroundStyle(.secondary)
+                    Text("Output level").font(.system(size: 9)).foregroundStyle(.secondary)
                     LevelBar(level: model.masterLevel).frame(width: 104, height: 6)
                 }
             }
 
             if !menuBar.isPlaced {
-                Label("メニューバーに空きがなく、Tapdeck の項目を置けませんでした（ノッチのある画面では置ける範囲が狭くなります）。他の項目を減らすと出てきます。",
+                Label("The menu bar had no room for Tapdeck. A notched display leaves only a narrow strip for status items — remove a few and it will appear.",
                       systemImage: "menubar.arrow.up.rectangle")
                     .font(.caption)
                     .foregroundStyle(.orange)
@@ -327,8 +327,8 @@ struct MixerPanelView: View {
     }
 }
 
-/// レベルメーター。振幅をそのまま幅にすると小さい音がほぼ見えないので、
-/// dB に変換して -60dB〜0dB を全幅に割り当てる。
+/// A level meter. Using amplitude directly makes quiet audio invisible, so it
+/// converts to dB and maps -60 dB to 0 dB across the full width.
 struct LevelBar: View {
     let level: Float
 

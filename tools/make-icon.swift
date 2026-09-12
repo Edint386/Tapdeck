@@ -2,10 +2,9 @@ import AppKit
 import CoreGraphics
 import Foundation
 
-// Tapdeck のアプリアイコンを生成する。
-// 外部ツールに依存せず CoreGraphics で直接描き、iconutil 用の .iconset を出力する。
-//
-// 図案: ミキサーのフェーダー3本。小さいサイズでも「音を混ぜる道具」と分かる形にする。
+// Generate Tapdeck's app icon.
+// Drawn directly with CoreGraphics so there is no dependency on an external
+// tool, and written out as an .iconset for iconutil.
 
 let outputDirectory = CommandLine.arguments.count > 1
     ? CommandLine.arguments[1]
@@ -19,12 +18,12 @@ func drawIcon(into context: CGContext, size: CGFloat) {
     context.setShouldAntialias(true)
     context.interpolationQuality = .high
 
-    // macOS のアイコンは周囲に余白を持つ。実体は約 82% の領域。
+    // macOS icons carry padding; the artwork fills about 82% of the canvas.
     let inset = size * 0.09
     let body = CGRect(x: inset, y: inset, width: size - inset * 2, height: size - inset * 2)
-    let radius = body.width * 0.2237   // Big Sur 以降の角丸比
+    let radius = body.width * 0.2237   // corner ratio used since Big Sur
 
-    // ── 背景（斜めのグラデーション）──
+    // -- Background: a diagonal gradient --
     let shape = CGPath(roundedRect: body, cornerWidth: radius, cornerHeight: radius, transform: nil)
     context.saveGState()
     context.addPath(shape)
@@ -39,7 +38,7 @@ func drawIcon(into context: CGContext, size: CGFloat) {
                                end: CGPoint(x: body.maxX, y: body.minY),
                                options: [])
 
-    // 上端のわずかな光沢
+    // A faint sheen along the top edge
     let gloss = CGGradient(
         colorsSpace: CGColorSpaceCreateDeviceRGB(),
         colors: [color(255, 255, 255, 0.22), color(255, 255, 255, 0)] as CFArray,
@@ -50,10 +49,10 @@ func drawIcon(into context: CGContext, size: CGFloat) {
                                options: [])
     context.restoreGState()
 
-    // ── 図案: 3つの音源が1つにまとまり、波形として出ていく ──
+    // -- The motif: three sources merging and leaving as one waveform --
     //
-    // 「複数の入力を束ねて1本の出力にする」という Tapdeck の役割そのもの。
-    // フェーダーの絵は汎用的すぎて「設定」に見えるため採らない。
+    // That is exactly what Tapdeck does: bundle several inputs into one output.
+    // A picture of faders was tried first and read as a Settings icon.
 
     let unit = body.width
     let inputX = body.minX + unit * 0.175
@@ -68,7 +67,7 @@ func drawIcon(into context: CGContext, size: CGFloat) {
     context.setLineCap(.round)
     context.setLineJoin(.round)
 
-    // 入力3本 → 合流点
+    // Three inputs running into the junction
     context.setStrokeColor(color(255, 255, 255, 0.95))
     context.setLineWidth(lineWidth)
     for offset in inputOffsets {
@@ -77,7 +76,7 @@ func drawIcon(into context: CGContext, size: CGFloat) {
         if offset == 0 {
             context.addLine(to: CGPoint(x: junctionX, y: centerY))
         } else {
-            // 合流点の手前でなめらかに曲げる
+            // Curve smoothly just before the junction
             let bendX = inputX + (junctionX - inputX) * 0.45
             context.addLine(to: CGPoint(x: bendX, y: y))
             context.addCurve(to: CGPoint(x: junctionX, y: centerY),
@@ -87,7 +86,7 @@ func drawIcon(into context: CGContext, size: CGFloat) {
         context.strokePath()
     }
 
-    // 入力端の点
+    // Dots at the input ends
     context.setFillColor(color(255, 255, 255, 0.92))
     for offset in inputOffsets {
         let y = centerY + offset
@@ -95,7 +94,7 @@ func drawIcon(into context: CGContext, size: CGFloat) {
                                        width: inputDotRadius * 2, height: inputDotRadius * 2))
     }
 
-    // 出力: 合流点から波形として伸びる
+    // Output: a waveform leaving the junction
     context.setStrokeColor(color(255, 255, 255, 1))
     context.setLineWidth(lineWidth * 1.15)
     let waveStart = junctionX
@@ -106,16 +105,15 @@ func drawIcon(into context: CGContext, size: CGFloat) {
     for step in 1...steps {
         let t = CGFloat(step) / CGFloat(steps)
         let x = waveStart + waveLength * t
-        // 合流点では振幅0から始め、進むにつれて開く
-        // 合流点では振幅0から始め、開いてから終端でまた閉じる。
-        // 途中で切れた線に見えないようにするため。
+        // Start at zero amplitude, open out, then close again at the end so
+        // the line does not look cut off.
         let envelope = min(1, t * 2.6) * min(1, (1 - t) * 3.4 + 0.25)
         let y = centerY + sin(t * .pi * 3) * amplitude * envelope
         context.addLine(to: CGPoint(x: x, y: y))
     }
     context.strokePath()
 
-    // 合流点の結節
+    // The junction node
     context.saveGState()
     context.setShadow(offset: CGSize(width: 0, height: -size * 0.006),
                       blur: size * 0.015, color: color(0, 0, 0, 0.4))
@@ -147,7 +145,7 @@ let directory = URL(fileURLWithPath: outputDirectory)
 try? FileManager.default.removeItem(at: directory)
 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
-// .icns に必要な組み合わせ
+// The sizes an .icns needs
 let variants: [(name: String, pixels: Int)] = [
     ("icon_16x16",      16), ("icon_16x16@2x",    32),
     ("icon_32x32",      32), ("icon_32x32@2x",    64),
@@ -160,4 +158,4 @@ for variant in variants {
     try writePNG(size: variant.pixels,
                  to: directory.appendingPathComponent("\(variant.name).png"))
 }
-print("✓ \(outputDirectory) に \(variants.count) 枚を書き出しました")
+print("Wrote \(variants.count) images to \(outputDirectory)")

@@ -1,9 +1,9 @@
 import Foundation
 
-/// アプリ全体で共有するモデル。
+/// Models shared across the whole app.
 ///
-/// SwiftUI の @StateObject だけだと AppKit 側（メニューバーの NSStatusItem）から
-/// 触れないため、所有をここに集約する。
+/// SwiftUI's @StateObject alone is not reachable from the AppKit side (the menu
+/// bar NSStatusItem), so ownership is gathered here instead.
 @MainActor
 final class AppModels {
     static let shared = AppModels()

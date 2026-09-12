@@ -1,29 +1,30 @@
 //  TapdeckDriver.c
 //
-//  Tapdeck の仮想オーディオデバイス (AudioServerPlugIn)。
-//  カーネル拡張ではなく、coreaudiod にロードされるユーザー空間のプラグイン。
+//  Tapdeck's virtual audio devices (an AudioServerPlugIn).
+//  Not a kernel extension: this is a user-space plug-in loaded by Core Audio.
 //
-//  役割は「ループバック」。デバイスの出力側に書き込まれた音が、そのまま
-//  入力側から読める。
+//  Its job is loopback. Audio written to a device's output side can be read
+//  straight back from its input side.
 //
-//      Tapdeck.app  ──(ミックス済みの音を再生)──▶  出力側
-//                                                   │ リングバッファ
-//      Zoom / OBS   ◀──(マイクとして読む)──────  入力側
+//      Tapdeck.app  --(plays the finished mix)-->  output side
+//                                                   | ring buffer
+//      Zoom / OBS   <--(reads it as a mic)------   input side
 //
-//  公開するデバイスは設定ファイルで決まる。アプリが書き、ドライバが監視して
-//  増減を反映する（coreaudiod の再起動は不要）。
+//  Which devices exist is decided by the app. It hands the list over through a
+//  Core Audio custom property, and no restart is needed.
 //
 //      /Library/Preferences/Audio/Tapdeck/Devices.plist
 //
-//  この場所でなければならない理由:
-//  coreaudiod はサンドボックス下で動き、読み書きできる場所が
-//  /System/Library/Sandbox/Profiles/com.apple.audio.coreaudiod.sb で
-//  限定されている。/Users/Shared は許可リストに無く、読もうとしても
-//  失敗するだけで拒否ログすら残らない。
-//  /Library/Preferences/Audio 配下は読み書き both が許可されている。
-//  ただし Audio 自体は root:_coreaudiod の 775、その下の Data は SIP の
-//  restricted でアプリからは書けない。そこでインストーラ（root）が
-//  Audio/Tapdeck をユーザー所有で作り、そこへアプリが書く。
+//  Why this path and not somewhere convenient:
+//  the plug-in is hosted by a sandboxed process whose readable locations are
+//  tightly limited. /Users/Shared is not among them, and a read there simply
+//  fails with no denial in the log. /Library/Preferences/Audio is allowed.
+//  Audio itself is root:_coreaudiod 775 and the Data directory under it is
+//  SIP-restricted, so the installer (running as root) creates Audio/Tapdeck
+//  owned by the user and the app writes there.
+//
+//  In practice even that turned out to be unreadable from the host process, so
+//  the file is now only a record of state; the custom property is what works.
 
 #include <CoreAudio/AudioServerPlugIn.h>
 #include <os/log.h>
@@ -35,7 +36,7 @@
 #include <string.h>
 #include <sys/stat.h>
 
-#pragma mark - 定数
+#pragma mark - Constants
 
 #define kManufacturerName   "Tapdeck"
 #define kConfigurationPath  "/Library/Preferences/Audio/Tapdeck/Devices.plist"
@@ -52,18 +53,18 @@
 #define kMaxDevices         8
 #define kMaxChannels        16
 #define kDefaultChannels    2
-#define kRingBufferFrames   16384   // ゼロタイムスタンプの周期でもある
+#define kRingBufferFrames   16384   // also the zero-timestamp period
 #define kNameLength         128
 
 static const Float64 kSupportedSampleRates[] = { 44100.0, 48000.0, 88200.0, 96000.0 };
 #define kSupportedSampleRateCount (sizeof(kSupportedSampleRates) / sizeof(Float64))
 
-#pragma mark - オブジェクトID
+#pragma mark - Object IDs
 //
-//  プラグイン       : 1
-//  デバイス i       : 2 + i*3
-//  入力ストリーム i : 3 + i*3
-//  出力ストリーム i : 4 + i*3
+//  plug-in        : 1
+//  device i       : 2 + i*3
+//  input stream i : 3 + i*3
+//  output stream i: 4 + i*3
 
 #define kObjectID_PlugIn        kAudioObjectPlugInObject
 #define kDeviceObjectID(i)      ((AudioObjectID)(2 + (i) * 3))
@@ -72,7 +73,7 @@ static const Float64 kSupportedSampleRates[] = { 44100.0, 48000.0, 88200.0, 9600
 
 enum { kObjectKind_None = 0, kObjectKind_Device, kObjectKind_InputStream, kObjectKind_OutputStream };
 
-#pragma mark - デバイス1台ぶんの状態
+#pragma mark - State for one device
 
 typedef struct {
     Boolean  isPublished;
@@ -101,8 +102,9 @@ static dispatch_source_t        gConfigurationTimer = NULL;
 static struct timespec          gLastConfigurationTime = { 0, 0 };
 static off_t                    gLastConfigurationSize = -1;
 
-/// 診断用のログ。coreaudiod の中で動くので標準出力は使えない。
-/// os_log なら `log stream --predicate 'subsystem == "dev.kosuke.Tapdeck"'` で追える。
+/// Diagnostic logging. Standard output is unavailable inside the host process,
+/// but os_log can be followed with
+/// `log stream --predicate 'subsystem == "dev.kosuke.Tapdeck"'`.
 static os_log_t TapdeckLog(void)
 {
     static os_log_t log;
@@ -115,7 +117,7 @@ static os_log_t TapdeckLog(void)
 static inline void LockState(void)   { pthread_mutex_lock(&gStateMutex); }
 static inline void UnlockState(void) { pthread_mutex_unlock(&gStateMutex); }
 
-#pragma mark - 小道具
+#pragma mark - Small helpers
 
 static void RecalculateHostTicks(TapdeckDevice* device)
 {
@@ -149,7 +151,7 @@ static Boolean IsSupportedSampleRate(Float64 rate)
     return false;
 }
 
-/// オブジェクトIDから、どのデバイスの何かを割り出す。
+/// Work out which device an object ID refers to, and what part of it.
 static int ResolveObject(AudioObjectID objectID, UInt32* outIndex)
 {
     if (objectID < 2) return kObjectKind_None;
@@ -179,7 +181,7 @@ static UInt32 PublishedDeviceCount(void)
     return count;
 }
 
-#pragma mark - 設定ファイルの読み込みと監視
+#pragma mark - Reading and watching the configuration
 
 typedef struct {
     char   uid[kNameLength];
@@ -268,17 +270,19 @@ static UInt32 ReadConfiguration(TapdeckDeviceSpec* specs, UInt32 capacity)
     return count;
 }
 
-/// 読み込み済みの設定を現在の状態へ反映する。変化があれば true。
-/// 呼び出し側で gStateMutex を保持していること。
+/// Apply an already-parsed configuration. Returns true if anything changed.
+/// The caller must hold gStateMutex.
 ///
-/// ファイル読み込みはここには含めない。ロックを保持したままディスクを触ると、
-/// 実時間のIOスレッドがその完了を待つことになり、音が途切れる。
+/// Reading from disk deliberately happens outside this function. Touching the
+/// disk while holding the lock would make the real-time IO thread wait for it,
+/// and the audio would break up.
 static Boolean ApplyConfigurationLocked(const TapdeckDeviceSpec* specs, UInt32 specCount)
 {
     Boolean changed = false;
 
-    // まず、設定から消えたデバイスを外す。
-    // IO 実行中のものは巻き込み事故を避けるため残す（次回の巡回で外れる）。
+    // First remove devices that are no longer configured. Anything with IO
+    // running is left alone to avoid pulling the rug out; it goes on the next
+    // pass.
     for (UInt32 i = 0; i < kMaxDevices; ++i) {
         if (!gDevices[i].isPublished) continue;
         Boolean stillWanted = false;
@@ -291,12 +295,12 @@ static Boolean ApplyConfigurationLocked(const TapdeckDeviceSpec* specs, UInt32 s
         }
     }
 
-    // 次に、設定にあって未公開のものを足す。
+    // Then add configured devices that are not published yet.
     for (UInt32 s = 0; s < specCount; ++s) {
         Boolean alreadyPublished = false;
         for (UInt32 i = 0; i < kMaxDevices; ++i) {
             if (gDevices[i].isPublished && strcmp(gDevices[i].uid, specs[s].uid) == 0) {
-                // 名前だけ変わった場合はその場で更新する。
+                // A rename can be applied in place.
                 if (strcmp(gDevices[i].name, specs[s].name) != 0) {
                     strlcpy(gDevices[i].name, specs[s].name, sizeof(gDevices[i].name));
                     changed = true;
@@ -338,11 +342,11 @@ static void NotifyDeviceListChanged(void)
     gHost->PropertiesChanged(gHost, kObjectID_PlugIn, 2, addresses);
 }
 
-/// 設定ファイルの更新を拾う。
+/// Notice updates to the configuration file.
 ///
-/// vnode 監視ではなく mtime の巡回にしているのは、設定ファイルが上書きではなく
-/// 差し替え（新規作成 → rename）で更新されるため。vnode 監視は古い inode に
-/// 張り付いたままになり、変更を取りこぼす。
+/// This polls mtime rather than watching the vnode, because the file is
+/// replaced (written then renamed) rather than modified in place. A vnode watch
+/// would stay attached to the old inode and miss every change.
 static UInt64 gTickCount = 0;
 
 static void CheckConfiguration(void)
@@ -364,7 +368,7 @@ static void CheckConfiguration(void)
     }
     if (!touched) return;
 
-    // 読み込みはロックの外で行う。
+    // Read outside the lock.
     TapdeckDeviceSpec specs[kMaxDevices];
     UInt32 specCount = ReadConfiguration(specs, kMaxDevices);
 
@@ -372,7 +376,7 @@ static void CheckConfiguration(void)
     Boolean changed = ApplyConfigurationLocked(specs, specCount);
     UnlockState();
 
-    TAPLOG("設定が更新された: specCount=%u changed=%d", specCount, (int)changed);
+    TAPLOG("configuration changed: specCount=%u changed=%d", specCount, (int)changed);
     if (changed) NotifyDeviceListChanged();
 }
 
@@ -388,7 +392,7 @@ static void StartConfigurationWatch(void)
     dispatch_resume(gConfigurationTimer);
 }
 
-#pragma mark - プロパティ: プラグインオブジェクト
+#pragma mark - Properties: the plug-in object
 
 static Boolean PlugInHasProperty(const AudioObjectPropertyAddress* address)
 {
@@ -558,7 +562,7 @@ static OSStatus PlugInGetPropertyData(const AudioObjectPropertyAddress* address,
     }
 }
 
-#pragma mark - プロパティ: デバイスオブジェクト
+#pragma mark - Properties: device objects
 
 static UInt32 DeviceStreamsForScope(UInt32 index, AudioObjectPropertyScope scope,
                                     AudioObjectID streams[2])
@@ -799,7 +803,7 @@ static OSStatus DeviceGetPropertyData(UInt32 index,
     }
 }
 
-#pragma mark - プロパティ: ストリームオブジェクト
+#pragma mark - Properties: stream objects
 
 static Boolean StreamHasProperty(const AudioObjectPropertyAddress* address)
 {
@@ -924,7 +928,7 @@ static OSStatus StreamGetPropertyData(UInt32 index, Boolean isInput,
     }
 }
 
-#pragma mark - ドライバインターフェース: 振り分け
+#pragma mark - Driver interface: dispatch
 
 static Boolean Tapdeck_HasProperty(AudioServerPlugInDriverRef inDriver,
                                    AudioObjectID inObjectID, pid_t inClientProcessID,
@@ -1122,8 +1126,8 @@ static OSStatus Tapdeck_SetPropertyData(AudioServerPlugInDriverRef inDriver,
     Boolean changed = (requested != gDevices[index].sampleRate);
     UnlockState();
 
-    // サンプルレートの変更は即時には行えない。ホストに構成変更を依頼し、
-    // 折り返し PerformDeviceConfigurationChange で実際に切り替える。
+    // A sample rate change cannot happen inline. Ask the host for a
+    // configuration change and do the work in PerformDeviceConfigurationChange.
     if (changed && gHost != NULL) {
         gHost->RequestDeviceConfigurationChange(gHost, kDeviceObjectID(index),
                                                 (UInt64)requested, NULL);
@@ -1131,7 +1135,7 @@ static OSStatus Tapdeck_SetPropertyData(AudioServerPlugInDriverRef inDriver,
     return 0;
 }
 
-#pragma mark - ドライバインターフェース: ライフサイクル
+#pragma mark - Driver interface: lifecycle
 
 static HRESULT Tapdeck_QueryInterface(void* inDriver, REFIID inUUID, LPVOID* outInterface);
 static ULONG   Tapdeck_AddRef(void* inDriver);
@@ -1151,15 +1155,16 @@ static OSStatus Tapdeck_Initialize(AudioServerPlugInDriverRef inDriver,
     ApplyConfigurationLocked(specs, specCount);
     UnlockState();
 
-    TAPLOG("Initialize 完了: 公開 %u 台", PublishedDeviceCount());
+    TAPLOG("initialised with %u device(s) published", PublishedDeviceCount());
 
-    // 以後は設定ファイルの更新を巡回で拾い、デバイスを増減させる。
+    // From here on, poll the file for changes as a fallback path.
     StartConfigurationWatch();
-    TAPLOG("巡回を開始: timer=%s", gConfigurationTimer ? "あり" : "なし");
+    TAPLOG("polling started: timer=%s", gConfigurationTimer ? "yes" : "no");
     return 0;
 }
 
-// 公開するデバイスは設定ファイルで決まる。HAL からの動的な作成は受けない。
+// The published devices come from the app, not from the HAL, so dynamic
+// creation is refused.
 static OSStatus Tapdeck_CreateDevice(AudioServerPlugInDriverRef inDriver,
                                      CFDictionaryRef inDescription,
                                      const AudioServerPlugInClientInfo* inClientInfo,
@@ -1200,7 +1205,7 @@ static OSStatus Tapdeck_RemoveDeviceClient(AudioServerPlugInDriverRef inDriver,
     return (kind == kObjectKind_Device) ? 0 : kAudioHardwareBadObjectError;
 }
 
-/// サンプルレート変更の実行。SetPropertyData から依頼した変更がここに戻ってくる。
+/// Carry out a sample rate change requested from SetPropertyData.
 static OSStatus Tapdeck_PerformDeviceConfigurationChange(AudioServerPlugInDriverRef inDriver,
                                                          AudioObjectID inDeviceObjectID,
                                                          UInt64 inChangeAction,
@@ -1233,7 +1238,7 @@ static OSStatus Tapdeck_AbortDeviceConfigurationChange(AudioServerPlugInDriverRe
     return 0;
 }
 
-#pragma mark - ドライバインターフェース: IO
+#pragma mark - Driver interface: IO
 
 static OSStatus Tapdeck_StartIO(AudioServerPlugInDriverRef inDriver,
                                 AudioObjectID inDeviceObjectID, UInt32 inClientID)
@@ -1246,7 +1251,7 @@ static OSStatus Tapdeck_StartIO(AudioServerPlugInDriverRef inDriver,
 
     TapdeckDevice* device = &gDevices[index];
     if (device->ioRunningCount == 0) {
-        // 最初のクライアントが来たときだけ仮想クロックを張り直す。
+        // Re-anchor the virtual clock only for the first client.
         memset(device->ring, 0, sizeof(device->ring));
         RecalculateHostTicks(device);
         device->timeStampCount = 0;
@@ -1270,14 +1275,14 @@ static OSStatus Tapdeck_StopIO(AudioServerPlugInDriverRef inDriver,
     return 0;
 }
 
-/// 仮想クロック。実ハードウェアが無いので mach_absolute_time から合成する。
-/// リングバッファ1周ぶん進むごとにタイムスタンプを1つ発行する。
+/// The virtual clock. There is no real hardware, so it is synthesised from
+/// mach_absolute_time, issuing one timestamp per trip around the ring buffer.
 static OSStatus Tapdeck_GetZeroTimeStamp(AudioServerPlugInDriverRef inDriver,
                                          AudioObjectID inDeviceObjectID, UInt32 inClientID,
                                          Float64* outSampleTime, UInt64* outHostTime,
                                          UInt64* outSeed)
 {
-    // 実時間スレッドから毎周期呼ばれる。ロックは取らない。
+    // Called every cycle from the real-time thread. No locking here.
     (void)inDriver; (void)inClientID;
     UInt32 index = 0;
     int kind = ResolveObject(inDeviceObjectID, &index);
@@ -1327,8 +1332,9 @@ static OSStatus Tapdeck_BeginIOOperation(AudioServerPlugInDriverRef inDriver,
     return (kind == kObjectKind_Device) ? 0 : kAudioHardwareBadObjectError;
 }
 
-/// ここがループバックの本体。
-/// 出力側に書かれたフレームをリングバッファへ置き、入力側はそこから読む。
+/// The loopback itself.
+/// Frames written to the output side land in the ring buffer, and the input
+/// side reads them back out.
 static OSStatus Tapdeck_DoIOOperation(AudioServerPlugInDriverRef inDriver,
                                       AudioObjectID inDeviceObjectID,
                                       AudioObjectID inStreamObjectID, UInt32 inClientID,
@@ -1339,9 +1345,9 @@ static OSStatus Tapdeck_DoIOOperation(AudioServerPlugInDriverRef inDriver,
     (void)inDriver; (void)inStreamObjectID; (void)inClientID; (void)ioSecondaryBuffer;
     if (ioMainBuffer == NULL || inIOCycleInfo == NULL) return 0;
 
-    // ここは実時間スレッド。ロックは取らない。
-    // 公開中かつ IO 実行中のデバイスは設定変更で外されないようにしてあるので、
-    // channelCount とリングバッファはこの区間で変化しない。
+    // Real-time thread: no locking. A published device with IO running is
+    // never removed by a configuration change, so channelCount and the ring
+    // buffer cannot move underneath us here.
     UInt32 index = 0;
     int kind = ResolveObject(inDeviceObjectID, &index);
     if (kind != kObjectKind_Device) return kAudioHardwareBadObjectError;
@@ -1365,7 +1371,8 @@ static OSStatus Tapdeck_DoIOOperation(AudioServerPlugInDriverRef inDriver,
             for (UInt32 ch = 0; ch < channels; ++ch) {
                 UInt64 offset = slot * channels + ch;
                 buffer[frame * channels + ch] = device->ring[offset];
-                // 読んだら消す。出力側が止まったときに古い音がループするのを防ぐ。
+                // Clear on read, so stale audio does not loop once the output
+                // side stops.
                 device->ring[offset] = 0.0f;
             }
         }
@@ -1385,7 +1392,7 @@ static OSStatus Tapdeck_EndIOOperation(AudioServerPlugInDriverRef inDriver,
     return (kind == kObjectKind_Device) ? 0 : kAudioHardwareBadObjectError;
 }
 
-#pragma mark - インターフェーステーブルとファクトリ
+#pragma mark - Interface table and factory
 
 static AudioServerPlugInDriverInterface gInterface = {
     NULL,
@@ -1453,7 +1460,8 @@ static ULONG Tapdeck_Release(void* inDriver)
     return result;
 }
 
-/// CFPlugIn のエントリポイント。Info.plist の CFPlugInFactories から名前で参照される。
+/// CFPlugIn entry point, referenced by name from CFPlugInFactories in
+/// Info.plist.
 void* TapdeckDriver_Create(CFAllocatorRef inAllocator, CFUUIDRef inRequestedTypeUUID);
 void* TapdeckDriver_Create(CFAllocatorRef inAllocator, CFUUIDRef inRequestedTypeUUID)
 {

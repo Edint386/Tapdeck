@@ -1,35 +1,35 @@
 #!/bin/bash
-# Tapdeck.app をビルドして /Applications へ入れる。
-# 以降は普段のアプリと同じように Launchpad や Spotlight から起動できる。
+# Build Tapdeck.app and install it into /Applications, so it launches from
+# Launchpad or Spotlight like any other app.
 set -euo pipefail
 cd "$(dirname "$0")"
 
 DESTINATION="/Applications/Tapdeck.app"
 
-# 固定の署名IDが無ければ先に作る。無いまま ad-hoc で署名すると
-# ビルドのたびに許可（マイク・画面収録・オーディオ録音）が取り直しになる。
+# Create the stable signing identity first if it is missing. Without it every
+# build is ad-hoc signed, and macOS resets the granted permissions each time.
 if ! security find-certificate -c "Tapdeck Local" >/dev/null 2>&1; then
-  echo "→ 署名用の証明書がないので作成します"
+  echo "-> No signing certificate yet; creating one"
   ./tools/setup-signing.sh
 fi
 
 ./build.sh
 
 if pgrep -x Tapdeck >/dev/null 2>&1; then
-  echo "→ 実行中の Tapdeck を終了します"
+  echo "-> Quitting the running Tapdeck"
   osascript -e 'tell application "Tapdeck" to quit' 2>/dev/null || pkill -x Tapdeck || true
   sleep 1
 fi
 
-echo "→ $DESTINATION へインストール"
+echo "-> Installing to $DESTINATION"
 rm -rf "$DESTINATION"
 cp -R Tapdeck.app "$DESTINATION"
 
-# Launch Services に登録し直して、アイコンと名前を即座に反映させる。
+# Re-register with Launch Services so the icon and name update immediately.
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
   -f "$DESTINATION" 2>/dev/null || true
 
-echo "✓ インストールしました: $DESTINATION"
+echo "Installed: $DESTINATION"
 echo
-echo "  起動:        open -a Tapdeck"
-echo "  ドライバ:    sudo ./install-driver.sh   （仮想デバイスを使う場合、初回のみ）"
+echo "  Launch:  open -a Tapdeck"
+echo "  Driver:  sudo ./install-driver.sh   (once, for virtual devices)"

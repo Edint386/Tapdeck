@@ -1,5 +1,5 @@
 #!/bin/bash
-# Xcode があればその SDK を、無ければ Command Line Tools の SDK を使う。
+# Use Xcode's SDK when it is installed, otherwise the Command Line Tools SDK.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -13,16 +13,16 @@ mkdir -p build
 common_flags=(-swift-version 5 -target "$TARGET" -sdk "$SDK"
               -framework CoreAudio -framework AVFoundation -framework AppKit)
 
-# ── 1. tapproof — オーディオエンジンの検証用CLI ──────────────────────
+# -- 1. tapproof: command line harness for the audio engine ------------------
 echo "→ tapproof"
 xcrun swiftc -O "${common_flags[@]}" \
   -o build/tapproof \
   Sources/Engine/*.swift Sources/CLI/*.swift
 
-# tapproof は入力デバイスを読むためマイク権限が要る。TCC はバンドルを持たない
-# 実行ファイルにプロンプトを出せないので、.app に包んでおく。
-# バンドル内のバイナリを直接起動すれば標準出力はそのまま使える。
-echo "→ Tapproof.app (TCC 用のバンドル)"
+# tapproof needs microphone permission to read an input device, and TCC cannot
+# prompt for a bare executable, so wrap it in an .app. Running the binary inside
+# the bundle directly still gives normal stdout.
+echo "-> Tapproof.app (bundle so TCC can prompt)"
 PROOF="build/Tapproof.app"
 rm -rf "$PROOF"
 mkdir -p "$PROOF/Contents/MacOS"
@@ -30,7 +30,7 @@ cp Resources/Tapproof-Info.plist "$PROOF/Contents/Info.plist"
 cp build/tapproof "$PROOF/Contents/MacOS/tapproof"
 codesign --force --sign "${TAPDECK_SIGN_ID:--}" "$PROOF"
 
-# ── 2. Tapdeck.app — 画面収録UI（Phase 1 の成果物）────────────────────
+# -- 2. Tapdeck.app ---------------------------------------------------------
 echo "→ Tapdeck.app"
 APP="Tapdeck.app"
 rm -rf "$APP"
@@ -43,8 +43,8 @@ xcrun swiftc -O "${common_flags[@]}" -parse-as-library \
   -o "$APP/Contents/MacOS/Tapdeck" \
   Sources/Engine/*.swift Sources/App/*.swift
 
-# 署名: 安定した自己署名証明書 "Tapdeck Local" があればそれを使う。
-# ad-hoc だとビルドのたびに署名が変わり、画面収録の許可を毎回求められる。
+# Signing: prefer the stable self-signed "Tapdeck Local" certificate. An ad-hoc
+# signature changes on every build, which resets the granted permissions.
 SIGN_ID="${TAPDECK_SIGN_ID:-}"
 if [ -z "$SIGN_ID" ]; then
   if security find-certificate -c "Tapdeck Local" >/dev/null 2>&1; then
@@ -56,4 +56,4 @@ fi
 echo "→ signing with: $SIGN_ID"
 codesign --force --sign "$SIGN_ID" "$APP"
 
-echo "✓ build/tapproof と $APP をビルドしました"
+echo "Built build/tapproof and $APP"

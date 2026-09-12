@@ -10,11 +10,11 @@
     <key>CFBundleVersion</key>           <string>1</string>
     <key>LSMinimumSystemVersion</key>    <string>15.0</string>
     <key>LSUIElement</key>               <true/>
-    <!-- Core Audio の Process Tap（アプリ単位の音声取得）に必要。
-         このキーが無いと TCC はエラーを返さず、無音を返す。 -->
+    <!-- Required for Core Audio process taps (per-app audio capture).
+         Without this key TCC returns no error, only silence. -->
     <key>NSAudioCaptureUsageDescription</key>
-    <string>アプリごとの音声を取り込んでミックスするために使用します。</string>
+    <string>Tapdeck captures audio from individual apps so it can mix them.</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>仮想オーディオデバイスの入力を読み取って検証するためにマイク権限が必要です。</string>
+    <string>Tapdeck reads the input side of its virtual devices to verify them.</string>
 </dict>
 </plist>

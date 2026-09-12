@@ -2,13 +2,14 @@ import AVFoundation
 import CoreAudio
 import Foundation
 
-/// 指定したオーディオデバイスへ音を流し込む。ミキサーの出力段でもある。
+/// Feeds audio into a chosen device. Also serves as the mixer's output stage.
 ///
-/// AVAudioEngine は既定では既定の出力デバイスへ繋がるので、
-/// AUHAL の kAudioOutputUnitProperty_CurrentDevice を差し替えて出力先を固定する。
+/// AVAudioEngine connects to the default output device unless told otherwise,
+/// so the destination is pinned by setting the AUHAL's
+/// kAudioOutputUnitProperty_CurrentDevice.
 final class DeviceOutput {
 
-    /// 1周期ぶんの音を書き込むコールバック。非インターリーブ Float32。
+    /// Callback that fills one cycle of audio. Non-interleaved Float32.
     typealias RenderBlock = (_ channels: [UnsafeMutablePointer<Float>],
                              _ frameCount: Int) -> Void
 
@@ -18,10 +19,10 @@ final class DeviceOutput {
 
     init(device: AudioDevice, sampleRate: Double? = nil, channels: Int = 2) throws {
         guard let unit = engine.outputNode.audioUnit else {
-            throw CoreAudioError.missing("出力ノードの AudioUnit")
+            throw CoreAudioError.missing("the output node's AudioUnit")
         }
         var deviceID = device.deviceID
-        try ca("出力デバイスの指定") {
+        try ca("selecting the output device") {
             AudioUnitSetProperty(unit,
                                  kAudioOutputUnitProperty_CurrentDevice,
                                  kAudioUnitScope_Global, 0,
@@ -34,7 +35,7 @@ final class DeviceOutput {
                                       sampleRate: rate,
                                       channels: AVAudioChannelCount(channels),
                                       interleaved: false) else {
-            throw CoreAudioError.missing("出力フォーマット")
+            throw CoreAudioError.missing("the output format")
         }
         format = fmt
     }
@@ -73,12 +74,13 @@ final class DeviceOutput {
     }
 }
 
-/// 指定したオーディオデバイスの入力から音を取り込む。
-/// マイクや外部インターフェースに加え、Tapdeck 自身の仮想デバイスも読める。
+/// Captures audio from a chosen device's input. That covers microphones and
+/// audio interfaces, and Tapdeck's own virtual devices.
 ///
-/// AVAudioEngine を使わず AUHAL を直接扱う。AVAudioEngine は `inputNode` に
-/// 触れた時点で既定の入力デバイスへバインドしてしまい、デバイスを指定する前に
-/// 意図しないマイクを掴む（そこで TCC 待ちになると無期限にブロックする）。
+/// This drives an AUHAL directly rather than using AVAudioEngine. Merely
+/// touching AVAudioEngine's `inputNode` binds it to the default input device,
+/// so it grabs an unintended microphone before the device can be chosen — and
+/// if that triggers a TCC prompt, it blocks indefinitely.
 final class DeviceInput {
 
     private var unit: AudioUnit?
@@ -96,48 +98,49 @@ final class DeviceInput {
             componentFlagsMask: 0)
 
         guard let component = AudioComponentFindNext(nil, &description) else {
-            throw CoreAudioError.missing("AUHAL コンポーネント")
+            throw CoreAudioError.missing("the AUHAL component")
         }
         var instance: AudioUnit?
-        try ca("AUHAL の生成") { AudioComponentInstanceNew(component, &instance) }
-        guard let au = instance else { throw CoreAudioError.missing("AUHAL インスタンス") }
+        try ca("creating the AUHAL") { AudioComponentInstanceNew(component, &instance) }
+        guard let au = instance else { throw CoreAudioError.missing("the AUHAL instance") }
         unit = au
 
-        // バス1が入力、バス0が出力。入力だけを有効にする。
+        // Bus 1 is input and bus 0 is output. Only input is wanted.
         var enable: UInt32 = 1
-        try ca("入力バスの有効化") {
+        try ca("enabling the input bus") {
             AudioUnitSetProperty(au, kAudioOutputUnitProperty_EnableIO,
                                  kAudioUnitScope_Input, 1,
                                  &enable, UInt32(MemoryLayout<UInt32>.size))
         }
         var disable: UInt32 = 0
-        try ca("出力バスの無効化") {
+        try ca("disabling the output bus") {
             AudioUnitSetProperty(au, kAudioOutputUnitProperty_EnableIO,
                                  kAudioUnitScope_Output, 0,
                                  &disable, UInt32(MemoryLayout<UInt32>.size))
         }
 
-        // 初期化より前にデバイスを固定する。ここが AVAudioEngine との違い。
+        // Pin the device before initialising. This is what AVAudioEngine
+        // does not let us do.
         var deviceID = device.deviceID
-        try ca("入力デバイスの指定") {
+        try ca("selecting the input device") {
             AudioUnitSetProperty(au, kAudioOutputUnitProperty_CurrentDevice,
                                  kAudioUnitScope_Global, 0,
                                  &deviceID, UInt32(MemoryLayout<AudioDeviceID>.size))
         }
 
-        // 受け取りたい形式（非インターリーブ Float32）を入力バスの出力側に設定する。
+        // Ask for non-interleaved Float32 on the output side of the input bus.
         let rate = sampleRate ?? device.sampleRate
         let channels = max(1, min(device.inputChannels, 2))
         guard let fmt = AVAudioFormat(commonFormat: .pcmFormatFloat32,
                                       sampleRate: rate,
                                       channels: AVAudioChannelCount(channels),
                                       interleaved: false) else {
-            throw CoreAudioError.missing("入力フォーマット")
+            throw CoreAudioError.missing("the input format")
         }
         format = fmt
 
         var asbd = fmt.streamDescription.pointee
-        try ca("入力フォーマットの設定") {
+        try ca("setting the input format") {
             AudioUnitSetProperty(au, kAudioUnitProperty_StreamFormat,
                                  kAudioUnitScope_Output, 1,
                                  &asbd, UInt32(MemoryLayout<AudioStreamBasicDescription>.size))
@@ -146,8 +149,8 @@ final class DeviceInput {
 
     deinit { stop() }
 
-    /// - Parameter onAudio: バッファと、それが取り込まれた時刻。
-    ///   時刻は映像と音声を多重化するときに必要になる。
+    /// - Parameter onAudio: the buffer and the time it was captured.
+    ///   The timestamp is needed when muxing audio with video.
     func start(onAudio: @escaping (AVAudioPCMBuffer, AudioTimeStamp) -> Void) throws {
         guard let au = unit, !started else { return }
         handler = onAudio
@@ -159,18 +162,18 @@ final class DeviceInput {
             },
             inputProcRefCon: Unmanaged.passUnretained(self).toOpaque())
 
-        try ca("入力コールバックの設定") {
+        try ca("installing the input callback") {
             AudioUnitSetProperty(au, kAudioOutputUnitProperty_SetInputCallback,
                                  kAudioUnitScope_Global, 0,
                                  &callback, UInt32(MemoryLayout<AURenderCallbackStruct>.size))
         }
 
-        try ca("AUHAL の初期化") { AudioUnitInitialize(au) }
-        try ca("AUHAL の開始")   { AudioOutputUnitStart(au) }
+        try ca("initialising the AUHAL") { AudioUnitInitialize(au) }
+        try ca("starting the AUHAL")    { AudioOutputUnitStart(au) }
         started = true
     }
 
-    /// AUHAL から呼ばれる。AudioUnitRender で実際の音を引き出す。
+    /// Called by the AUHAL. AudioUnitRender pulls the actual audio out.
     private func render(_ flags: UnsafeMutablePointer<AudioUnitRenderActionFlags>,
                         _ timeStamp: UnsafePointer<AudioTimeStamp>,
                         _ bus: UInt32,

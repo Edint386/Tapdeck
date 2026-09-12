@@ -1,18 +1,20 @@
 import CoreAudio
 import Foundation
 
-/// ドライバが公開する仮想デバイスの一覧。
+/// The list of virtual devices the driver publishes.
 ///
-/// アプリが書き、ドライバ（coreaudiod 内）が監視して増減を反映する。
+/// The app owns this list and hands it to the driver. The file below is only a
+/// record of the current state — see `push()` for the path that actually takes
+/// effect.
 ///
-/// 置き場所は /Library/Preferences/Audio 配下でなければならない。
-/// coreaudiod はサンドボックス下で動き、読める場所が
-/// com.apple.audio.coreaudiod.sb で限定されている。/Users/Shared などは
-/// 許可されておらず、読もうとしても失敗するだけで拒否ログも残らない。
+/// The file has to live under /Library/Preferences/Audio, because the process
+/// hosting the driver is sandboxed and can only read a handful of locations.
+/// Somewhere like /Users/Shared is not among them, and reading simply fails
+/// with no denial in the log.
 ///
-/// Audio 自体は root:_coreaudiod の 775、その下の Data は SIP の restricted で
-/// アプリからは書けない。そこで install-driver.sh が Audio/Tapdeck を
-/// ユーザー所有で作り、そこへ書く。
+/// Audio itself is root:_coreaudiod 775 and the Data directory beneath it is
+/// SIP-restricted, so neither is writable by the app. install-driver.sh
+/// therefore creates Audio/Tapdeck owned by the user.
 struct VirtualDeviceConfiguration {
 
     struct Device: Identifiable, Hashable {
@@ -36,17 +38,17 @@ struct VirtualDeviceConfiguration {
                                   isDirectory: true)
     static let fileURL = directoryURL.appendingPathComponent("Devices.plist")
 
-    /// 設定ファイルの控え。Apple 管理下のディレクトリなので、
-    /// システム更新などで消える可能性を考えて手元にも持っておく。
+    /// A copy of the configuration. The directory belongs to the system, so
+    /// keep our own in case an update clears it.
     private static let mirrorKey = "virtualDeviceConfiguration"
 
-    /// ドライバが設定ファイル無しのときに作る既定のデバイス。
+    /// The device the driver falls back to when it has no configuration.
     static let defaultDevice = Device(uid: "TapdeckDevice", name: "Tapdeck", channelCount: 2)
 
-    // MARK: - 読み書き
+    // MARK: - Reading and writing
 
     static func load() -> VirtualDeviceConfiguration {
-        // ファイルが消えていたら控えから書き戻す。
+        // Restore from our copy if the file has gone.
         if !FileManager.default.fileExists(atPath: fileURL.path),
            let mirrored = UserDefaults.standard.array(forKey: mirrorKey) as? [[String: Any]],
            !mirrored.isEmpty {
@@ -104,13 +106,13 @@ struct VirtualDeviceConfiguration {
         let manager = FileManager.default
         guard manager.fileExists(atPath: directoryURL.path) else {
             throw WriteError.cannotCreateDirectory(
-                "\(directoryURL.path) がありません。sudo ./install-driver.sh を実行してください。")
+                "\(directoryURL.path) does not exist. Run: sudo ./install-driver.sh")
         }
         do {
             let data = try PropertyListSerialization.data(fromPropertyList: raw,
                                                           format: .xml, options: 0)
             try data.write(to: fileURL, options: .atomic)
-            // coreaudiod は _coreaudiod ユーザーなので、誰でも読める権限にする。
+            // The driver host runs as another user, so make it world readable.
             try? manager.setAttributes([.posixPermissions: 0o644], ofItemAtPath: fileURL.path)
         } catch {
             throw WriteError.cannotWrite(error.localizedDescription)

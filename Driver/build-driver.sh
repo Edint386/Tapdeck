@@ -1,6 +1,6 @@
 #!/bin/bash
-# Tapdeck.driver（AudioServerPlugIn）をビルドする。
-# インストールは sudo が要るので、このスクリプトはビルドまでしか行わない。
+# Build Tapdeck.driver (an AudioServerPlugIn).
+# Installing needs sudo, so this script stops at building.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -24,8 +24,8 @@ xcrun clang -bundle -O2 \
   -o "$BUNDLE/Contents/MacOS/TapdeckDriver" \
   TapdeckDriver.c
 
-# coreaudiod は署名されていないプラグインを読み込まない。
-# 自分用なら ad-hoc (-) でよい。配布するなら Developer ID + 公証が必要。
+# Core Audio will not load an unsigned plug-in. Ad-hoc (-) is fine for your own
+# machine; distribution needs a Developer ID signature and notarisation.
 SIGN_ID="${TAPDECK_DRIVER_SIGN_ID:--}"
 echo "→ signing with: $SIGN_ID"
 codesign --force --sign "$SIGN_ID" "$BUNDLE"

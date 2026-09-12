@@ -18,30 +18,30 @@ struct RecorderPanelView: View {
         .task { await rec.refreshContent() }
     }
 
-    // MARK: 収録対象
+    // MARK: Capture target
 
     private var targetSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("収録対象").font(.headline)
+                Text("Capture").font(.headline)
                 Spacer()
-                Button("更新") { Task { await rec.refreshContent() } }
+                Button("Refresh") { Task { await rec.refreshContent() } }
                     .controlSize(.small)
                     .disabled(rec.isRecording)
             }
             Picker("", selection: $rec.selectedID) {
                 if !rec.displayOptions.isEmpty {
-                    Section("ディスプレイ") {
+                    Section("Displays") {
                         ForEach(rec.displayOptions) { Text($0.label).tag($0.id) }
                     }
                 }
                 if !rec.appOptions.isEmpty {
-                    Section("アプリケーション") {
+                    Section("Applications") {
                         ForEach(rec.appOptions) { Text($0.label).tag($0.id) }
                     }
                 }
                 if !rec.windowOptions.isEmpty {
-                    Section("ウインドウ") {
+                    Section("Windows") {
                         ForEach(rec.windowOptions) { Text($0.label).tag($0.id) }
                     }
                 }
@@ -52,16 +52,16 @@ struct RecorderPanelView: View {
         }
     }
 
-    // MARK: 映像
+    // MARK: Video
 
     private var videoSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("映像").font(.headline)
+            Text("Video").font(.headline)
 
             HStack {
-                Text("解像度").frame(width: 64, alignment: .leading)
+                Text("Size").frame(width: 64, alignment: .leading)
                 Picker("", selection: $rec.scalePercent) {
-                    Text("100% (等倍)").tag(100)
+                    Text("100% (native)").tag(100)
                     Text("75%").tag(75)
                     Text("50%").tag(50)
                     Text("25%").tag(25)
@@ -76,7 +76,7 @@ struct RecorderPanelView: View {
             }
 
             HStack {
-                Text("フレーム").frame(width: 64, alignment: .leading)
+                Text("Rate").frame(width: 64, alignment: .leading)
                 Picker("", selection: $rec.fps) {
                     Text("60 fps").tag(60)
                     Text("30 fps").tag(30)
@@ -86,21 +86,21 @@ struct RecorderPanelView: View {
                 .labelsHidden()
             }
 
-            Toggle("マウスカーソルを含める", isOn: $rec.showsCursor)
+            Toggle("Include the pointer", isOn: $rec.showsCursor)
         }
         .disabled(rec.isRecording)
     }
 
-    // MARK: 音声
+    // MARK: Audio
 
     private var audioSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("音声").font(.headline)
+            Text("Audio").font(.headline)
 
             HStack {
-                Text("音源").frame(width: 64, alignment: .leading)
+                Text("Source").frame(width: 64, alignment: .leading)
                 Picker("", selection: $rec.audioSourceID) {
-                    Text("ScreenCaptureKit（システム音声・マイク）")
+                    Text("ScreenCaptureKit (system audio and microphone)")
                         .tag(Recorder.screenCaptureKitSourceID)
                     if !rec.audioDeviceOptions.isEmpty {
                         Divider()
@@ -113,15 +113,15 @@ struct RecorderPanelView: View {
             }
 
             if rec.usesMixerOutput {
-                Label("「Tapdeck」を選ぶと、ミキサーで組んだ音がそのまま収録に乗ります。",
+                Label("Pick Tapdeck and the recording carries whatever the mixer is sending.",
                       systemImage: "slider.vertical.3")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                Toggle("システム音声（Macで鳴っている音）", isOn: $rec.systemAudio)
-                Toggle("マイク", isOn: $rec.microphone)
-                Text("仮想オーディオデバイスは不要です。ScreenCaptureKit が直接取得します。")
+                Toggle("System audio (anything playing on this Mac)", isOn: $rec.systemAudio)
+                Toggle("Microphone", isOn: $rec.microphone)
+                Text("No virtual audio device needed — ScreenCaptureKit captures this directly.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -129,7 +129,7 @@ struct RecorderPanelView: View {
         .disabled(rec.isRecording)
     }
 
-    // MARK: 操作
+    // MARK: Transport
 
     private var controlSection: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -138,7 +138,7 @@ struct RecorderPanelView: View {
                     Button {
                         Task { await rec.stop() }
                     } label: {
-                        Label("停止", systemImage: "stop.fill")
+                        Label("Stop", systemImage: "stop.fill")
                             .frame(maxWidth: .infinity)
                     }
                     .keyboardShortcut(".", modifiers: .command)
@@ -146,7 +146,7 @@ struct RecorderPanelView: View {
                     Button {
                         Task { await rec.start() }
                     } label: {
-                        Label("収録開始", systemImage: "record.circle")
+                        Label("Start Recording", systemImage: "record.circle")
                             .frame(maxWidth: .infinity)
                     }
                     .keyboardShortcut("r", modifiers: .command)
@@ -167,7 +167,7 @@ struct RecorderPanelView: View {
                     .lineLimit(2)
                 Spacer()
                 if rec.lastOutput != nil && !rec.isRecording {
-                    Button("Finderで表示") { rec.revealLastOutput() }
+                    Button("Show in Finder") { rec.revealLastOutput() }
                         .controlSize(.small)
                 }
             }

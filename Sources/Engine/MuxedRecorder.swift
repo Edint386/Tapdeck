@@ -3,15 +3,15 @@ import CoreMedia
 import Foundation
 import ScreenCaptureKit
 
-/// 画面の映像と、任意のオーディオデバイスの音声を1つのファイルにまとめる。
+/// Writes screen video and audio from any device into a single file.
 ///
-/// ScreenCaptureKit の SCRecordingOutput は音声も内部で面倒を見てくれるが、
-/// 音源は「システム音声」と「マイク」に固定される。ミキサーで組んだ音を
-/// 収録に乗せるには、映像と音声を自前で多重化するしかない。
+/// ScreenCaptureKit's SCRecordingOutput handles audio for you, but only from
+/// system audio and the microphone. Putting a mix on the recording means
+/// muxing video and audio ourselves.
 ///
-///     SCStream (映像)        ┐
+///     SCStream (video)       ┐
 ///                            ├→ AVAssetWriter → .mov
-///     DeviceInput (音声)     ┘
+///     DeviceInput (audio)    ┘
 final class MuxedRecorder: NSObject, @unchecked Sendable {
 
     private let writer: AVAssetWriter
@@ -35,7 +35,7 @@ final class MuxedRecorder: NSObject, @unchecked Sendable {
         ])
         videoInput.expectsMediaDataInRealTime = true
         guard writer.canAdd(videoInput) else {
-            throw CoreAudioError.missing("映像トラック")
+            throw CoreAudioError.missing("the video track")
         }
         writer.add(videoInput)
 
@@ -63,7 +63,7 @@ final class MuxedRecorder: NSObject, @unchecked Sendable {
     }
 
     func finish() async {
-        // ロックは同期の内側で閉じる。await を跨いで保持してはいけない。
+        // Close over the lock synchronously; never hold it across an await.
         markInputsFinished()
         await writer.finishWriting()
     }
@@ -77,15 +77,15 @@ final class MuxedRecorder: NSObject, @unchecked Sendable {
 
     var failure: Error? { writer.error }
 
-    // MARK: - 映像
+    // MARK: - Video
 
     func appendVideo(_ sampleBuffer: CMSampleBuffer) {
         guard CMSampleBufferDataIsReady(sampleBuffer) else { return }
         lock.lock()
         defer { lock.unlock() }
 
-        // 最初の映像フレームで時間軸の原点を決める。
-        // 音声が先に来ても捨てるだけにして、原点は必ず映像に合わせる。
+        // The first video frame sets the origin of the timeline. Audio that
+        // arrives earlier is simply dropped so the origin always follows video.
         if !hasStartedSession {
             writer.startSession(atSourceTime: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
             hasStartedSession = true
@@ -94,16 +94,17 @@ final class MuxedRecorder: NSObject, @unchecked Sendable {
         videoInput.append(sampleBuffer)
     }
 
-    // MARK: - 音声
+    // MARK: - Audio
 
-    /// AUHAL から受け取ったバッファを、映像と同じ時間軸に載せて書き込む。
+    /// Write a buffer from the AUHAL onto the same timeline as the video.
     func appendAudio(_ buffer: AVAudioPCMBuffer, at timeStamp: AudioTimeStamp) {
         lock.lock()
         defer { lock.unlock() }
 
         guard hasStartedSession, let audioInput, audioInput.isReadyForMoreMediaData else { return }
 
-        // 時刻は AUHAL が渡すホスト時間を使う。到着時刻で代用するとジッタが乗る。
+        // Use the host time the AUHAL supplies. Substituting arrival time
+        // introduces jitter.
         let presentationTime: CMTime
         if timeStamp.mFlags.contains(.hostTimeValid) {
             presentationTime = CMClockMakeHostTimeFromSystemUnits(timeStamp.mHostTime)

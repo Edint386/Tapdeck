@@ -3,11 +3,11 @@ import AppKit
 import Combine
 import Foundation
 
-/// ミキサー画面の状態。Mixer（エンジン）を包んで SwiftUI から扱えるようにする。
+/// State for the mixer screen. Wraps the Mixer engine for use from SwiftUI.
 @MainActor
 final class MixerModel: ObservableObject {
 
-    /// 表示用のソース1行ぶん。
+    /// One source row, as displayed.
     struct Row: Identifiable {
         let id: UUID
         let label: String
@@ -51,12 +51,12 @@ final class MixerModel: ObservableObject {
         }
         presets = MixerPresetStore.load()
         syncRows()
-        status = rows.isEmpty ? "ソースを追加してください" : "前回の構成を復元しました"
+        status = rows.isEmpty ? "Add a source to get started" : "Restored your last setup"
     }
 
-    // MARK: - プリセット
+    // MARK: - Presets
 
-    /// いまの構成に名前を付けて保存する。同名があれば上書きする。
+    /// Save the current setup under a name, replacing any setup with that name.
     func savePreset(named name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -71,10 +71,10 @@ final class MixerModel: ObservableObject {
             activePresetID = preset.id
         }
         MixerPresetStore.save(presets)
-        status = "プリセット「\(trimmed)」を保存しました"
+        status = "Saved preset \"\(trimmed)\""
     }
 
-    /// プリセットを読み込んで、いまの構成を置き換える。
+    /// Load a preset, replacing the current setup.
     func applyPreset(_ id: UUID) {
         guard let preset = presets.first(where: { $0.id == id }) else { return }
         let wasRunning = isRunning
@@ -90,7 +90,7 @@ final class MixerModel: ObservableObject {
         activePresetID = id
         syncRows()
         persist()
-        status = "プリセット「\(preset.name)」を読み込みました"
+        status = "Loaded preset \"\(preset.name)\""
 
         if wasRunning { start() }
     }
@@ -108,10 +108,10 @@ final class MixerModel: ObservableObject {
         activePresetID = nil
         syncRows()
         persist()
-        status = "ソースをすべて外しました"
+        status = "Removed every source"
     }
 
-    // MARK: - 一覧の更新
+    // MARK: - Refreshing the lists
 
     func refresh() {
         availableProcesses = ((try? AudioProcess.all()) ?? [])
@@ -125,15 +125,15 @@ final class MixerModel: ObservableObject {
                 ?? outputCandidates.first?.uid ?? ""
         }
 
-        // 動作中なら、後から起動したアプリに繋ぎ直す。
+        // While running, reconnect to apps that have started since.
         if isRunning {
             let reattached = mixer.reattachDetached()
-            if reattached > 0 { status = "\(reattached) 件のソースに接続しました" }
+            if reattached > 0 { status = "Connected \(reattached) source(s)" }
         }
         syncRows()
     }
 
-    // MARK: - ソースの追加と削除
+    // MARK: - Adding and removing sources
 
     func addApplication(_ process: AudioProcess) {
         add(.application(bundleID: process.bundleID, name: process.name))
@@ -141,7 +141,7 @@ final class MixerModel: ObservableObject {
 
     func addSystemAudio() {
         guard !mixer.sources.contains(where: { $0.target == .systemAudio }) else {
-            status = "システム全体の音は既に追加されています"
+            status = "System audio is already a source"
             return
         }
         add(.systemAudio)
@@ -151,29 +151,29 @@ final class MixerModel: ObservableObject {
         add(.inputDevice(uid: device.uid, name: device.name))
     }
 
-    /// 既定のマイクを1クリックで足す。「マイク＋コンピューターオーディオ」が
-    /// 最も多い使い方なので、メニューを開かずに済むようにしておく。
+    /// Add the default microphone in one click. "My mic plus my computer
+    /// audio" is the common case, so it should not need a menu.
     func addDefaultMicrophone() {
         refresh()
         let builtIn = availableInputs.first { $0.uid == "BuiltInMicrophoneDevice" }
         guard let device = builtIn ?? availableInputs.first(where: { $0.uid != "TapdeckDevice" })
         else {
-            status = "入力デバイスが見つかりません"
+            status = "No input device found"
             return
         }
         addInput(device)
     }
 
-    /// いま音を鳴らしているアプリをまとめて足す。
+    /// Add every app that is currently making sound.
     func addPlayingApplications() {
         refresh()
         let playing = availableProcesses.filter(\.isPlayingAudio)
         guard !playing.isEmpty else {
-            status = "いま音を出しているアプリはありません"
+            status = "No app is playing audio right now"
             return
         }
         playing.forEach { addApplication($0) }
-        status = "\(playing.count) 個のアプリを追加しました"
+        status = "Added \(playing.count) app(s)"
     }
 
     private func add(_ target: Mixer.Target) {
@@ -207,12 +207,12 @@ final class MixerModel: ObservableObject {
         MixerConfiguration(sources: mixer.sources, outputDeviceUID: outputDeviceUID).save()
     }
 
-    /// 手で構成を変えたらプリセットの選択を外す（内容が一致しなくなるため）。
+    /// Editing by hand clears the active preset, since it no longer matches.
     private func invalidateActivePreset() {
         activePresetID = nil
     }
 
-    // MARK: - 表示用の変換
+    // MARK: - Building the display rows
 
     private func syncRows() {
         rows = mixer.sources.map { source in
@@ -243,7 +243,8 @@ final class MixerModel: ObservableObject {
         }
     }
 
-    /// アプリのアイコンはバンドルIDから引く。起動していなくても取得できる。
+    /// App icons come from the bundle identifier, so they work even when the
+    /// app is not running.
     private func icon(for target: Mixer.Target) -> NSImage? {
         guard case .application(let bundleID, _) = target, let bundleID else { return nil }
         if let cached = iconCache[bundleID] { return cached }
@@ -254,16 +255,16 @@ final class MixerModel: ObservableObject {
         return image
     }
 
-    // MARK: - 開始と停止
+    // MARK: - Starting and stopping
 
     func start() {
         guard !isRunning else { return }
         guard !mixer.sources.isEmpty else {
-            status = "ソースが1つもありません"
+            status = "There are no sources"
             return
         }
         guard let device = outputCandidates.first(where: { $0.uid == outputDeviceUID }) else {
-            status = "出力先デバイスが見つかりません"
+            status = "Output device not found"
             return
         }
         do {
@@ -271,12 +272,12 @@ final class MixerModel: ObservableObject {
             isRunning = true
             let attached = mixer.sources.filter(\.isAttached).count
             status = attached == mixer.sources.count
-                ? "\(device.name) へ \(attached) ソースを送出中"
-                : "\(device.name) へ送出中（\(attached)/\(mixer.sources.count) 接続）"
+                ? "Sending \(attached) source(s) to \(device.name)"
+                : "Sending to \(device.name) — \(attached) of \(mixer.sources.count) connected"
             syncRows()
             startMetering()
         } catch {
-            status = "開始できませんでした: \(error.localizedDescription)"
+            status = "Could not start: \(error.localizedDescription)"
         }
     }
 
@@ -287,12 +288,12 @@ final class MixerModel: ObservableObject {
         masterLevel = 0
         syncRows()
         rows = rows.map { var row = $0; row.level = 0; return row }
-        status = "停止しました"
+        status = "Stopped"
     }
 
     func toggleRunning() { isRunning ? stop() : start() }
 
-    // MARK: - メーター
+    // MARK: - Metering
 
     private func startMetering() {
         meterTimer?.invalidate()
@@ -311,7 +312,7 @@ final class MixerModel: ObservableObject {
             mixer.sources.map { ($0.id, $0.ring.takePeak()) })
         rows = rows.map { row in
             var updated = row
-            // 落ちるときだけ緩やかに。跳ね上がりは即座に反映する。
+            // Ease the fall only; a rise is shown immediately.
             updated.level = max(peaks[row.id] ?? 0, row.level * 0.72)
             return updated
         }
