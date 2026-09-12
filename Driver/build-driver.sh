@@ -9,7 +9,7 @@ if [ -d /Applications/Xcode.app ]; then
 fi
 SDK="$(xcrun --sdk macosx --show-sdk-path)"
 
-BUNDLE="../build/Tapdeck.driver"
+BUNDLE="../build/driver/Tapdeck.driver"
 rm -rf "$BUNDLE"
 mkdir -p "$BUNDLE/Contents/MacOS"
 cp Info.plist "$BUNDLE/Contents/Info.plist"

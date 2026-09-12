@@ -13,13 +13,22 @@
 //  公開するデバイスは設定ファイルで決まる。アプリが書き、ドライバが監視して
 //  増減を反映する（coreaudiod の再起動は不要）。
 //
-//      /Users/Shared/Tapdeck/Devices.plist
+//      /Library/Preferences/Audio/Tapdeck/Devices.plist
 //
-//  この場所を使う理由: coreaudiod は _coreaudiod ユーザーで動くのでユーザーの
-//  ホームディレクトリを読めず、かといって /Library 配下へアプリが書くには
-//  管理者権限が要る。/Users/Shared は両方の条件を満たす。
+//  この場所でなければならない理由:
+//  coreaudiod はサンドボックス下で動き、読み書きできる場所が
+//  /System/Library/Sandbox/Profiles/com.apple.audio.coreaudiod.sb で
+//  限定されている。/Users/Shared は許可リストに無く、読もうとしても
+//  失敗するだけで拒否ログすら残らない。
+//  /Library/Preferences/Audio 配下は読み書き both が許可されている。
+//  ただし Audio 自体は root:_coreaudiod の 775、その下の Data は SIP の
+//  restricted でアプリからは書けない。そこでインストーラ（root）が
+//  Audio/Tapdeck をユーザー所有で作り、そこへアプリが書く。
 
 #include <CoreAudio/AudioServerPlugIn.h>
+#include <os/log.h>
+#include <errno.h>
+#include <stdio.h>
 #include <dispatch/dispatch.h>
 #include <mach/mach_time.h>
 #include <pthread.h>
@@ -29,7 +38,7 @@
 #pragma mark - 定数
 
 #define kManufacturerName   "Tapdeck"
-#define kConfigurationPath  "/Users/Shared/Tapdeck/Devices.plist"
+#define kConfigurationPath  "/Library/Preferences/Audio/Tapdeck/Devices.plist"
 
 #define kMaxDevices         8
 #define kMaxChannels        16
@@ -82,6 +91,17 @@ static AudioServerPlugInHostRef gHost       = NULL;
 static dispatch_source_t        gConfigurationTimer = NULL;
 static struct timespec          gLastConfigurationTime = { 0, 0 };
 static off_t                    gLastConfigurationSize = -1;
+
+/// 診断用のログ。coreaudiod の中で動くので標準出力は使えない。
+/// os_log なら `log stream --predicate 'subsystem == "dev.kosuke.Tapdeck"'` で追える。
+static os_log_t TapdeckLog(void)
+{
+    static os_log_t log;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ log = os_log_create("dev.kosuke.Tapdeck", "driver"); });
+    return log;
+}
+#define TAPLOG(fmt, ...) os_log(TapdeckLog(), fmt, ##__VA_ARGS__)
 
 static inline void LockState(void)   { pthread_mutex_lock(&gStateMutex); }
 static inline void UnlockState(void) { pthread_mutex_unlock(&gStateMutex); }
@@ -304,8 +324,11 @@ static void NotifyDeviceListChanged(void)
 /// vnode 監視ではなく mtime の巡回にしているのは、設定ファイルが上書きではなく
 /// 差し替え（新規作成 → rename）で更新されるため。vnode 監視は古い inode に
 /// 張り付いたままになり、変更を取りこぼす。
+static UInt64 gTickCount = 0;
+
 static void CheckConfiguration(void)
 {
+    ++gTickCount;
     struct stat info;
     Boolean exists = (stat(kConfigurationPath, &info) == 0);
 
@@ -330,6 +353,7 @@ static void CheckConfiguration(void)
     Boolean changed = ApplyConfigurationLocked(specs, specCount);
     UnlockState();
 
+    TAPLOG("設定が更新された: specCount=%u changed=%d", specCount, (int)changed);
     if (changed) NotifyDeviceListChanged();
 }
 
@@ -1033,8 +1057,11 @@ static OSStatus Tapdeck_Initialize(AudioServerPlugInDriverRef inDriver,
     ApplyConfigurationLocked(specs, specCount);
     UnlockState();
 
+    TAPLOG("Initialize 完了: 公開 %u 台", PublishedDeviceCount());
+
     // 以後は設定ファイルの更新を巡回で拾い、デバイスを増減させる。
     StartConfigurationWatch();
+    TAPLOG("巡回を開始: timer=%s", gConfigurationTimer ? "あり" : "なし");
     return 0;
 }
 

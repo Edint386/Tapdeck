@@ -3,9 +3,15 @@ import Foundation
 /// ドライバが公開する仮想デバイスの一覧。
 ///
 /// アプリが書き、ドライバ（coreaudiod 内）が監視して増減を反映する。
-/// 置き場所が /Users/Shared なのは、coreaudiod が _coreaudiod ユーザーで動くため
-/// ユーザーのホームを読めず、かといって /Library へアプリが書くには管理者権限が
-/// 要るため。ここは両方の条件を満たす数少ない場所。
+///
+/// 置き場所は /Library/Preferences/Audio 配下でなければならない。
+/// coreaudiod はサンドボックス下で動き、読める場所が
+/// com.apple.audio.coreaudiod.sb で限定されている。/Users/Shared などは
+/// 許可されておらず、読もうとしても失敗するだけで拒否ログも残らない。
+///
+/// Audio 自体は root:_coreaudiod の 775、その下の Data は SIP の restricted で
+/// アプリからは書けない。そこで install-driver.sh が Audio/Tapdeck を
+/// ユーザー所有で作り、そこへ書く。
 struct VirtualDeviceConfiguration {
 
     struct Device: Identifiable, Hashable {
@@ -25,8 +31,13 @@ struct VirtualDeviceConfiguration {
 
     var devices: [Device]
 
-    static let directoryURL = URL(fileURLWithPath: "/Users/Shared/Tapdeck", isDirectory: true)
+    static let directoryURL = URL(fileURLWithPath: "/Library/Preferences/Audio/Tapdeck",
+                                  isDirectory: true)
     static let fileURL = directoryURL.appendingPathComponent("Devices.plist")
+
+    /// 設定ファイルの控え。Apple 管理下のディレクトリなので、
+    /// システム更新などで消える可能性を考えて手元にも持っておく。
+    private static let mirrorKey = "virtualDeviceConfiguration"
 
     /// ドライバが設定ファイル無しのときに作る既定のデバイス。
     static let defaultDevice = Device(uid: "TapdeckDevice", name: "Tapdeck", channelCount: 2)
@@ -34,6 +45,13 @@ struct VirtualDeviceConfiguration {
     // MARK: - 読み書き
 
     static func load() -> VirtualDeviceConfiguration {
+        // ファイルが消えていたら控えから書き戻す。
+        if !FileManager.default.fileExists(atPath: fileURL.path),
+           let mirrored = UserDefaults.standard.array(forKey: mirrorKey) as? [[String: Any]],
+           !mirrored.isEmpty {
+            try? write(raw: mirrored)
+        }
+
         guard let data = try? Data(contentsOf: fileURL),
               let raw = try? PropertyListSerialization.propertyList(
                   from: data, options: [], format: nil) as? [[String: Any]] else {
@@ -64,27 +82,25 @@ struct VirtualDeviceConfiguration {
     }
 
     func save() throws {
-        let manager = FileManager.default
-        if !manager.fileExists(atPath: Self.directoryURL.path) {
-            do {
-                // coreaudiod から読めるよう、誰でも読める権限で作る。
-                try manager.createDirectory(
-                    at: Self.directoryURL,
-                    withIntermediateDirectories: true,
-                    attributes: [.posixPermissions: 0o755])
-            } catch {
-                throw WriteError.cannotCreateDirectory(error.localizedDescription)
-            }
-        }
-
         let raw = devices.map { device -> [String: Any] in
             ["UID": device.uid, "Name": device.name, "Channels": device.channelCount]
+        }
+        try Self.write(raw: raw)
+        UserDefaults.standard.set(raw, forKey: Self.mirrorKey)
+    }
+
+    private static func write(raw: [[String: Any]]) throws {
+        let manager = FileManager.default
+        guard manager.fileExists(atPath: directoryURL.path) else {
+            throw WriteError.cannotCreateDirectory(
+                "\(directoryURL.path) がありません。sudo ./install-driver.sh を実行してください。")
         }
         do {
             let data = try PropertyListSerialization.data(fromPropertyList: raw,
                                                           format: .xml, options: 0)
-            try data.write(to: Self.fileURL, options: .atomic)
-            try? manager.setAttributes([.posixPermissions: 0o644], ofItemAtPath: Self.fileURL.path)
+            try data.write(to: fileURL, options: .atomic)
+            // coreaudiod は _coreaudiod ユーザーなので、誰でも読める権限にする。
+            try? manager.setAttributes([.posixPermissions: 0o644], ofItemAtPath: fileURL.path)
         } catch {
             throw WriteError.cannotWrite(error.localizedDescription)
         }
