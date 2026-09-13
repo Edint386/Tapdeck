@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreAudio
 import Foundation
 
@@ -127,4 +128,23 @@ func defaultOutputDeviceUID() throws -> String {
         throw CoreAudioError.missing("the default output device UID")
     }
     return uid
+}
+
+extension AVAudioFormat {
+    /// Non-interleaved Float32 with any number of discrete channels.
+    ///
+    /// `init(commonFormat:sampleRate:channels:interleaved:)` returns nil above
+    /// two channels, silently. Anything multichannel has to go through a
+    /// channel layout instead.
+    static func discrete(sampleRate: Double, channels: Int) -> AVAudioFormat? {
+        let count = AVAudioChannelCount(max(1, channels))
+        if count <= 2 {
+            return AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate,
+                                 channels: count, interleaved: false)
+        }
+        guard let layout = AVAudioChannelLayout(
+            layoutTag: kAudioChannelLayoutTag_DiscreteInOrder | UInt32(count)) else { return nil }
+        return AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate,
+                             interleaved: false, channelLayout: layout)
+    }
 }

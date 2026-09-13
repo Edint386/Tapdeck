@@ -22,13 +22,18 @@ final class Mixer: @unchecked Sendable {
     /// by bundle identifier; without that, a saved configuration would fail to
     /// reconnect next time.
     enum Target: Equatable {
-        case application(bundleID: String?, name: String)
+        /// `pid` pins the exact process chosen in this session. It is never
+        /// saved: after a relaunch the process is found again by bundle
+        /// identifier. Without it, two processes sharing a name — two instances
+        /// of one app, or two helper tools — would both resolve to whichever
+        /// was found first, and one source would silently tap the other's audio.
+        case application(bundleID: String?, name: String, pid: pid_t? = nil)
         case systemAudio
         case inputDevice(uid: String, name: String)
 
         var label: String {
             switch self {
-            case .application(_, let name): return name
+            case .application(_, let name, _): return name
             case .systemAudio:              return "All system audio"
             case .inputDevice(_, let name): return name
             }
@@ -46,7 +51,7 @@ final class Mixer: @unchecked Sendable {
         /// cannot be found again on the next launch.
         var isPersistable: Bool {
             switch self {
-            case .application(let bundleID, _): return bundleID != nil
+            case .application(let bundleID, _, _): return bundleID != nil
             case .systemAudio, .inputDevice:    return true
             }
         }
@@ -60,6 +65,14 @@ final class Mixer: @unchecked Sendable {
 
         var gain: Float = 1.0
         var isMuted = false
+
+        /// The output channel this source's left channel lands on. Its right
+        /// channel goes to the one after. 0 means channels 1–2, 2 means 3–4.
+        ///
+        /// On a stereo output every source shares channels 1–2 and is mixed.
+        /// On a wider device, giving sources different offsets keeps them apart,
+        /// so whatever receives the device can treat each pair as its own track.
+        var channelOffset = 0
 
         /// The target could not be found, so nothing is connected. The row
         /// stays even while the app is closed, and attaches once it starts.
@@ -122,10 +135,17 @@ final class Mixer: @unchecked Sendable {
     private(set) var isRunning = false
     private(set) var outputDevice: AudioDevice?
 
-    private var output: DeviceOutput?
+    private(set) var output: DeviceOutput?
+    /// Format every source is converted to before buffering: the output's
+    /// sample rate, but always stereo. Channel placement happens at mix time.
     private var targetFormat: AVAudioFormat?
     private let sourceLock = NSLock()
-    private let channelCount = 2
+
+    /// Sources are buffered as stereo regardless of how wide the output is.
+    private let sourceChannelCount = 2
+
+    /// Channels on the current output device. Two until the mixer starts.
+    private(set) var outputChannelCount = 2
 
     private var masterPeak: Float = 0
     private let meterLock = NSLock()
@@ -136,7 +156,7 @@ final class Mixer: @unchecked Sendable {
 
     @discardableResult
     func add(_ target: Target) -> Source {
-        let source = Source(target: target, channels: channelCount)
+        let source = Source(target: target, channels: sourceChannelCount)
         sourceLock.lock()
         sources.append(source)
         sourceLock.unlock()
@@ -201,8 +221,10 @@ final class Mixer: @unchecked Sendable {
         outputDevice = device
 
         // Build the output first: each source's converter needs its format.
-        let deviceOutput = try DeviceOutput(device: device, channels: channelCount)
-        targetFormat = deviceOutput.outputFormat
+        let deviceOutput = try DeviceOutput(device: device)
+        outputChannelCount = deviceOutput.channelCount
+        targetFormat = AVAudioFormat.discrete(sampleRate: deviceOutput.sampleRate,
+                                              channels: sourceChannelCount)
 
         sourceLock.lock()
         let snapshot = sources
@@ -237,8 +259,8 @@ final class Mixer: @unchecked Sendable {
         guard !source.isAttached else { return }
 
         switch source.target {
-        case .application(let bundleID, let name):
-            guard let process = try locateProcess(bundleID: bundleID, name: name) else {
+        case .application(let bundleID, let name, let pid):
+            guard let process = try locateProcess(bundleID: bundleID, name: name, pid: pid) else {
                 source.markDetached("\(name) is not running")
                 return
             }
@@ -274,8 +296,17 @@ final class Mixer: @unchecked Sendable {
         }
     }
 
-    private func locateProcess(bundleID: String?, name: String) throws -> AudioProcess? {
+    /// Find the process a source refers to.
+    ///
+    /// A PID from this session wins, provided that process is still the same
+    /// program — PIDs are reused once a process exits. Otherwise fall back to
+    /// the bundle identifier, and only then to the name.
+    private func locateProcess(bundleID: String?, name: String, pid: pid_t?) throws -> AudioProcess? {
         let all = try AudioProcess.all()
+        if let pid, let exact = all.first(where: { $0.pid == pid }),
+           exact.bundleID == bundleID, exact.name == name {
+            return exact
+        }
         if let bundleID {
             return all.first { $0.bundleID == bundleID }
         }
@@ -296,7 +327,8 @@ final class Mixer: @unchecked Sendable {
 
         for source in snapshot {
             let gain = source.isMuted ? 0 : source.gain
-            source.ring.mixInto(channels, frameCount: frameCount, gain: gain)
+            source.ring.mixInto(channels, frameCount: frameCount, gain: gain,
+                                channelOffset: source.channelOffset)
         }
 
         // Guard against clipping: anything past ±1 would be squashed.

@@ -136,7 +136,7 @@ final class MixerModel: ObservableObject {
     // MARK: - Adding and removing sources
 
     func addApplication(_ process: AudioProcess) {
-        add(.application(bundleID: process.bundleID, name: process.name))
+        add(.application(bundleID: process.bundleID, name: process.name, pid: process.pid))
     }
 
     func addSystemAudio() {
@@ -246,7 +246,7 @@ final class MixerModel: ObservableObject {
     /// App icons come from the bundle identifier, so they work even when the
     /// app is not running.
     private func icon(for target: Mixer.Target) -> NSImage? {
-        guard case .application(let bundleID, _) = target, let bundleID else { return nil }
+        guard case .application(let bundleID, _, _) = target, let bundleID else { return nil }
         if let cached = iconCache[bundleID] { return cached }
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
         else { return nil }

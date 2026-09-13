@@ -4,73 +4,149 @@ import Foundation
 
 /// Feeds audio into a chosen device. Also serves as the mixer's output stage.
 ///
-/// AVAudioEngine connects to the default output device unless told otherwise,
-/// so the destination is pinned by setting the AUHAL's
-/// kAudioOutputUnitProperty_CurrentDevice.
-final class DeviceOutput {
+/// This drives an AUHAL directly. AVAudioEngine routes through a mixer node that
+/// applies its own channel mixing, so a six-channel source can arrive folded
+/// down or reordered — which defeats the point of channel mapping. The render
+/// callback here writes straight into the device's channels.
+final class DeviceOutput: @unchecked Sendable {
 
-    /// Callback that fills one cycle of audio. Non-interleaved Float32.
+    /// Callback that fills one cycle of audio: one pointer per device channel,
+    /// non-interleaved Float32.
     typealias RenderBlock = (_ channels: [UnsafeMutablePointer<Float>],
                              _ frameCount: Int) -> Void
 
-    private let engine = AVAudioEngine()
-    private var sourceNode: AVAudioSourceNode?
-    private let format: AVAudioFormat
+    let sampleRate: Double
+    let channelCount: Int
 
-    init(device: AudioDevice, sampleRate: Double? = nil, channels: Int = 2) throws {
-        guard let unit = engine.outputNode.audioUnit else {
-            throw CoreAudioError.missing("the output node's AudioUnit")
+    private var unit: AudioUnit?
+    private var render: RenderBlock?
+    private var started = false
+
+    /// Diagnostics: the buffer layout the AUHAL actually hands the render
+    /// callback, as "buffers x channelsPerBuffer". Recorded on the first cycle.
+    private(set) var observedLayout = "—"
+    private var hasObservedLayout = false
+
+    /// - Parameter channels: how many device channels to drive. Defaults to all
+    ///   of the device's output channels.
+    init(device: AudioDevice, channels: Int? = nil) throws {
+        var description = AudioComponentDescription(
+            componentType: kAudioUnitType_Output,
+            componentSubType: kAudioUnitSubType_HALOutput,
+            componentManufacturer: kAudioUnitManufacturer_Apple,
+            componentFlags: 0,
+            componentFlagsMask: 0)
+        guard let component = AudioComponentFindNext(nil, &description) else {
+            throw CoreAudioError.missing("the AUHAL component")
         }
+
+        var instance: AudioUnit?
+        try ca("creating the output AUHAL") { AudioComponentInstanceNew(component, &instance) }
+        guard let au = instance else { throw CoreAudioError.missing("the output AUHAL") }
+        unit = au
+
         var deviceID = device.deviceID
         try ca("selecting the output device") {
-            AudioUnitSetProperty(unit,
-                                 kAudioOutputUnitProperty_CurrentDevice,
+            AudioUnitSetProperty(au, kAudioOutputUnitProperty_CurrentDevice,
                                  kAudioUnitScope_Global, 0,
-                                 &deviceID,
-                                 UInt32(MemoryLayout<AudioDeviceID>.size))
+                                 &deviceID, UInt32(MemoryLayout<AudioDeviceID>.size))
         }
 
-        let rate = sampleRate ?? device.sampleRate
-        guard let fmt = AVAudioFormat(commonFormat: .pcmFormatFloat32,
-                                      sampleRate: rate,
-                                      channels: AVAudioChannelCount(channels),
-                                      interleaved: false) else {
-            throw CoreAudioError.missing("the output format")
+        sampleRate = device.sampleRate > 0 ? device.sampleRate : 48000
+        channelCount = max(1, channels ?? max(device.outputChannels, 2))
+
+        // Built by hand rather than through AVAudioFormat, which refuses more
+        // than two channels without a layout. For non-interleaved audio the
+        // byte counts describe a single channel.
+        var format = AudioStreamBasicDescription(
+            mSampleRate: sampleRate,
+            mFormatID: kAudioFormatLinearPCM,
+            mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked
+                        | kAudioFormatFlagIsNonInterleaved | kAudioFormatFlagsNativeEndian,
+            mBytesPerPacket: UInt32(MemoryLayout<Float>.size),
+            mFramesPerPacket: 1,
+            mBytesPerFrame: UInt32(MemoryLayout<Float>.size),
+            mChannelsPerFrame: UInt32(channelCount),
+            mBitsPerChannel: 32,
+            mReserved: 0)
+        try ca("setting the output format") {
+            AudioUnitSetProperty(au, kAudioUnitProperty_StreamFormat,
+                                 kAudioUnitScope_Input, 0,
+                                 &format, UInt32(MemoryLayout<AudioStreamBasicDescription>.size))
         }
-        format = fmt
     }
 
-    var outputFormat: AVAudioFormat { format }
+    deinit { stop() }
 
     func start(render: @escaping RenderBlock) throws {
-        let channelCount = Int(format.channelCount)
+        guard let au = unit, !started else { return }
+        self.render = render
 
-        let node = AVAudioSourceNode(format: format) { _, _, frameCount, audioBufferList in
-            let buffers = UnsafeMutableAudioBufferListPointer(audioBufferList)
-            var channels: [UnsafeMutablePointer<Float>] = []
-            channels.reserveCapacity(channelCount)
-            for index in 0..<min(channelCount, buffers.count) {
-                guard let data = buffers[index].mData else { continue }
-                channels.append(data.assumingMemoryBound(to: Float.self))
-            }
-            guard channels.count == channelCount else { return noErr }
-            render(channels, Int(frameCount))
-            return noErr
+        var callback = AURenderCallbackStruct(
+            inputProc: { inRefCon, _, _, _, inNumberFrames, ioData in
+                let output = Unmanaged<DeviceOutput>.fromOpaque(inRefCon).takeUnretainedValue()
+                return output.fill(ioData, frames: Int(inNumberFrames))
+            },
+            inputProcRefCon: Unmanaged.passUnretained(self).toOpaque())
+
+        try ca("installing the render callback") {
+            AudioUnitSetProperty(au, kAudioUnitProperty_SetRenderCallback,
+                                 kAudioUnitScope_Input, 0,
+                                 &callback, UInt32(MemoryLayout<AURenderCallbackStruct>.size))
+        }
+        try ca("initialising the output AUHAL") { AudioUnitInitialize(au) }
+        try ca("starting the output AUHAL")    { AudioOutputUnitStart(au) }
+        started = true
+    }
+
+    /// Diagnostics: the client and device-side formats the AUHAL is using.
+    func describeFormats() -> String {
+        guard let au = unit else { return "—" }
+        func read(_ scope: AudioUnitScope, _ element: AudioUnitElement) -> String {
+            var asbd = AudioStreamBasicDescription()
+            var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+            let status = AudioUnitGetProperty(au, kAudioUnitProperty_StreamFormat,
+                                              scope, element, &asbd, &size)
+            guard status == noErr else { return "error \(status)" }
+            let interleaved = asbd.mFormatFlags & kAudioFormatFlagIsNonInterleaved == 0
+            return "\(asbd.mChannelsPerFrame)ch \(Int(asbd.mSampleRate))Hz "
+                 + (interleaved ? "interleaved" : "non-interleaved")
+        }
+        return "client(input scope)=\(read(kAudioUnitScope_Input, 0))  "
+             + "device(output scope)=\(read(kAudioUnitScope_Output, 0))"
+    }
+
+    private func fill(_ ioData: UnsafeMutablePointer<AudioBufferList>?, frames: Int) -> OSStatus {
+        guard let ioData else { return noErr }
+        let buffers = UnsafeMutableAudioBufferListPointer(ioData)
+        if !hasObservedLayout {
+            hasObservedLayout = true
+            let widths = buffers.map { "\($0.mNumberChannels)" }.joined(separator: ",")
+            observedLayout = "\(buffers.count) buffer(s), channels per buffer [\(widths)]"
         }
 
-        sourceNode = node
-        engine.attach(node)
-        engine.connect(node, to: engine.mainMixerNode, format: format)
-        engine.prepare()
-        try engine.start()
+        var channels: [UnsafeMutablePointer<Float>] = []
+        channels.reserveCapacity(buffers.count)
+        for buffer in buffers {
+            guard let data = buffer.mData else { continue }
+            let pointer = data.assumingMemoryBound(to: Float.self)
+            pointer.initialize(repeating: 0, count: frames)
+            channels.append(pointer)
+        }
+        render?(channels, frames)
+        return noErr
     }
 
     func stop() {
-        engine.stop()
-        if let sourceNode {
-            engine.detach(sourceNode)
-            self.sourceNode = nil
+        guard let au = unit else { return }
+        if started {
+            AudioOutputUnitStop(au)
+            AudioUnitUninitialize(au)
+            started = false
         }
+        AudioComponentInstanceDispose(au)
+        unit = nil
+        render = nil
     }
 }
 
@@ -130,11 +206,11 @@ final class DeviceInput {
 
         // Ask for non-interleaved Float32 on the output side of the input bus.
         let rate = sampleRate ?? device.sampleRate
-        let channels = max(1, min(device.inputChannels, 2))
-        guard let fmt = AVAudioFormat(commonFormat: .pcmFormatFloat32,
-                                      sampleRate: rate,
-                                      channels: AVAudioChannelCount(channels),
-                                      interleaved: false) else {
+        // Take every input channel. A multichannel virtual device carries
+        // separate sources on separate channels, and folding it to stereo here
+        // would throw that separation away.
+        let channels = max(1, min(device.inputChannels, 64))
+        guard let fmt = AVAudioFormat.discrete(sampleRate: rate, channels: channels) else {
             throw CoreAudioError.missing("the input format")
         }
         format = fmt
@@ -201,5 +277,22 @@ final class DeviceInput {
         AudioComponentInstanceDispose(au)
         unit = nil
         handler = nil
+    }
+
+    /// Diagnostics: the device-side and client formats of the input bus.
+    func describeFormats() -> String {
+        guard let au = unit else { return "—" }
+        func read(_ scope: AudioUnitScope) -> String {
+            var asbd = AudioStreamBasicDescription()
+            var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+            let status = AudioUnitGetProperty(au, kAudioUnitProperty_StreamFormat,
+                                              scope, 1, &asbd, &size)
+            guard status == noErr else { return "error \(status)" }
+            let interleaved = asbd.mFormatFlags & kAudioFormatFlagIsNonInterleaved == 0
+            return "\(asbd.mChannelsPerFrame)ch \(Int(asbd.mSampleRate))Hz "
+                 + (interleaved ? "interleaved" : "non-interleaved")
+        }
+        return "device(input scope)=\(read(kAudioUnitScope_Input))  "
+             + "client(output scope)=\(read(kAudioUnitScope_Output))"
     }
 }

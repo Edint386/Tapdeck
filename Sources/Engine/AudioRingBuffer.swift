@@ -114,9 +114,15 @@ final class AudioRingBuffer: @unchecked Sendable {
 
     /// Add into the output buffer. The mixer calls this once per source.
     /// Whatever is not yet buffered contributes nothing, leaving silence.
+    ///
+    /// - Parameter channelOffset: the output channel this source's first
+    ///   channel lands on. This is what lets several sources share one
+    ///   multichannel device without being mixed together — a microphone on
+    ///   channels 1–2 and system audio on 3–4, say.
     func mixInto(_ destination: [UnsafeMutablePointer<Float>],
                  frameCount: Int,
-                 gain: Float) {
+                 gain: Float,
+                 channelOffset: Int = 0) {
         guard gain != 0 else { consume(frameCount); return }
 
         lock.lock()
@@ -140,11 +146,14 @@ final class AudioRingBuffer: @unchecked Sendable {
         let readStart = ((writePosition - filledFrames) % capacityFrames + capacityFrames)
                         % capacityFrames
 
-        let channels = min(destination.count, channelCount)
-        for frame in 0..<usable {
-            let slot = (readStart + frame) % capacityFrames
-            for channel in 0..<channels {
-                destination[channel][frame] += storage[channel * capacityFrames + slot] * gain
+        for sourceChannel in 0..<channelCount {
+            let target = channelOffset + sourceChannel
+            guard target >= 0, target < destination.count else { continue }
+            let output = destination[target]
+            let base = sourceChannel * capacityFrames
+            for frame in 0..<usable {
+                let slot = (readStart + frame) % capacityFrames
+                output[frame] += storage[base + slot] * gain
             }
         }
         filledFrames -= usable

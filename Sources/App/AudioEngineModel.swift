@@ -163,7 +163,7 @@ final class AudioEngineModel: ObservableObject {
 
             status = "Sending 440 Hz to the output side…"
             let deviceOutput = try DeviceOutput(device: device)
-            let rate = deviceOutput.outputFormat.sampleRate
+            let rate = deviceOutput.sampleRate
             var phase = 0.0
             let increment = 2.0 * Double.pi * 440.0 / rate
 

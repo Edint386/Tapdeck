@@ -48,7 +48,7 @@ struct MixerConfiguration: Codable {
         self.sources = sources.compactMap { source in
             guard source.target.isPersistable else { return nil }
             switch source.target {
-            case .application(let bundleID, let name):
+            case .application(let bundleID, let name, _):
                 return Source(kind: .application, identifier: bundleID, name: name,
                               gain: source.gain, isMuted: source.isMuted)
             case .systemAudio:

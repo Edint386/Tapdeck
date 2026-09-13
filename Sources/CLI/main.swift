@@ -48,11 +48,15 @@ func usage() -> Never {
       tapproof devices
           List the audio devices
 
-      tapproof virtual [name ...]
+      tapproof virtual [name[:channels] ...]
           Show the virtual devices, or replace them with the given names
 
-      tapproof mix <pid or app name> <seconds>
-          Send that application's audio through the mixer to a Tapdeck device
+      tapproof mix <seconds> <device name> <pid or name>@<channel> ...
+          Mix applications onto a Tapdeck device, each on its own channel pair
+          (@1 means channels 1-2, @3 means channels 3-4)
+
+      tapproof capture <device name> <seconds> [out.wav]
+          Record every input channel of a device through the app's own path
 
       tapproof loopback <seconds> [out.wav]
           Send 440 Hz into a Tapdeck device's output and check it can be
@@ -284,7 +288,7 @@ func runLoopback(seconds: Double, output: URL) throws {
 
     // -- Output side: send 440 Hz into the virtual device --
     let out = try DeviceOutput(device: device)
-    let rate = out.outputFormat.sampleRate
+    let rate = out.sampleRate
     var phase = 0.0
     let increment = 2.0 * Double.pi * 440.0 / rate
 
@@ -296,7 +300,7 @@ func runLoopback(seconds: Double, output: URL) throws {
             for channel in channels { channel[frame] = value }
         }
     }
-    Log.line("Output : \(Int(rate)) Hz / \(out.outputFormat.channelCount) ch — sending 440 Hz")
+    Log.line("Output : \(Int(rate)) Hz / \(out.channelCount) ch — sending 440 Hz")
     Log.line("Length : \(seconds)s …")
 
     waitSpinningRunLoop(seconds)
@@ -328,43 +332,107 @@ func runLoopback(seconds: Double, output: URL) throws {
 
 // MARK: - mix: checking the mixer
 
-func runMix(target: String, seconds: Double) throws {
-    guard let device = try AudioDevice.tapdeck() else {
-        print("No Tapdeck virtual device."); exit(1)
-    }
-    let process: AudioProcess?
-    if let pid = pid_t(target) { process = try AudioProcess.find(pid: pid) }
-    else { process = try AudioProcess.find(matching: target) }
-    guard let source = process else {
-        print("No process matches \"\(target)\"."); exit(1)
+func runMix(seconds: Double, deviceName: String, placements: [String]) throws {
+    guard let device = try AudioDevice.all().first(where: {
+        $0.uid.hasPrefix("TapdeckDevice") && $0.name == deviceName
+    }) else {
+        print("No Tapdeck virtual device named \(deviceName)."); exit(1)
     }
 
     let mixer = Mixer()
-    let entry = mixer.add(.application(bundleID: source.bundleID, name: source.name))
-    print("Source : \(source.name) (pid \(source.pid))")
-    print("Output : \(device.name) — \(Int(device.sampleRate)) Hz")
+    var entries: [(Mixer.Source, String)] = []
+    for placement in placements {
+        // "<pid or name>@<first channel>", e.g. "1234@3" puts it on channels 3-4.
+        let parts = placement.split(separator: "@", maxSplits: 1).map(String.init)
+        let needle = parts[0]
+        let firstChannel = parts.count > 1 ? (Int(parts[1]) ?? 1) : 1
+        let process = try pid_t(needle).flatMap { try AudioProcess.find(pid: $0) }
+            ?? AudioProcess.find(matching: needle)
+        guard let process else { print("No process matches \"\(needle)\"."); exit(1) }
 
-    try mixer.start(to: device)
-    print("Format : \(entry.formatDescription)")
-    print("Length : \(seconds)s …")
-
-    // Print source and output peaks once a second to see where audio stops.
-    let steps = max(1, Int(seconds))
-    for step in 1...steps {
-        Thread.sleep(forTimeInterval: 1)
-        let sourcePeak = entry.ring.takePeak()
-        let masterPeak = mixer.takeMasterPeak()
-        print(String(format: "  %2ds  source %@   output %@   under %d  over %d  buffered %d frames",
-                     step, db(Double(sourcePeak)), db(Double(masterPeak)),
-                     entry.ring.underruns, entry.ring.overruns, entry.ring.fill))
-        if let tap = entry.tapForDiagnostics {
-            print("        tap time discontinuities: \(tap.discontinuityCount)")
-        }
-
+        let entry = mixer.add(.application(bundleID: process.bundleID, name: process.name,
+                                           pid: process.pid))
+        entry.channelOffset = max(0, firstChannel - 1)
+        entries.append((entry, "\(process.name) (pid \(process.pid))"))
     }
 
+    try mixer.start(to: device)
+    print("Output : \(device.name) — \(mixer.outputChannelCount)ch at \(Int(device.sampleRate)) Hz")
+    for (entry, label) in entries {
+        print("  \(label) -> channels \(entry.channelOffset + 1)-\(entry.channelOffset + 2)"
+              + "  [\(entry.formatDescription)]")
+    }
+
+    Thread.sleep(forTimeInterval: 1)
+    if let output = mixer.output {
+        print("AUHAL  : \(output.describeFormats())")
+        print("Render : \(output.observedLayout)")
+    }
+    let steps = max(1, Int(seconds) - 1)
+    for _ in 1...steps { Thread.sleep(forTimeInterval: 1) }
     mixer.stop()
     print("Stopped.")
+}
+
+/// Record every input channel of a device to a file, reading it through our own
+/// AUHAL path. ffmpeg's avfoundation capture is not trustworthy for this: it
+/// drops blocks, and for multichannel devices its channel handling cannot be
+/// relied on either.
+func runCapture(deviceName: String, seconds: Double, output: URL) throws {
+    guard let device = try AudioDevice.all().first(where: { $0.name == deviceName }) else {
+        print("No device named \(deviceName)."); exit(1)
+    }
+    let input = try DeviceInput(device: device)
+    let lock = NSLock()
+    var file: AVAudioFile?
+    var frames = 0
+
+    try input.start { buffer, _ in
+        lock.lock(); defer { lock.unlock() }
+        if file == nil {
+            file = try? AVAudioFile(forWriting: output,
+                                    settings: buffer.format.settings,
+                                    commonFormat: buffer.format.commonFormat,
+                                    interleaved: buffer.format.isInterleaved)
+        }
+        try? file?.write(from: buffer)
+        frames += Int(buffer.frameLength)
+    }
+    print("Capture: \(device.name) — \(input.format.channelCount)ch at \(Int(input.format.sampleRate)) Hz")
+    print("AUHAL  : \(input.describeFormats())")
+    Thread.sleep(forTimeInterval: seconds)
+    input.stop()
+    lock.lock(); file = nil; let total = frames; lock.unlock()
+    print("Captured \(total) frames to \(output.path)")
+}
+
+
+/// Play a tone on exactly one channel of a device, with nothing else involved.
+/// Used to tell apart problems in the mixer, the driver and the capture path.
+func runTone(deviceName: String, channel: Int, frequency: Double, seconds: Double) throws {
+    guard let device = try AudioDevice.all().first(where: { $0.name == deviceName }) else {
+        print("No device named \(deviceName)."); exit(1)
+    }
+    let output = try DeviceOutput(device: device)
+    let index = channel - 1
+    var phase = 0.0
+    let step = 2 * Double.pi * frequency / output.sampleRate
+    try output.start { channels, frameCount in
+        guard index >= 0, index < channels.count else { return }
+        let target = channels[index]
+        for frame in 0..<frameCount {
+            target[frame] = Float(sin(phase) * 0.25)
+            phase += step
+            if phase > 2 * Double.pi { phase -= 2 * Double.pi }
+        }
+    }
+    print("Tone   : \(Int(frequency)) Hz on channel \(channel) of \(device.name) "
+          + "(\(output.channelCount)ch)")
+    Thread.sleep(forTimeInterval: 1)
+    print("AUHAL  : \(output.describeFormats())")
+    print("Render : \(output.observedLayout)")
+    Thread.sleep(forTimeInterval: max(0, seconds - 1))
+    output.stop()
 }
 
 // MARK: - entry
@@ -408,8 +476,18 @@ do {
                       output: out)
 
     case "mix":
+        guard args.count >= 4, let seconds = Double(args[1]) else { usage() }
+        try runMix(seconds: seconds, deviceName: args[2], placements: Array(args.dropFirst(3)))
+
+    case "tone":
+        guard args.count >= 5, let channel = Int(args[2]),
+              let frequency = Double(args[3]), let seconds = Double(args[4]) else { usage() }
+        try runTone(deviceName: args[1], channel: channel, frequency: frequency, seconds: seconds)
+
+    case "capture":
         guard args.count >= 3, let seconds = Double(args[2]) else { usage() }
-        try runMix(target: args[1], seconds: seconds)
+        let out = URL(fileURLWithPath: args.count >= 4 ? args[3] : "capture.wav")
+        try runCapture(deviceName: args[1], seconds: seconds, output: out)
 
     case "virtual":
         if args.count == 1 {
@@ -430,11 +508,16 @@ do {
             // middle is removed.
             let existing = VirtualDeviceConfiguration.load().devices
             let names = Array(args.dropFirst())
-            let devices = names.map { name -> VirtualDeviceConfiguration.Device in
-                if let match = existing.first(where: { $0.name == name }) {
+            // "Name" or "Name:channels", e.g. "Podcast:6".
+            let devices = names.map { spec -> VirtualDeviceConfiguration.Device in
+                let parts = spec.split(separator: ":", maxSplits: 1).map(String.init)
+                let name = parts[0]
+                let channels = parts.count > 1 ? (Int(parts[1]) ?? 2) : nil
+                if var match = existing.first(where: { $0.name == name }) {
+                    if let channels { match.channelCount = channels }
                     return match
                 }
-                return VirtualDeviceConfiguration.Device(name: name)
+                return VirtualDeviceConfiguration.Device(name: name, channelCount: channels ?? 2)
             }
             try VirtualDeviceConfiguration(devices: devices).save()
             print("Sent \(devices.count) device(s).")
