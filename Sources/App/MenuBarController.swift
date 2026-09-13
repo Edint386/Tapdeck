@@ -30,7 +30,8 @@ final class MenuBarController: NSObject, ObservableObject, NSPopoverDelegate {
         popover.delegate = self
         popover.contentViewController = NSHostingController(
             rootView: MenuBarPanelView()
-                .environmentObject(AppModels.shared.mixer))
+                .environmentObject(AppModels.shared.mixer)
+                .environmentObject(AppModels.shared.settings))
 
         // Fill the icon while any mix is running so the state is obvious at a
         // glance.

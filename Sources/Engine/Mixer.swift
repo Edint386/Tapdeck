@@ -245,6 +245,7 @@ final class Mixer: @unchecked Sendable {
     /// This mix's volume, applied to the summed sources before the mix is
     /// copied to any output — one fader for everything the mix sends.
     var volume: Float = 1
+    var isMuted = false
     private var volumeRamp = GainRamp()
 
     private(set) var sources: [Source] = []
@@ -436,7 +437,7 @@ final class Mixer: @unchecked Sendable {
             }
         }
 
-        volumeRamp.reset(to: volume)
+        volumeRamp.reset(to: isMuted ? 0 : volume)
         for output in outputs {
             output.gainRamp.reset(to: (output.isMuted ? 0 : output.gain) * MasterVolume.shared.gain)
         }
@@ -566,7 +567,7 @@ final class Mixer: @unchecked Sendable {
         }
 
         // The mix's own volume applies to everything it sends.
-        volumeRamp.apply(to: channels, frameCount: frameCount, target: volume)
+        volumeRamp.apply(to: channels, frameCount: frameCount, target: isMuted ? 0 : volume)
 
         // Fan out before the primary's gain, so muting or turning down one
         // output never affects the others.

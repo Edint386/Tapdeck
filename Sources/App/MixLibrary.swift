@@ -11,6 +11,9 @@ struct SavedMix: Codable, Identifiable {
     var name: String
     var sources: [MixerConfiguration.Source]
     var outputs: [SavedOutput]
+    /// Optional so mixes saved before mix volume existed still decode.
+    var volume: Float?
+    var isMuted: Bool?
 }
 
 struct SavedOutput: Codable {
