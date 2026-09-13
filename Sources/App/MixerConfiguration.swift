@@ -17,6 +17,9 @@ struct MixerConfiguration: Codable {
         var name: String
         var gain: Float
         var isMuted: Bool
+        /// Output channel of the source's left channel. Optional so that
+        /// configurations saved before channel mapping existed still decode.
+        var channelOffset: Int?
     }
 
     var sources: [Source] = []
@@ -50,18 +53,21 @@ struct MixerConfiguration: Codable {
             switch source.target {
             case .application(let bundleID, let name, _):
                 return Source(kind: .application, identifier: bundleID, name: name,
-                              gain: source.gain, isMuted: source.isMuted)
+                              gain: source.gain, isMuted: source.isMuted,
+                              channelOffset: source.channelOffset)
             case .systemAudio:
                 return Source(kind: .systemAudio, identifier: nil, name: "All system audio",
-                              gain: source.gain, isMuted: source.isMuted)
+                              gain: source.gain, isMuted: source.isMuted,
+                              channelOffset: source.channelOffset)
             case .inputDevice(let uid, let name):
                 return Source(kind: .inputDevice, identifier: uid, name: name,
-                              gain: source.gain, isMuted: source.isMuted)
+                              gain: source.gain, isMuted: source.isMuted,
+                              channelOffset: source.channelOffset)
             }
         }
     }
 
-    var targets: [(target: Mixer.Target, gain: Float, isMuted: Bool)] {
+    var targets: [(target: Mixer.Target, gain: Float, isMuted: Bool, channelOffset: Int)] {
         sources.compactMap { saved in
             let target: Mixer.Target
             switch saved.kind {
@@ -73,7 +79,7 @@ struct MixerConfiguration: Codable {
                 guard let uid = saved.identifier else { return nil }
                 target = .inputDevice(uid: uid, name: saved.name)
             }
-            return (target, saved.gain, saved.isMuted)
+            return (target, saved.gain, saved.isMuted, saved.channelOffset ?? 0)
         }
     }
 }

@@ -3,6 +3,7 @@ import SwiftUI
 struct AudioPanelView: View {
     @EnvironmentObject private var model: AudioEngineModel
     @State private var newDeviceName = ""
+    @State private var newDeviceChannels = 2
     @State private var isAddingDevice = false
 
     var body: some View {
@@ -27,6 +28,7 @@ struct AudioPanelView: View {
                 Spacer()
                 Button {
                     newDeviceName = ""
+                    newDeviceChannels = 2
                     isAddingDevice = true
                 } label: { Image(systemName: "plus") }
                 .buttonStyle(.borderless)
@@ -70,6 +72,14 @@ struct AudioPanelView: View {
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 220)
                     .onSubmit { commitNewDevice() }
+                Picker("Channels", selection: $newDeviceChannels) {
+                    Text("2 — stereo").tag(2)
+                    Text("4 — two sources apart").tag(4)
+                    Text("6 — three sources apart").tag(6)
+                    Text("8 — four sources apart").tag(8)
+                    Text("16").tag(16)
+                }
+                .frame(width: 220)
                 HStack {
                     Spacer()
                     Button("Cancel") { isAddingDevice = false }
@@ -83,7 +93,7 @@ struct AudioPanelView: View {
     }
 
     private func commitNewDevice() {
-        model.addVirtualDevice(name: newDeviceName)
+        model.addVirtualDevice(name: newDeviceName, channels: newDeviceChannels)
         isAddingDevice = false
     }
 

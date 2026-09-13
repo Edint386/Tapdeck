@@ -204,6 +204,28 @@ struct MixerPanelView: View {
                         .foregroundStyle(.secondary)
                         .frame(width: 38, alignment: .trailing)
 
+                    if model.channelPairs.count > 1 {
+                        Menu {
+                            ForEach(model.channelPairs, id: \.self) { offset in
+                                Button {
+                                    model.setChannelOffset(offset, for: row.id)
+                                } label: {
+                                    if offset == row.channelOffset {
+                                        Label(Self.pairLabel(offset), systemImage: "checkmark")
+                                    } else {
+                                        Text(Self.pairLabel(offset))
+                                    }
+                                }
+                            }
+                        } label: {
+                            Text(Self.pairLabel(row.channelOffset))
+                                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                        .help("Which output channels this source is placed on")
+                    }
+
                     LevelBar(level: row.isMuted ? 0 : row.level)
                         .frame(width: 64, height: 4)
                 }
@@ -252,6 +274,10 @@ struct MixerPanelView: View {
         }
     }
 
+    static func pairLabel(_ offset: Int) -> String {
+        "ch \(offset + 1)–\(offset + 2)"
+    }
+
     private func gainLabel(_ gain: Float) -> String {
         guard gain > 0.001 else { return "−∞" }
         return String(format: "%+.1f", 20 * log10(gain))
@@ -279,7 +305,20 @@ struct MixerPanelView: View {
                 .help("Refresh the device and application lists")
             }
 
-            if model.outputDeviceUID == "TapdeckDevice" {
+            if model.channelPairs.count > 1 {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Label("\(model.outputChannelCount) channels — each source can take its own pair, so recorders and OBS receive them as separate tracks.",
+                          systemImage: "square.split.2x1")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 4)
+                    Button("Separate") { model.spreadAcrossChannels() }
+                        .controlSize(.small)
+                        .disabled(model.rows.isEmpty || model.isRunning)
+                        .help("Give every source its own channel pair")
+                }
+            } else if model.outputDeviceUID == "TapdeckDevice" {
                 Label("Choose Tapdeck as the input in Zoom or OBS and it receives this mix.",
                       systemImage: "info.circle")
                     .font(.caption)

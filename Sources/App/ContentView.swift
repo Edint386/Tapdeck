@@ -118,6 +118,14 @@ struct RecorderPanelView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if let channels = rec.audioDeviceOptions.first(where: { $0.uid == rec.audioSourceID })?
+                    .inputChannels, channels > 2 {
+                    Label("\(channels) channels — the file gets \((channels + 1) / 2) separate audio tracks, one per channel pair, so each can be edited on its own.",
+                          systemImage: "square.split.2x1")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             } else {
                 Toggle("System audio (anything playing on this Mac)", isOn: $rec.systemAudio)
                 Toggle("Microphone", isOn: $rec.microphone)

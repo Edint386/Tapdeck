@@ -34,6 +34,26 @@ microphone / interface  ┘                                         │
                                         Zoom / OBS read it as a microphone
 ```
 
+### Mixing versus keeping sources apart
+
+A stereo device has one pair of channels, so every source is summed into it and
+cannot be separated afterwards. A virtual device can be made wider — 4, 6, 8 or
+16 channels — and then each source can be placed on its own pair:
+
+```
+microphone    → ch 1–2 ┐
+system audio  → ch 3–4 ├→ one 6-channel device → OBS or a recorder sees three tracks
+music         → ch 5–6 ┘
+```
+
+This matters whenever the audio is edited or processed later: raising only the
+voice in a screen recording, applying noise reduction to the microphone alone,
+or cleaning up one side of a two-person conversation. For a video call it does
+not matter, since the call app mixes everything to stereo anyway.
+
+Recordings taken from a multichannel device keep this separation: the file gets
+one stereo audio track per channel pair.
+
 Three pieces:
 
 1. **Per-app capture** uses Core Audio process taps (macOS 14.2+). No virtual
@@ -52,9 +72,10 @@ Screen recording sits on top of this rather than beside it.
 | Per-app audio capture | Working. Measured 113 dB of separation between two apps playing at once. |
 | Virtual audio devices | Working. Up to 8, named, created and removed live. |
 | Mixer | Working. Verified with zero discontinuities across a three-source mix. |
+| Channel mapping | Working. Each source can take its own channel pair on a wide device; measured 112 dB between pairs. |
 | Presets | Working. |
 | Menu bar item | Working, but a full menu bar can leave no room for it (see below). |
-| Screen recording | Working. Audio can come from ScreenCaptureKit or from the mixer. |
+| Screen recording | Working. Audio can come from ScreenCaptureKit or from the mixer, and a multichannel source is written as one audio track per channel pair. |
 
 ## Install
 
@@ -91,10 +112,13 @@ swift tools/make-icon.swift  # regenerate the icon
 ```
 ./build/tapproof list                    # processes Core Audio can see
 ./build/tapproof devices                 # audio devices
-./build/tapproof virtual Meetings Stream # replace the virtual devices
-./build/tapproof rec Chrome 10 out.wav   # record one app for 10s
-./build/tapproof mix 1234 5              # send an app through the mixer
-./build/tapproof loopback 4              # check a virtual device round-trips
+./build/tapproof virtual Tapdeck Podcast:4        # replace the virtual devices
+./build/tapproof rec Chrome 10 out.wav            # record one app for 10s
+./build/tapproof mix 5 Podcast 1234@1 5678@3      # two apps on separate pairs
+./build/tapproof tone Podcast 3 1000 5            # a tone on channel 3 only
+./build/tapproof capture Podcast 3 out.wav        # record every channel of a device
+./build/tapproof muxtest out.mov                  # multitrack muxing, offline
+./build/tapproof loopback 4                       # check a device round-trips
 ```
 
 ## Implementation notes
@@ -147,6 +171,26 @@ sandboxed far more tightly. It cannot read any path an unprivileged app can
 write, so configuration files never reach it — again with no error and no denial
 in the log. The device list travels through a Core Audio **custom property**
 instead, which stays inside the HAL.
+
+### AVAudioFormat refuses more than two channels without saying so
+
+`AVAudioFormat(commonFormat:sampleRate:channels:interleaved:)` returns nil for
+three channels or more. Wide formats need a channel layout
+(`kAudioChannelLayoutTag_DiscreteInOrder`). `AVAudioFormat.discrete` wraps this.
+
+### AVAudioEngine is the wrong output stage for channel mapping
+
+Its mixer node applies its own channel handling, so a wide output can arrive
+folded or reordered. `DeviceOutput` drives an AUHAL directly and writes each
+device channel itself.
+
+### Sources must stay pinned to the process that was chosen
+
+The mixer used to find each application again by name when it started. Two
+processes with the same name — two instances of one app, or two helper tools —
+then both tapped whichever was found first. One source silently carried the
+other's audio, which looked exactly like a channel mapping bug. The session PID
+is now kept (never saved) and checked before the bundle identifier and the name.
 
 ### Real-time paths must not take a lock the disk can hold
 

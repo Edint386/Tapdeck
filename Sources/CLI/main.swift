@@ -435,6 +435,87 @@ func runTone(deviceName: String, channel: Int, frequency: Double, seconds: Doubl
     output.stop()
 }
 
+
+/// Exercise MuxedRecorder offline: synthetic video frames plus a four-channel
+/// test signal with 440 Hz on channels 1-2 and 3000 Hz on 3-4. No devices and no
+/// screen recording permission are involved, so the splitting into tracks can
+/// be checked on its own.
+func runMuxTest(output: URL) throws {
+    try? FileManager.default.removeItem(at: output)
+    let sampleRate = 48000.0
+    guard let audioFormat = AVAudioFormat.discrete(sampleRate: sampleRate, channels: 4) else {
+        throw CoreAudioError.missing("a four-channel format")
+    }
+    let recorder = try MuxedRecorder(outputURL: output,
+                                     videoSize: CGSize(width: 320, height: 240),
+                                     audioFormat: audioFormat)
+    recorder.start()
+    print("Tracks : \(recorder.audioTrackCount) audio")
+
+    var timebase = mach_timebase_info()
+    mach_timebase_info(&timebase)
+    func hostTicks(_ seconds: Double) -> UInt64 {
+        UInt64(seconds * 1e9 * Double(timebase.denom) / Double(timebase.numer))
+    }
+    let origin = mach_absolute_time()
+
+    var pixelBuffer: CVPixelBuffer?
+    CVPixelBufferCreate(nil, 320, 240, kCVPixelFormatType_32BGRA, nil, &pixelBuffer)
+    guard let pixelBuffer else { throw CoreAudioError.missing("a pixel buffer") }
+    var videoFormat: CMVideoFormatDescription?
+    CMVideoFormatDescriptionCreateForImageBuffer(allocator: nil, imageBuffer: pixelBuffer,
+                                                 formatDescriptionOut: &videoFormat)
+    guard let videoFormat else { throw CoreAudioError.missing("a video format") }
+
+    let blockFrames = 480
+    let duration = 3.0
+    var phaseLow = 0.0, phaseHigh = 0.0
+    var nextVideo = 0.0
+    var elapsed = 0.0
+
+    while elapsed < duration {
+        // Video at 30 fps, stamped on the host clock like ScreenCaptureKit does.
+        if elapsed >= nextVideo {
+            var timing = CMSampleTimingInfo(
+                duration: CMTime(value: 1, timescale: 30),
+                presentationTimeStamp: CMClockMakeHostTimeFromSystemUnits(origin + hostTicks(nextVideo)),
+                decodeTimeStamp: .invalid)
+            var sample: CMSampleBuffer?
+            CMSampleBufferCreateReadyWithImageBuffer(allocator: nil, imageBuffer: pixelBuffer,
+                                                     formatDescription: videoFormat,
+                                                     sampleTiming: &timing,
+                                                     sampleBufferOut: &sample)
+            if let sample { recorder.appendVideo(sample) }
+            nextVideo += 1.0 / 30
+        }
+
+        guard let block = AVAudioPCMBuffer(pcmFormat: audioFormat,
+                                           frameCapacity: AVAudioFrameCount(blockFrames)),
+              let data = block.floatChannelData else { break }
+        block.frameLength = AVAudioFrameCount(blockFrames)
+        for frame in 0..<blockFrames {
+            let low = Float(sin(phaseLow) * 0.25), high = Float(sin(phaseHigh) * 0.25)
+            data[0][frame] = low;  data[1][frame] = low
+            data[2][frame] = high; data[3][frame] = high
+            phaseLow  += 2 * .pi * 440  / sampleRate
+            phaseHigh += 2 * .pi * 3000 / sampleRate
+        }
+        var stamp = AudioTimeStamp()
+        stamp.mHostTime = origin + hostTicks(elapsed)
+        stamp.mFlags = .hostTimeValid
+        recorder.appendAudio(block, at: stamp)
+
+        elapsed += Double(blockFrames) / sampleRate
+        Thread.sleep(forTimeInterval: Double(blockFrames) / sampleRate)
+    }
+
+    let done = DispatchSemaphore(value: 0)
+    Task { await recorder.finish(); done.signal() }
+    done.wait()
+    if let failure = recorder.failure { print("Failed: \(failure)"); exit(1) }
+    print("Wrote \(output.path)")
+}
+
 // MARK: - entry
 
 setvbuf(stdout, nil, _IOLBF, 0)
@@ -478,6 +559,9 @@ do {
     case "mix":
         guard args.count >= 4, let seconds = Double(args[1]) else { usage() }
         try runMix(seconds: seconds, deviceName: args[2], placements: Array(args.dropFirst(3)))
+
+    case "muxtest":
+        try runMuxTest(output: URL(fileURLWithPath: args.count >= 2 ? args[1] : "muxtest.mov"))
 
     case "tone":
         guard args.count >= 5, let channel = Int(args[2]),

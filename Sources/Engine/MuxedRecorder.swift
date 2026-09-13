@@ -16,9 +16,19 @@ final class MuxedRecorder: NSObject, @unchecked Sendable {
 
     private let writer: AVAssetWriter
     private let videoInput: AVAssetWriterInput
-    private let audioInput: AVAssetWriterInput?
+
+    /// One writer input per audio track. A multichannel source is split into
+    /// stereo pairs, each written as its own track, so an editor sees the
+    /// microphone and the system audio (say) as separate tracks rather than one
+    /// wide track it may not know how to take apart.
+    private let audioInputs: [AVAssetWriterInput]
+    private let trackFormat: AVAudioFormat?
+    private let sourceChannelCount: Int
 
     private var audioFormatDescription: CMAudioFormatDescription?
+
+    /// How many audio tracks the file will contain.
+    var audioTrackCount: Int { audioInputs.count }
     private var hasStartedSession = false
     private let lock = NSLock()
 
@@ -40,21 +50,31 @@ final class MuxedRecorder: NSObject, @unchecked Sendable {
         writer.add(videoInput)
 
         if let audioFormat {
-            let input = AVAssetWriterInput(mediaType: .audio, outputSettings: [
-                AVFormatIDKey: kAudioFormatMPEG4AAC,
-                AVSampleRateKey: audioFormat.sampleRate,
-                AVNumberOfChannelsKey: audioFormat.channelCount,
-                AVEncoderBitRateKey: 192_000,
-            ])
-            input.expectsMediaDataInRealTime = true
-            if writer.canAdd(input) {
+            let channels = Int(audioFormat.channelCount)
+            sourceChannelCount = channels
+            let trackChannels = channels == 1 ? 1 : 2
+            let trackCount = channels <= 2 ? 1 : (channels + 1) / 2
+            trackFormat = AVAudioFormat.discrete(sampleRate: audioFormat.sampleRate,
+                                                 channels: trackChannels)
+
+            var inputs: [AVAssetWriterInput] = []
+            for _ in 0..<trackCount {
+                let input = AVAssetWriterInput(mediaType: .audio, outputSettings: [
+                    AVFormatIDKey: kAudioFormatMPEG4AAC,
+                    AVSampleRateKey: audioFormat.sampleRate,
+                    AVNumberOfChannelsKey: trackChannels,
+                    AVEncoderBitRateKey: trackChannels == 1 ? 96_000 : 192_000,
+                ])
+                input.expectsMediaDataInRealTime = true
+                guard writer.canAdd(input) else { break }
                 writer.add(input)
-                audioInput = input
-            } else {
-                audioInput = nil
+                inputs.append(input)
             }
+            audioInputs = inputs
         } else {
-            audioInput = nil
+            sourceChannelCount = 0
+            trackFormat = nil
+            audioInputs = []
         }
     }
 
@@ -72,7 +92,7 @@ final class MuxedRecorder: NSObject, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         videoInput.markAsFinished()
-        audioInput?.markAsFinished()
+        audioInputs.forEach { $0.markAsFinished() }
     }
 
     var failure: Error? { writer.error }
@@ -96,12 +116,14 @@ final class MuxedRecorder: NSObject, @unchecked Sendable {
 
     // MARK: - Audio
 
-    /// Write a buffer from the AUHAL onto the same timeline as the video.
+    /// Write a buffer from the AUHAL onto the same timeline as the video,
+    /// splitting it into one track per channel pair.
     func appendAudio(_ buffer: AVAudioPCMBuffer, at timeStamp: AudioTimeStamp) {
         lock.lock()
         defer { lock.unlock() }
 
-        guard hasStartedSession, let audioInput, audioInput.isReadyForMoreMediaData else { return }
+        guard hasStartedSession, !audioInputs.isEmpty, let trackFormat,
+              let source = buffer.floatChannelData else { return }
 
         // Use the host time the AUHAL supplies. Substituting arrival time
         // introduces jitter.
@@ -112,8 +134,25 @@ final class MuxedRecorder: NSObject, @unchecked Sendable {
             presentationTime = CMClockGetTime(CMClockGetHostTimeClock())
         }
 
-        guard let sampleBuffer = makeSampleBuffer(from: buffer, at: presentationTime) else { return }
-        audioInput.append(sampleBuffer)
+        let frames = Int(buffer.frameLength)
+        let available = Int(buffer.format.channelCount)
+        let trackChannels = Int(trackFormat.channelCount)
+
+        for (track, input) in audioInputs.enumerated() where input.isReadyForMoreMediaData {
+            guard let part = AVAudioPCMBuffer(pcmFormat: trackFormat,
+                                              frameCapacity: AVAudioFrameCount(frames)),
+                  let target = part.floatChannelData else { continue }
+            part.frameLength = AVAudioFrameCount(frames)
+
+            for channel in 0..<trackChannels {
+                // An odd channel out at the end is duplicated rather than left
+                // silent on one side.
+                let from = min(track * 2 + channel, available - 1)
+                target[channel].update(from: source[from], count: frames)
+            }
+            guard let sample = makeSampleBuffer(from: part, at: presentationTime) else { continue }
+            input.append(sample)
+        }
     }
 
     private func makeSampleBuffer(from buffer: AVAudioPCMBuffer,
