@@ -43,6 +43,21 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    /// Volume applied last, to every output of every mix.
+    @Published var masterVolume: Float {
+        didSet {
+            defaults.set(masterVolume, forKey: Keys.masterVolume)
+            MasterVolume.shared.volume = masterVolume
+        }
+    }
+
+    @Published var isMasterMuted: Bool {
+        didSet {
+            defaults.set(isMasterMuted, forKey: Keys.masterMuted)
+            MasterVolume.shared.isMuted = isMasterMuted
+        }
+    }
+
     // MARK: - General
 
     @Published var showsMenuBarItem: Bool {
@@ -61,6 +76,8 @@ final class AppSettings: ObservableObject {
 
     private enum Keys {
         static let bufferSize = "settings.bufferSize"
+        static let masterVolume = "settings.masterVolume"
+        static let masterMuted = "settings.masterMuted"
         static let showsMenuBarItem = "settings.showsMenuBarItem"
         static let recordingFolder = "settings.recordingFolder"
     }
@@ -71,9 +88,14 @@ final class AppSettings: ObservableObject {
         recordingFolder = defaults.string(forKey: Keys.recordingFolder)
             .map { URL(fileURLWithPath: $0, isDirectory: true) } ?? Self.defaultRecordingFolder
 
+        masterVolume = defaults.object(forKey: Keys.masterVolume) as? Float ?? 1
+        isMasterMuted = defaults.bool(forKey: Keys.masterMuted)
+
         // Property observers do not run during init, so apply engine-facing
         // values explicitly.
         Mixer.bufferCushionFrames = bufferSize.rawValue
+        MasterVolume.shared.volume = masterVolume
+        MasterVolume.shared.isMuted = isMasterMuted
     }
 
     /// Ask for a folder with the standard panel.

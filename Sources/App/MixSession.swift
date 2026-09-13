@@ -49,6 +49,22 @@ final class MixSession: ObservableObject, Identifiable {
     @Published private(set) var status = ""
     @Published private(set) var level: Float = 0
 
+    /// This mix's volume: one fader for everything it sends.
+    @Published var volume: Float = 1 {
+        didSet {
+            engine.volume = volume
+            if oldValue != volume { changed() }
+        }
+    }
+
+    /// Silences everything the mix sends while keeping it running.
+    @Published var isMuted = false {
+        didSet {
+            engine.isMuted = isMuted
+            if oldValue != isMuted { changed() }
+        }
+    }
+
     private let engine = Mixer()
     private weak var library: MixerModel?
     private var iconCache: [String: NSImage] = [:]
@@ -66,6 +82,10 @@ final class MixSession: ObservableObject, Identifiable {
             source.isMuted = entry.isMuted
             source.channelOffset = entry.channelOffset
         }
+        volume = saved.volume ?? 1
+        isMuted = saved.isMuted ?? false
+        engine.volume = volume
+        engine.isMuted = isMuted
         for savedOutput in saved.outputs {
             let output = engine.addOutput(uid: savedOutput.uid, name: savedOutput.name)
             output.gain = savedOutput.gain
@@ -80,7 +100,9 @@ final class MixSession: ObservableObject, Identifiable {
                  sources: MixerConfiguration(sources: engine.sources, outputDeviceUID: "").sources,
                  outputs: engine.outputs.map {
                      SavedOutput(uid: $0.deviceUID, name: $0.deviceName, gain: $0.gain, isMuted: $0.isMuted)
-                 })
+                 },
+                 volume: volume,
+                 isMuted: isMuted)
     }
 
     /// Device UIDs this mix captures from, for feedback checks.

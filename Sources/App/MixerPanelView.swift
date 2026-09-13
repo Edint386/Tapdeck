@@ -79,6 +79,9 @@ private struct MixListView: View {
 
             Spacer(minLength: 0)
 
+            MasterVolumeControl()
+                .padding(.vertical, 4)
+
             Text("Every mix runs on its own. Start as many as you need at once.")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
@@ -162,7 +165,12 @@ private struct MixEditorView: View {
                 .textFieldStyle(.plain)
                 .font(.title3.weight(.semibold))
 
-            LevelBar(level: mix.level).frame(width: 90, height: 6)
+            VStack(alignment: .trailing, spacing: 3) {
+                VolumeControl(title: nil, volume: $mix.volume, isMuted: $mix.isMuted)
+                    .frame(width: 210)
+                    .help("This mix's volume, for everything it sends")
+                LevelBar(level: mix.level).frame(width: 150, height: 4)
+            }
 
             Button {
                 model.duplicate(mix.id)

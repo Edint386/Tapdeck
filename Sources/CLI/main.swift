@@ -358,6 +358,14 @@ func runMix(seconds: Double, deviceName: String, placements: [String]) throws {
         entries.append((entry, "\(process.name) (pid \(process.pid))"))
     }
 
+    if let value = ProcessInfo.processInfo.environment["TAPDECK_MASTER"].flatMap(Float.init) {
+        MasterVolume.shared.volume = value
+        print("Master : \(value)")
+    }
+    if let value = ProcessInfo.processInfo.environment["TAPDECK_MIX_VOLUME"].flatMap(Float.init) {
+        mixer.volume = value
+        print("Volume : \(value)")
+    }
     try mixer.start()
     for output in mixer.outputs {
         print("Output : \(output.deviceName) — \(output.channelCount)ch at \(Int(output.sampleRate)) Hz"
@@ -576,6 +584,70 @@ func runGraphTest() {
     if passed != results.count { exit(1) }
 }
 
+
+/// Check the gain stages without any devices.
+func runGainTest() {
+    var passed = 0, total = 0
+    func report(_ label: String, _ ok: Bool, _ detail: String) {
+        total += 1; if ok { passed += 1 }
+        print("\(ok ? "PASS" : "FAIL")  \(label.padding(toLength: 46, withPad: " ", startingAt: 0)) \(detail)")
+    }
+
+    let frames = 512
+    let rate = 48_000.0
+
+    // A 1 kHz sine whose gain changes from 1 to 0.5 at a block boundary.
+    func largestStep(ramped: Bool) -> Float {
+        var samples = (0..<frames * 2).map { Float(sin(2 * .pi * 1000 * Double($0) / rate)) }
+        return samples.withUnsafeMutableBufferPointer { buffer -> Float in
+            let first = buffer.baseAddress!, second = buffer.baseAddress! + frames
+            var ramp = GainRamp(1)
+            if ramped {
+                ramp.apply(to: [first], frameCount: frames, target: 1)
+                ramp.apply(to: [second], frameCount: frames, target: 0.5)
+            } else {
+                for i in 0..<frames { second[i] *= 0.5 }
+            }
+            // A pure 1 kHz sine at 48 kHz never moves more than
+            // 2·sin(π·1000/48000) ≈ 0.131 between samples. Anything larger is
+            // a discontinuity introduced by the gain change.
+            var largest: Float = 0
+            for i in 1..<(frames * 2) {
+                largest = max(largest, abs(buffer[i] - buffer[i - 1]))
+            }
+            return largest
+        }
+    }
+    let hard = largestStep(ramped: false), smooth = largestStep(ramped: true)
+    let sineSlope = Float(2 * sin(Double.pi * 1000 / rate))
+    report("hard gain change leaves a step", hard > sineSlope * 1.2,
+           String(format: "largest step %.3f (sine alone %.3f)", hard, sineSlope))
+    report("ramped gain change stays within the sine", smooth <= sineSlope * 1.01,
+           String(format: "largest step %.3f", smooth))
+
+    var dc = [Float](repeating: 1, count: frames)
+    dc.withUnsafeMutableBufferPointer { buffer in
+        var ramp = GainRamp(1)
+        ramp.apply(to: [buffer.baseAddress!], frameCount: frames, target: 0)
+        let monotonic = (1..<frames).allSatisfy { buffer[$0] <= buffer[$0 - 1] }
+        report("ramp to silence ends at zero and never rises",
+               monotonic && abs(buffer[frames - 1]) < 1e-6,
+               String(format: "first %.4f last %.6f", buffer[0], buffer[frames - 1]))
+    }
+
+    let master = MasterVolume()
+    master.volume = 0.5
+    report("master volume gain", master.gain == 0.5, "0.5 -> \(master.gain)")
+    master.isMuted = true
+    report("master mute", master.gain == 0, "muted -> \(master.gain)")
+    master.isMuted = false
+    master.volume = -3
+    report("master volume never negative", master.gain == 0, "-3 -> \(master.gain)")
+
+    print("\(passed)/\(total) passed")
+    if passed != total { exit(1) }
+}
+
 // MARK: - entry
 
 setvbuf(stdout, nil, _IOLBF, 0)
@@ -619,6 +691,9 @@ do {
     case "mix":
         guard args.count >= 4, let seconds = Double(args[1]) else { usage() }
         try runMix(seconds: seconds, deviceName: args[2], placements: Array(args.dropFirst(3)))
+
+    case "gaintest":
+        runGainTest()
 
     case "graphtest":
         runGraphTest()

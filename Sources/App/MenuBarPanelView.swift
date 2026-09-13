@@ -21,6 +21,8 @@ struct MenuBarPanelView: View {
                 }
             }
 
+            MasterVolumeControl()
+
             if model.mixes.isEmpty {
                 Text("No mixes yet").font(.caption).foregroundStyle(.secondary)
             } else {
