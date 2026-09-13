@@ -362,6 +362,16 @@ func runMix(seconds: Double, deviceName: String, placements: [String]) throws {
         MasterVolume.shared.volume = value
         print("Master : \(value)")
     }
+    // "Monitor=300,Tapdeck=0" sets output delays in milliseconds.
+    if let spec = ProcessInfo.processInfo.environment["TAPDECK_OUTPUT_DELAYS"] {
+        for pair in spec.split(separator: ",") {
+            let parts = pair.split(separator: "=").map(String.init)
+            guard parts.count == 2, let ms = Double(parts[1]),
+                  let output = mixer.outputs.first(where: { $0.deviceName == parts[0] }) else { continue }
+            output.delayMilliseconds = ms
+            print("Delay  : \(parts[0]) \(ms) ms")
+        }
+    }
     if let value = ProcessInfo.processInfo.environment["TAPDECK_MIX_VOLUME"].flatMap(Float.init) {
         mixer.volume = value
         print("Volume : \(value)")
@@ -388,36 +398,66 @@ func runMix(seconds: Double, deviceName: String, placements: [String]) throws {
     print("Stopped.")
 }
 
-/// Record every input channel of a device to a file, reading it through our own
-/// AUHAL path. ffmpeg's avfoundation capture is not trustworthy for this: it
-/// drops blocks, and for multichannel devices its channel handling cannot be
-/// relied on either.
-func runCapture(deviceName: String, seconds: Double, output: URL) throws {
-    guard let device = try AudioDevice.all().first(where: { $0.name == deviceName }) else {
-        print("No device named \(deviceName)."); exit(1)
+/// Record every input channel of one or more devices, reading them through our
+/// own AUHAL path. ffmpeg's avfoundation capture is not trustworthy for this: it
+/// drops blocks, and its multichannel handling cannot be relied on either.
+///
+/// Several devices are captured by one process, and the host time of each
+/// file's first frame is printed, so recordings can be lined up in time.
+func runCapture(deviceNames: [String], seconds: Double, output: URL) throws {
+    final class Recording {
+        let name: String
+        let input: DeviceInput
+        let url: URL
+        let lock = NSLock()
+        var file: AVAudioFile?
+        var frames = 0
+        var firstHostTime: UInt64 = 0
+        init(name: String, input: DeviceInput, url: URL) { self.name = name; self.input = input; self.url = url }
     }
-    let input = try DeviceInput(device: device)
-    let lock = NSLock()
-    var file: AVAudioFile?
-    var frames = 0
 
-    try input.start { buffer, _ in
-        lock.lock(); defer { lock.unlock() }
-        if file == nil {
-            file = try? AVAudioFile(forWriting: output,
-                                    settings: buffer.format.settings,
-                                    commonFormat: buffer.format.commonFormat,
-                                    interleaved: buffer.format.isInterleaved)
+    let all = try AudioDevice.all()
+    var recordings: [Recording] = []
+    for name in deviceNames {
+        guard let device = all.first(where: { $0.name == name }) else {
+            print("No device named \(name)."); exit(1)
         }
-        try? file?.write(from: buffer)
-        frames += Int(buffer.frameLength)
+        // One device keeps the given name; several get "<name>-<device>.wav".
+        let url = deviceNames.count == 1
+            ? output
+            : output.deletingLastPathComponent().appendingPathComponent(
+                "\(output.deletingPathExtension().lastPathComponent)-\(name).wav")
+        recordings.append(Recording(name: name, input: try DeviceInput(device: device), url: url))
     }
-    print("Capture: \(device.name) — \(input.format.channelCount)ch at \(Int(input.format.sampleRate)) Hz")
-    print("AUHAL  : \(input.describeFormats())")
+
+    for recording in recordings {
+        try recording.input.start { buffer, timeStamp in
+            recording.lock.lock(); defer { recording.lock.unlock() }
+            if recording.file == nil {
+                recording.firstHostTime = timeStamp.mHostTime
+                recording.file = try? AVAudioFile(forWriting: recording.url,
+                                                  settings: buffer.format.settings,
+                                                  commonFormat: buffer.format.commonFormat,
+                                                  interleaved: buffer.format.isInterleaved)
+            }
+            try? recording.file?.write(from: buffer)
+            recording.frames += Int(buffer.frameLength)
+        }
+    }
     Thread.sleep(forTimeInterval: seconds)
-    input.stop()
-    lock.lock(); file = nil; let total = frames; lock.unlock()
-    print("Captured \(total) frames to \(output.path)")
+
+    var timebase = mach_timebase_info()
+    mach_timebase_info(&timebase)
+    for recording in recordings {
+        recording.input.stop()
+        recording.lock.lock()
+        recording.file = nil
+        let seconds = Double(recording.firstHostTime) * Double(timebase.numer) / Double(timebase.denom) / 1e9
+        print("Captured \(recording.name): \(recording.frames) frames, "
+              + "\(Int(recording.input.format.sampleRate)) Hz, first frame at host \(String(format: "%.6f", seconds)) s "
+              + "-> \(recording.url.lastPathComponent)")
+        recording.lock.unlock()
+    }
 }
 
 
@@ -648,6 +688,90 @@ func runGainTest() {
     if passed != total { exit(1) }
 }
 
+
+/// Check the delay line without any devices.
+func runDelayTest() {
+    var passed = 0, total = 0
+    func report(_ label: String, _ ok: Bool, _ detail: String) {
+        total += 1; if ok { passed += 1 }
+        print("\(ok ? "PASS" : "FAIL")  \(label.padding(toLength: 48, withPad: " ", startingAt: 0)) \(detail)")
+    }
+    let rate = 48_000.0
+    let block = 512
+
+    /// Feed `input` through the line in blocks and return the output.
+    func run(_ input: [Float], delays: (Int) -> Int, maximum: Int = 48_000) -> [Float] {
+        let line = DelayLine(channels: 1, maximumFrames: maximum)
+        var output = input
+        output.withUnsafeMutableBufferPointer { buffer in
+            var offset = 0
+            var blockIndex = 0
+            while offset < buffer.count {
+                let count = min(block, buffer.count - offset)
+                line.process([buffer.baseAddress! + offset], frameCount: count,
+                             targetDelay: delays(blockIndex))
+                offset += count
+                blockIndex += 1
+            }
+        }
+        return output
+    }
+
+    // An impulse after a delay set before any audio arrives lands exactly.
+    for delay in [0, 1, 480, 12_000, 47_999] {
+        var input = [Float](repeating: 0, count: 60_000)
+        input[100] = 1
+        // Hold the delay from the start by fading in over silence first.
+        let line = DelayLine(channels: 1, maximumFrames: 48_000, fadeFrames: 1)
+        var output = input
+        output.withUnsafeMutableBufferPointer { buffer in
+            var offset = 0
+            while offset < buffer.count {
+                let count = min(block, buffer.count - offset)
+                line.process([buffer.baseAddress! + offset], frameCount: count, targetDelay: delay)
+                offset += count
+            }
+        }
+        let position = output.firstIndex { abs($0) > 0.5 } ?? -1
+        report("impulse delayed by \(delay) frames", position == 100 + delay,
+               "arrived at \(position), expected \(100 + delay)")
+    }
+
+    // Changing the delay mid-stream must not leave a discontinuity.
+    let sine = (0..<96_000).map { Float(sin(2 * .pi * 440 * Double($0) / rate)) }
+    let changed = run(sine, delays: { $0 < 40 ? 0 : 9_600 })
+    let slope = Float(2 * sin(Double.pi * 440 / rate))
+    var largest: Float = 0
+    for i in 1..<changed.count { largest = max(largest, abs(changed[i] - changed[i - 1])) }
+    report("delay change is crossfaded, not stepped", largest <= slope * 1.05,
+           String(format: "largest step %.4f (sine alone %.4f)", largest, slope))
+
+    // After the fade, the output is the input exactly 200 ms later. Compare a
+    // whole window: a single sample can land on a zero crossing and pass
+    // whatever the delay.
+    var worst: Float = 0
+    var energy: Float = 0
+    for i in 80_000..<81_000 {
+        worst = max(worst, abs(changed[i] - sine[i - 9_600]))
+        energy += changed[i] * changed[i]
+    }
+    report("after the change the output is 200 ms behind", worst < 1e-5 && energy > 100,
+           String(format: "largest error %.2e over 1000 samples (energy %.0f)", worst, energy))
+    var wrong: Float = 0
+    for i in 80_000..<81_000 { wrong = max(wrong, abs(changed[i] - sine[i - 9_601])) }
+    report("and not 199.98 ms (the comparison can fail)", wrong > 1e-3,
+           String(format: "error against one frame off %.2e", wrong))
+
+    // Requests beyond the capacity are clamped, not wrapped around.
+    let clamped = DelayLine(channels: 1, maximumFrames: 1000)
+    var probe: [Float] = [0]
+    probe.withUnsafeMutableBufferPointer { clamped.process([$0.baseAddress!], frameCount: 1, targetDelay: 5000) }
+    report("delay beyond capacity is clamped", clamped.currentDelay == 1000, "got \(clamped.currentDelay)")
+
+    print("\(passed)/\(total) passed")
+    if passed != total { exit(1) }
+}
+
 // MARK: - entry
 
 setvbuf(stdout, nil, _IOLBF, 0)
@@ -692,6 +816,9 @@ do {
         guard args.count >= 4, let seconds = Double(args[1]) else { usage() }
         try runMix(seconds: seconds, deviceName: args[2], placements: Array(args.dropFirst(3)))
 
+    case "delaytest":
+        runDelayTest()
+
     case "gaintest":
         runGainTest()
 
@@ -713,7 +840,8 @@ do {
     case "capture":
         guard args.count >= 3, let seconds = Double(args[2]) else { usage() }
         let out = URL(fileURLWithPath: args.count >= 4 ? args[3] : "capture.wav")
-        try runCapture(deviceName: args[1], seconds: seconds, output: out)
+        try runCapture(deviceNames: args[1].split(separator: ",").map(String.init),
+                       seconds: seconds, output: out)
 
     case "virtual":
         if args.count == 1 {

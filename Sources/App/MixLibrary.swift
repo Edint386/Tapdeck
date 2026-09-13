@@ -21,6 +21,8 @@ struct SavedOutput: Codable {
     var name: String
     var gain: Float = 1
     var isMuted = false
+    /// Optional so outputs saved before delays existed still decode.
+    var delayMilliseconds: Double?
 }
 
 enum MixLibraryStore {

@@ -166,14 +166,34 @@ final class Mixer: @unchecked Sendable {
         /// Ramp for this output's gain combined with the master volume.
         fileprivate var gainRamp = GainRamp()
 
-        /// Everything after the mix: this output's gain times the master
+        /// How long this output holds audio back, to line up with a slower
+        /// output. Can change while playing.
+        var delayMilliseconds: Double = 0
+
+        /// Longest delay an output supports. AirPlay typically runs about two
+        /// seconds behind, so this leaves headroom above that.
+        static let maximumDelayMilliseconds: Double = 3000
+
+        fileprivate var delayLine: DelayLine?
+
+        /// Everything after the mix: delay, this output's gain times the master
         /// volume, then clipping and metering. Runs on this output's own
-        /// real-time thread.
+        /// real-time thread, at this output's own sample rate.
         fileprivate func finish(_ channels: [UnsafeMutablePointer<Float>], frameCount: Int) {
+            if let delayLine {
+                let frames = Int((delayMilliseconds / 1000 * sampleRate).rounded())
+                delayLine.process(channels, frameCount: frameCount, targetDelay: frames)
+            }
             let target = (isMuted ? 0 : gain) * MasterVolume.shared.gain
             gainRamp.apply(to: channels, frameCount: frameCount, target: target)
             record(peak: clipAndMeasure(channels, frameCount: frameCount))
         }
+
+        /// Latency the device itself reports for its output, in milliseconds:
+        /// device latency, safety offset and stream latency. Bluetooth and
+        /// AirPlay devices often under-report, AirPlay sometimes as zero, so
+        /// this is a hint rather than something to align on automatically.
+        private(set) var reportedLatencyMilliseconds: Double = 0
 
         private let meterLock = NSLock()
         private var peak: Float = 0
@@ -204,6 +224,24 @@ final class Mixer: @unchecked Sendable {
             detachReason = nil
             channelCount = device.channelCount
             sampleRate = device.sampleRate
+            // Allocated here, off the real-time thread, sized for the longest
+            // delay so it can be changed freely while playing.
+            delayLine = DelayLine(channels: channelCount,
+                                  maximumFrames: Int(Output.maximumDelayMilliseconds / 1000 * sampleRate))
+        }
+
+        fileprivate func readReportedLatency(of deviceID: AudioDeviceID) {
+            func frames(_ selector: AudioObjectPropertySelector) -> UInt32 {
+                (try? AudioObjectID(deviceID).read(selector, scope: kAudioObjectPropertyScopeOutput,
+                                                   as: UInt32.self)) ?? 0
+            }
+            var total = frames(kAudioDevicePropertyLatency) + frames(kAudioDevicePropertySafetyOffset)
+            if let streams: [AudioObjectID] = try? AudioObjectID(deviceID).readArray(
+                   kAudioDevicePropertyStreams, scope: kAudioObjectPropertyScopeOutput),
+               let first = streams.first {
+                total += (try? first.read(kAudioStreamPropertyLatency, as: UInt32.self)) ?? 0
+            }
+            reportedLatencyMilliseconds = sampleRate > 0 ? Double(total) / sampleRate * 1000 : 0
         }
 
         fileprivate func markDetached(_ reason: String) {
@@ -215,6 +253,7 @@ final class Mixer: @unchecked Sendable {
         fileprivate func stop() {
             device?.stop()
             device = nil
+            delayLine = nil
             ring = nil
             converter = nil
             scratch = nil
@@ -406,6 +445,7 @@ final class Mixer: @unchecked Sendable {
                 }
                 let stage = try DeviceOutput(device: device)
                 output.attach(device: stage, primary: primary == nil)
+                output.readReportedLatency(of: device.deviceID)
                 if primary == nil { primary = output } else { secondaries.append(output) }
             } catch {
                 output.markDetached(error.localizedDescription)

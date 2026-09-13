@@ -36,6 +36,9 @@ final class MixSession: ObservableObject, Identifiable {
         var isPrimary: Bool
         var isAttached: Bool
         var detail: String
+        var delayMilliseconds: Double
+        /// What the device says its own latency is, once the mix has started.
+        var reportedLatencyMilliseconds: Double?
     }
 
     let id: UUID
@@ -90,6 +93,7 @@ final class MixSession: ObservableObject, Identifiable {
             let output = engine.addOutput(uid: savedOutput.uid, name: savedOutput.name)
             output.gain = savedOutput.gain
             output.isMuted = savedOutput.isMuted
+            output.delayMilliseconds = savedOutput.delayMilliseconds ?? 0
         }
         syncRows()
     }
@@ -99,7 +103,8 @@ final class MixSession: ObservableObject, Identifiable {
                  name: name,
                  sources: MixerConfiguration(sources: engine.sources, outputDeviceUID: "").sources,
                  outputs: engine.outputs.map {
-                     SavedOutput(uid: $0.deviceUID, name: $0.deviceName, gain: $0.gain, isMuted: $0.isMuted)
+                     SavedOutput(uid: $0.deviceUID, name: $0.deviceName, gain: $0.gain, isMuted: $0.isMuted,
+                                 delayMilliseconds: $0.delayMilliseconds == 0 ? nil : $0.delayMilliseconds)
                  },
                  volume: volume,
                  isMuted: isMuted)
@@ -284,6 +289,13 @@ final class MixSession: ObservableObject, Identifiable {
         changed()
     }
 
+    func setOutputDelay(_ milliseconds: Double, for id: UUID) {
+        let clamped = min(max(0, milliseconds.rounded()), Mixer.Output.maximumDelayMilliseconds)
+        engine.outputs.first { $0.id == id }?.delayMilliseconds = clamped
+        syncRows()
+        changed()
+    }
+
     func toggleOutputMute(_ id: UUID) {
         guard let output = engine.outputs.first(where: { $0.id == id }) else { return }
         output.isMuted.toggle()
@@ -386,7 +398,10 @@ final class MixSession: ObservableObject, Identifiable {
                       level: outputs.first { $0.id == output.id }?.level ?? 0,
                       isPrimary: isRunning ? output.isPrimary : index == 0,
                       isAttached: output.isAttached,
-                      detail: outputDetail(output))
+                      detail: outputDetail(output),
+                      delayMilliseconds: output.delayMilliseconds,
+                      reportedLatencyMilliseconds: isRunning && output.isAttached
+                          ? output.reportedLatencyMilliseconds : nil)
         }
     }
 
