@@ -143,6 +143,8 @@ private struct MixEditorView: View {
     /// Outputs whose delay control is open. An output with a delay set is
     /// always shown open, so the setting is never hidden.
     @State private var openDelays: Set<UUID> = []
+    /// The source whose effects popover is open.
+    @State private var effectsSourceID: UUID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -283,6 +285,13 @@ private struct MixEditorView: View {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 6) {
                     Text(row.label).font(.callout.weight(.medium)).lineLimit(1)
+                    if row.replacesOriginal {
+                        Text("REPLACES")
+                            .font(.system(size: 8, weight: .bold))
+                            .padding(.horizontal, 4).padding(.vertical, 1)
+                            .background(Color.orange.opacity(0.25), in: Capsule())
+                            .help("The app's own sound is silenced while this mix runs")
+                    }
                     if mix.isRunning && !row.isAttached {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.caption2).foregroundStyle(.orange)
@@ -326,6 +335,24 @@ private struct MixEditorView: View {
                     }
                     LevelBar(level: row.isMuted ? 0 : row.level).frame(width: 60, height: 4)
                 }
+            }
+
+            Button {
+                effectsSourceID = row.id
+            } label: {
+                Text("FX")
+                    .font(.system(size: 9, weight: .bold))
+                    .padding(.horizontal, 5).padding(.vertical, 2)
+                    .foregroundStyle(row.effects.isActive ? Color.white : Color.secondary)
+                    .background(row.effects.isActive ? Color.accentColor : Color.secondary.opacity(0.15),
+                                in: RoundedRectangle(cornerRadius: 4))
+            }
+            .buttonStyle(.plain)
+            .help("Filters, equaliser, dynamics and more for this source")
+            .popover(isPresented: Binding(get: { effectsSourceID == row.id },
+                                          set: { if !$0 { effectsSourceID = nil } }),
+                     arrowEdge: .trailing) {
+                SourceEffectsView(mix: mix, sourceID: row.id)
             }
 
             muteButton(isMuted: row.isMuted) { mix.toggleSourceMute(row.id) }

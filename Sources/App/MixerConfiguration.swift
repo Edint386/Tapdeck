@@ -22,6 +22,7 @@ struct MixerConfiguration: Codable {
         var channelOffset: Int?
         /// Optional for the same reason: older configurations have no effects.
         var effects: EffectSettings?
+        var replacesOriginal: Bool?
     }
 
     var sources: [Source] = []
@@ -57,22 +58,26 @@ struct MixerConfiguration: Codable {
                 return Source(kind: .application, identifier: bundleID, name: name,
                               gain: source.gain, isMuted: source.isMuted,
                               channelOffset: source.channelOffset,
-                              effects: source.effectSettings != EffectSettings() ? source.effectSettings : nil)
+                              effects: source.effectSettings != EffectSettings() ? source.effectSettings : nil,
+                              replacesOriginal: source.replacesOriginal ? true : nil)
             case .systemAudio:
                 return Source(kind: .systemAudio, identifier: nil, name: "All system audio",
                               gain: source.gain, isMuted: source.isMuted,
                               channelOffset: source.channelOffset,
-                              effects: source.effectSettings != EffectSettings() ? source.effectSettings : nil)
+                              effects: source.effectSettings != EffectSettings() ? source.effectSettings : nil,
+                              replacesOriginal: source.replacesOriginal ? true : nil)
             case .inputDevice(let uid, let name):
                 return Source(kind: .inputDevice, identifier: uid, name: name,
                               gain: source.gain, isMuted: source.isMuted,
                               channelOffset: source.channelOffset,
-                              effects: source.effectSettings != EffectSettings() ? source.effectSettings : nil)
+                              effects: source.effectSettings != EffectSettings() ? source.effectSettings : nil,
+                              replacesOriginal: source.replacesOriginal ? true : nil)
             }
         }
     }
 
-    var targets: [(target: Mixer.Target, gain: Float, isMuted: Bool, channelOffset: Int, effects: EffectSettings)] {
+    var targets: [(target: Mixer.Target, gain: Float, isMuted: Bool, channelOffset: Int,
+                   effects: EffectSettings, replacesOriginal: Bool)] {
         sources.compactMap { saved in
             let target: Mixer.Target
             switch saved.kind {
@@ -85,7 +90,7 @@ struct MixerConfiguration: Codable {
                 target = .inputDevice(uid: uid, name: saved.name)
             }
             return (target, saved.gain, saved.isMuted, saved.channelOffset ?? 0,
-                    saved.effects ?? EffectSettings())
+                    saved.effects ?? EffectSettings(), saved.replacesOriginal ?? false)
         }
     }
 }

@@ -22,6 +22,9 @@ final class MixSession: ObservableObject, Identifiable {
         var isAttached: Bool
         var detail: String
         var channelOffset: Int
+        var effects: EffectSettings
+        var replacesOriginal: Bool
+        var canReplaceOriginal: Bool
     }
 
     /// One output row, as displayed.
@@ -84,6 +87,8 @@ final class MixSession: ObservableObject, Identifiable {
             source.gain = entry.gain
             source.isMuted = entry.isMuted
             source.channelOffset = entry.channelOffset
+            source.effectSettings = entry.effects
+            source.replacesOriginal = entry.replacesOriginal
         }
         volume = saved.volume ?? 1
         isMuted = saved.isMuted ?? false
@@ -204,6 +209,21 @@ final class MixSession: ObservableObject, Identifiable {
         engine.sources.first { $0.id == id }?.gain = gain
         syncRows()
         changed()
+    }
+
+    func setEffects(_ effects: EffectSettings, for id: UUID) {
+        engine.sources.first { $0.id == id }?.effectSettings = effects
+        syncRows()
+        changed()
+    }
+
+    func setReplacesOriginal(_ replaces: Bool, for id: UUID) {
+        engine.setReplacesOriginal(replaces, for: id)
+        syncRows()
+        changed()
+        if replaces && !engine.outputs.contains(where: { !MixerModel.isVirtual($0.deviceUID) }) {
+            status = "The original sound is silenced while this mix runs. Add a speaker or headphones output to hear it."
+        }
     }
 
     func toggleSourceMute(_ id: UUID) {
@@ -387,7 +407,10 @@ final class MixSession: ObservableObject, Identifiable {
                       level: sources.first { $0.id == source.id }?.level ?? 0,
                       isAttached: source.isAttached,
                       detail: isRunning ? (source.detachReason ?? source.formatDescription) : "",
-                      channelOffset: source.channelOffset)
+                      channelOffset: source.channelOffset,
+                      effects: source.effectSettings,
+                      replacesOriginal: source.replacesOriginal,
+                      canReplaceOriginal: source.canReplaceOriginal)
         }
         outputs = engine.outputs.enumerated().map { index, output in
             OutputRow(id: output.id,
