@@ -26,6 +26,13 @@ struct TapdeckApp: App {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // The driver only remembers its devices while Core Audio keeps running.
+        // After a restart — a reboot, or reinstalling the driver — it is back to
+        // the single default device, so hand it the saved list again before
+        // any mix tries to play into one of them.
+        try? VirtualDeviceConfiguration.load().push()
+        AppModels.shared.mixer.refresh()
+
         AppModels.shared.menuBar.install()
     }
 
@@ -47,7 +54,7 @@ struct ContentView: View {
             RecorderPanelView()
                 .tabItem { Label("Recording", systemImage: "record.circle") }
         }
-        .frame(width: 536)
+        .frame(width: 780)
         .padding(.top, 6)
     }
 }

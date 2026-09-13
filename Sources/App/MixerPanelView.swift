@@ -1,146 +1,387 @@
 import SwiftUI
 
+/// Every mix down the side, the selected one on the right.
 struct MixerPanelView: View {
     @EnvironmentObject private var model: MixerModel
     @EnvironmentObject private var menuBar: MenuBarController
-    @State private var isNamingPreset = false
-    @State private var presetName = ""
+
+    var body: some View {
+        HStack(spacing: 0) {
+            MixListView()
+                .frame(width: 210)
+            Divider()
+            if let mix = model.selectedMix {
+                MixEditorView(mix: mix)
+                    .id(mix.id)
+            } else {
+                VStack(spacing: 10) {
+                    Text("No mixes").foregroundStyle(.secondary)
+                    Button("New Mix") { model.addMix() }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .frame(height: 560)
+        .task { model.refresh() }
+    }
+}
+
+// MARK: - The list of mixes
+
+private struct MixListView: View {
+    @EnvironmentObject private var model: MixerModel
+    @EnvironmentObject private var menuBar: MenuBarController
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Mixes").font(.headline)
+                Spacer()
+                Menu {
+                    Button("New Mix") { model.addMix() }
+                    let virtual = model.availableInputs.filter { MixerModel.isVirtual($0.uid) }
+                    if !virtual.isEmpty {
+                        Menu("Listen to a Virtual Device") {
+                            ForEach(virtual) { device in
+                                Button(device.name) { model.addMonitor(for: device) }
+                            }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("New mix")
+            }
+
+            ScrollView {
+                VStack(spacing: 4) {
+                    ForEach(model.mixes) { mix in
+                        MixListRow(mix: mix, isSelected: mix.id == model.selectedMix?.id)
+                            .onTapGesture { model.selectedMixID = mix.id }
+                            .contextMenu {
+                                Button(mix.isRunning ? "Stop" : "Start") { mix.toggleRunning() }
+                                Button("Duplicate") { model.duplicate(mix.id) }
+                                Divider()
+                                Button("Delete", role: .destructive) { model.delete(mix.id) }
+                            }
+                    }
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            Text("Every mix runs on its own. Start as many as you need at once.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if !menuBar.isPlaced {
+                Label("No room in the menu bar for Tapdeck. A notched display leaves only a narrow strip for status items.",
+                      systemImage: "menubar.arrow.up.rectangle")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+    }
+}
+
+private struct MixListRow: View {
+    @ObservedObject var mix: MixSession
+    let isSelected: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button {
+                mix.toggleRunning()
+            } label: {
+                Image(systemName: mix.isRunning ? "stop.circle.fill" : "play.circle.fill")
+                    .font(.system(size: 18))
+                    .foregroundStyle(mix.isRunning ? Color.red : Color.accentColor)
+            }
+            .buttonStyle(.plain)
+            .help(mix.isRunning ? "Stop this mix" : "Start this mix")
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(mix.name)
+                    .font(.callout.weight(.medium))
+                    .lineLimit(1)
+                Text(mix.outputSummary)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                LevelBar(level: mix.level).frame(height: 3)
+                    .opacity(mix.isRunning ? 1 : 0)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
+        .background(isSelected ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.06),
+                    in: RoundedRectangle(cornerRadius: 8))
+        .contentShape(Rectangle())
+    }
+}
+
+// MARK: - Editing one mix
+
+private struct MixEditorView: View {
+    @EnvironmentObject private var model: MixerModel
+    @ObservedObject var mix: MixSession
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            sourcesSection
+            header
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    sourcesSection
+                    outputsSection
+                }
+                .padding(16)
+            }
             Divider()
             footer
         }
-        .frame(width: 500)
-        .task { model.refresh() }
+    }
+
+    // MARK: Header
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            TextField("Mix name", text: $mix.name)
+                .textFieldStyle(.plain)
+                .font(.title3.weight(.semibold))
+
+            LevelBar(level: mix.level).frame(width: 90, height: 6)
+
+            Button {
+                mix.toggleRunning()
+            } label: {
+                Label(mix.isRunning ? "Stop" : "Start",
+                      systemImage: mix.isRunning ? "stop.fill" : "play.fill")
+                    .frame(width: 70)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(mix.isRunning ? .red : .accentColor)
+            .keyboardShortcut("r", modifiers: .command)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     // MARK: Sources
 
     private var sourcesSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            presetBar
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
                 Text("Sources").font(.headline)
-                if !model.rows.isEmpty {
-                    Text("\(model.rows.count)")
-                        .font(.caption2.monospacedDigit())
-                        .padding(.horizontal, 6).padding(.vertical, 1)
-                        .background(Color.secondary.opacity(0.15), in: Capsule())
-                }
+                Text("where the audio comes from")
+                    .font(.caption).foregroundStyle(.tertiary)
                 Spacer()
-                quickAddButtons
-                addMenu
+                HStack(spacing: 5) {
+                    Button("System") { mix.addSystemAudio() }
+                    Button("Mic") { mix.addDefaultMicrophone() }
+                    Button("Playing") { mix.addPlayingApplications() }
+                }
+                .controlSize(.small)
+                .buttonStyle(.bordered)
+                sourceMenu
             }
 
-            if model.rows.isEmpty {
-                emptyState
+            if mix.sources.isEmpty {
+                Text("No sources. Add System and Mic to share your computer audio and your microphone together.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, 6)
             } else {
-                ScrollView {
-                    VStack(spacing: 6) {
-                        ForEach(model.rows) { sourceRow($0) }
-                    }
-                    .padding(.bottom, 2)
-                }
-                .frame(height: 218)
-            }
-        }
-        .padding(18)
-    }
-
-    /// Presets, for switching between setups.
-    private var presetBar: some View {
-        HStack(spacing: 8) {
-            Menu {
-                if model.presets.isEmpty {
-                    Text("No saved presets")
-                } else {
-                    ForEach(model.presets) { preset in
-                        Button {
-                            model.applyPreset(preset.id)
-                        } label: {
-                            if model.activePresetID == preset.id {
-                                Label(preset.name, systemImage: "checkmark")
-                            } else {
-                                Text(preset.name)
-                            }
-                        }
-                    }
-                    Divider()
-                    Menu("Delete") {
-                        ForEach(model.presets) { preset in
-                            Button(preset.name) { model.deletePreset(preset.id) }
-                        }
-                    }
-                }
-                Divider()
-                Button("Save Current Setup…") {
-                    presetName = model.presets.first { $0.id == model.activePresetID }?.name ?? ""
-                    isNamingPreset = true
-                }
-                .disabled(model.rows.isEmpty)
-                Button("Remove All Sources") { model.clearSources() }
-                    .disabled(model.rows.isEmpty)
-            } label: {
-                Label(activePresetLabel, systemImage: "square.stack.3d.up")
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-
-            Spacer()
-        }
-        .popover(isPresented: $isNamingPreset, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Preset name").font(.subheadline.weight(.medium))
-                TextField("Meetings, Streaming, …", text: $presetName)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 220)
-                    .onSubmit { commitPreset() }
-                HStack {
-                    Spacer()
-                    Button("Cancel") { isNamingPreset = false }
-                    Button("Save") { commitPreset() }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(presetName.trimmingCharacters(in: .whitespaces).isEmpty)
+                VStack(spacing: 6) {
+                    ForEach(mix.sources) { sourceRow($0) }
                 }
             }
-            .padding(14)
+
+            if mix.channelPairs.count > 1 && !mix.sources.isEmpty {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Label("The main output has \(mix.outputChannelCount) channels, so each source can take its own pair.",
+                          systemImage: "square.split.2x1")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 4)
+                    Button("Separate") { mix.spreadAcrossChannels() }
+                        .controlSize(.small)
+                        .disabled(mix.isRunning)
+                        .help("Give every source its own channel pair")
+                }
+            }
         }
     }
 
-    private var activePresetLabel: String {
-        model.presets.first { $0.id == model.activePresetID }?.name ?? "Presets"
-    }
-
-    private func commitPreset() {
-        model.savePreset(named: presetName)
-        isNamingPreset = false
-    }
-
-    private var quickAddButtons: some View {
-        HStack(spacing: 5) {
-            Button("System") { model.addSystemAudio() }
-            Button("Mic")    { model.addDefaultMicrophone() }
-            Button("Playing") { model.addPlayingApplications() }
-        }
-        .controlSize(.small)
-        .buttonStyle(.bordered)
-    }
-
-    private var addMenu: some View {
+    private var sourceMenu: some View {
         Menu {
             Menu("Application") {
                 ForEach(model.availableProcesses) { process in
                     Button(process.isPlayingAudio ? "♪  \(process.name)" : process.name) {
-                        model.addApplication(process)
+                        mix.addApplication(process)
                     }
                 }
             }
             Menu("Input Device") {
                 ForEach(model.availableInputs) { device in
-                    Button("\(device.name)（\(device.inputChannels)ch）") {
-                        model.addInput(device)
+                    Button("\(device.name) (\(device.inputChannels)ch)") { mix.addInput(device) }
+                }
+            }
+            Divider()
+            Button("Refresh Lists") { model.refresh() }
+            Button("Remove All Sources") { mix.removeAllSources() }
+                .disabled(mix.sources.isEmpty)
+        } label: {
+            Image(systemName: "plus")
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+    }
+
+    private func sourceRow(_ row: MixSession.SourceRow) -> some View {
+        HStack(spacing: 10) {
+            sourceIcon(row)
+
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 6) {
+                    Text(row.label).font(.callout.weight(.medium)).lineLimit(1)
+                    if mix.isRunning && !row.isAttached {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.caption2).foregroundStyle(.orange)
+                    }
+                    Spacer(minLength: 0)
+                    Text(row.detail)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+                HStack(spacing: 8) {
+                    Slider(value: Binding(get: { Double(row.gain) },
+                                          set: { mix.setSourceGain(Float($0), for: row.id) }),
+                           in: 0...2)
+                        .controlSize(.mini)
+                        .disabled(row.isMuted)
+                    Text(gainLabel(row.gain))
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 38, alignment: .trailing)
+                    if mix.channelPairs.count > 1 {
+                        Menu {
+                            ForEach(mix.channelPairs, id: \.self) { offset in
+                                Button {
+                                    mix.setChannelOffset(offset, for: row.id)
+                                } label: {
+                                    if offset == row.channelOffset {
+                                        Label(pairLabel(offset), systemImage: "checkmark")
+                                    } else {
+                                        Text(pairLabel(offset))
+                                    }
+                                }
+                            }
+                        } label: {
+                            Text(pairLabel(row.channelOffset))
+                                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                        .help("Which channels of the main output this source is placed on")
+                    }
+                    LevelBar(level: row.isMuted ? 0 : row.level).frame(width: 60, height: 4)
+                }
+            }
+
+            muteButton(isMuted: row.isMuted) { mix.toggleSourceMute(row.id) }
+            removeButton("Remove this source") { mix.removeSource(row.id) }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color.secondary.opacity(0.09), in: RoundedRectangle(cornerRadius: 9))
+        .overlay(RoundedRectangle(cornerRadius: 9)
+            .strokeBorder(mix.isRunning && !row.isAttached ? Color.orange.opacity(0.45) : .clear))
+        .opacity(row.isMuted ? 0.55 : 1)
+    }
+
+    @ViewBuilder
+    private func sourceIcon(_ row: MixSession.SourceRow) -> some View {
+        if let appIcon = row.appIcon {
+            Image(nsImage: appIcon).resizable().frame(width: 24, height: 24)
+        } else {
+            Image(systemName: row.symbolName)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 24)
+                .background(Color.secondary.opacity(0.14), in: RoundedRectangle(cornerRadius: 6))
+        }
+    }
+
+    // MARK: Outputs
+
+    private var outputsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text("Outputs").font(.headline)
+                Text("where the mix goes")
+                    .font(.caption).foregroundStyle(.tertiary)
+                Spacer()
+                Button {
+                    mix.addListeningOutput()
+                } label: {
+                    Label("Hear It", systemImage: "headphones")
+                }
+                .controlSize(.small)
+                .buttonStyle(.bordered)
+                .disabled(model.defaultOutputDevice.map { d in mix.outputs.contains { $0.deviceUID == d.uid } } ?? true)
+                .help("Also play this mix to your speakers or headphones, so you hear what you are sending")
+                outputMenu
+            }
+
+            if mix.outputs.isEmpty {
+                Text("No outputs. Add a Tapdeck device so other apps can pick up this mix, and Hear It to listen along.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, 6)
+            } else {
+                VStack(spacing: 6) {
+                    ForEach(mix.outputs) { outputRow($0) }
+                }
+            }
+
+            if mix.outputs.contains(where: { MixerModel.isVirtual($0.deviceUID) }) {
+                Label("Choose a Tapdeck device as the microphone in Zoom, OBS or a recorder and it receives this mix.",
+                      systemImage: "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var outputMenu: some View {
+        Menu {
+            let used = Set(mix.outputs.map(\.deviceUID))
+            let virtual = model.outputCandidates.filter { MixerModel.isVirtual($0.uid) && !used.contains($0.uid) }
+            let hardware = model.outputCandidates.filter { !MixerModel.isVirtual($0.uid) && !used.contains($0.uid) }
+            if !virtual.isEmpty {
+                Section("Virtual devices") {
+                    ForEach(virtual) { device in
+                        Button("\(device.name) (\(device.outputChannels)ch)") { mix.addOutput(device) }
+                    }
+                }
+            }
+            if !hardware.isEmpty {
+                Section("Speakers and interfaces") {
+                    ForEach(hardware) { device in
+                        Button("\(device.name) (\(device.outputChannels)ch)") { mix.addOutput(device) }
                     }
                 }
             }
@@ -154,35 +395,27 @@ struct MixerPanelView: View {
         .fixedSize()
     }
 
-    private var emptyState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "waveform.badge.plus")
-                .font(.system(size: 30, weight: .light))
-                .foregroundStyle(.tertiary)
-            Text("No sources yet")
-                .font(.callout).foregroundStyle(.secondary)
-            Text("Add System and Mic to share your computer audio and your\nmicrophone together on a video call.")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 218)
-    }
-
-    private func sourceRow(_ row: MixerModel.Row) -> some View {
+    private func outputRow(_ row: MixSession.OutputRow) -> some View {
         HStack(spacing: 10) {
-            icon(for: row)
+            Image(systemName: MixerModel.isVirtual(row.deviceUID) ? "arrow.triangle.branch" : "hifispeaker.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 24)
+                .background(Color.secondary.opacity(0.14), in: RoundedRectangle(cornerRadius: 6))
 
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 6) {
-                    Text(row.label)
-                        .font(.callout.weight(.medium))
-                        .lineLimit(1)
-                    if model.isRunning && !row.isAttached {
+                    Text(row.name).font(.callout.weight(.medium)).lineLimit(1)
+                    if row.isPrimary {
+                        Text("MAIN")
+                            .font(.system(size: 8, weight: .bold))
+                            .padding(.horizontal, 4).padding(.vertical, 1)
+                            .background(Color.accentColor.opacity(0.25), in: Capsule())
+                            .help("The main output's clock drives the mix, and channel placement refers to its channels.")
+                    }
+                    if mix.isRunning && !row.isAttached {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.caption2)
-                            .foregroundStyle(.orange)
+                            .font(.caption2).foregroundStyle(.orange)
                     }
                     Spacer(minLength: 0)
                     Text(row.detail)
@@ -190,179 +423,84 @@ struct MixerPanelView: View {
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                 }
-
                 HStack(spacing: 8) {
-                    Slider(value: Binding(
-                        get: { Double(row.gain) },
-                        set: { model.setGain(Float($0), for: row.id) }
-                    ), in: 0...2)
-                    .controlSize(.mini)
-                    .disabled(row.isMuted)
-
+                    Slider(value: Binding(get: { Double(row.gain) },
+                                          set: { mix.setOutputGain(Float($0), for: row.id) }),
+                           in: 0...2)
+                        .controlSize(.mini)
+                        .disabled(row.isMuted)
                     Text(gainLabel(row.gain))
                         .font(.system(size: 9, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .frame(width: 38, alignment: .trailing)
-
-                    if model.channelPairs.count > 1 {
-                        Menu {
-                            ForEach(model.channelPairs, id: \.self) { offset in
-                                Button {
-                                    model.setChannelOffset(offset, for: row.id)
-                                } label: {
-                                    if offset == row.channelOffset {
-                                        Label(Self.pairLabel(offset), systemImage: "checkmark")
-                                    } else {
-                                        Text(Self.pairLabel(offset))
-                                    }
-                                }
-                            }
-                        } label: {
-                            Text(Self.pairLabel(row.channelOffset))
-                                .font(.system(size: 9, weight: .medium, design: .monospaced))
-                        }
-                        .menuStyle(.borderlessButton)
-                        .fixedSize()
-                        .help("Which output channels this source is placed on")
-                    }
-
-                    LevelBar(level: row.isMuted ? 0 : row.level)
-                        .frame(width: 64, height: 4)
+                    LevelBar(level: row.isMuted ? 0 : row.level).frame(width: 60, height: 4)
                 }
             }
 
-            Button {
-                model.toggleMute(row.id)
-            } label: {
-                Image(systemName: row.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                    .foregroundStyle(row.isMuted ? Color.red : Color.secondary)
-                    .frame(width: 16)
+            if !row.isPrimary {
+                Button {
+                    mix.makePrimary(row.id)
+                } label: {
+                    Image(systemName: "arrow.up.to.line").font(.caption)
+                }
+                .buttonStyle(.borderless)
+                .help("Make this the main output")
             }
-            .buttonStyle(.borderless)
-            .help(row.isMuted ? "Unmute" : "Mute")
-
-            Button {
-                model.remove(row.id)
-            } label: {
-                Image(systemName: "xmark").font(.caption2).foregroundStyle(.tertiary)
-            }
-            .buttonStyle(.borderless)
-            .help("Remove this source")
+            muteButton(isMuted: row.isMuted) { mix.toggleOutputMute(row.id) }
+            removeButton("Remove this output") { mix.removeOutput(row.id) }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 9)
+        .padding(.vertical, 8)
         .background(Color.secondary.opacity(0.09), in: RoundedRectangle(cornerRadius: 9))
-        .overlay(
-            RoundedRectangle(cornerRadius: 9)
-                .strokeBorder(model.isRunning && !row.isAttached
-                              ? Color.orange.opacity(0.45) : Color.clear, lineWidth: 1)
-        )
+        .overlay(RoundedRectangle(cornerRadius: 9)
+            .strokeBorder(mix.isRunning && !row.isAttached ? Color.orange.opacity(0.45) : .clear))
         .opacity(row.isMuted ? 0.55 : 1)
     }
 
-    @ViewBuilder
-    private func icon(for row: MixerModel.Row) -> some View {
-        if let appIcon = row.appIcon {
-            Image(nsImage: appIcon)
-                .resizable().frame(width: 26, height: 26)
-        } else {
-            Image(systemName: row.symbolName)
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-                .frame(width: 26, height: 26)
-                .background(Color.secondary.opacity(0.14), in: RoundedRectangle(cornerRadius: 6))
+    // MARK: Footer
+
+    private var footer: some View {
+        HStack {
+            Text(mix.status.isEmpty ? " " : mix.status)
+                .font(.caption)
+                .foregroundStyle(mix.status.hasPrefix("This would feed back") ? Color.orange : .secondary)
+                .lineLimit(2)
+            Spacer()
+            Button {
+                model.refresh()
+            } label: { Image(systemName: "arrow.clockwise") }
+            .buttonStyle(.borderless)
+            .help("Refresh the device and application lists")
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
     }
 
-    static func pairLabel(_ offset: Int) -> String {
-        "ch \(offset + 1)–\(offset + 2)"
+    // MARK: Small pieces
+
+    private func muteButton(isMuted: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                .foregroundStyle(isMuted ? Color.red : Color.secondary)
+                .frame(width: 16)
+        }
+        .buttonStyle(.borderless)
+        .help(isMuted ? "Unmute" : "Mute")
     }
+
+    private func removeButton(_ help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "xmark").font(.caption2).foregroundStyle(.tertiary)
+        }
+        .buttonStyle(.borderless)
+        .help(help)
+    }
+
+    private func pairLabel(_ offset: Int) -> String { "ch \(offset + 1)–\(offset + 2)" }
 
     private func gainLabel(_ gain: Float) -> String {
         guard gain > 0.001 else { return "−∞" }
         return String(format: "%+.1f", 20 * log10(gain))
-    }
-
-    // MARK: Output and transport
-
-    private var footer: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Text("Output").font(.subheadline.weight(.medium))
-                Picker("", selection: $model.outputDeviceUID) {
-                    ForEach(model.outputCandidates) { device in
-                        Text(device.name).tag(device.uid)
-                    }
-                }
-                .labelsHidden()
-                .disabled(model.isRunning)
-                .frame(maxWidth: 210)
-                Spacer()
-                Button {
-                    model.refresh()
-                } label: { Image(systemName: "arrow.clockwise") }
-                .buttonStyle(.borderless)
-                .help("Refresh the device and application lists")
-            }
-
-            if model.channelPairs.count > 1 {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Label("\(model.outputChannelCount) channels — each source can take its own pair, so recorders and OBS receive them as separate tracks.",
-                          systemImage: "square.split.2x1")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 4)
-                    Button("Separate") { model.spreadAcrossChannels() }
-                        .controlSize(.small)
-                        .disabled(model.rows.isEmpty || model.isRunning)
-                        .help("Give every source its own channel pair")
-                }
-            } else if model.outputDeviceUID == "TapdeckDevice" {
-                Label("Choose Tapdeck as the input in Zoom or OBS and it receives this mix.",
-                      systemImage: "info.circle")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            HStack(spacing: 12) {
-                Button {
-                    model.toggleRunning()
-                } label: {
-                    Label(model.isRunning ? "Stop" : "Start Mixing",
-                          systemImage: model.isRunning ? "stop.fill" : "play.fill")
-                        .frame(maxWidth: .infinity)
-                }
-                .controlSize(.large)
-                .buttonStyle(.borderedProminent)
-                .tint(model.isRunning ? .red : .accentColor)
-                .disabled(model.rows.isEmpty)
-                .keyboardShortcut("r", modifiers: .command)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Output level").font(.system(size: 9)).foregroundStyle(.secondary)
-                    LevelBar(level: model.masterLevel).frame(width: 104, height: 6)
-                }
-            }
-
-            if !menuBar.isPlaced {
-                Label("The menu bar had no room for Tapdeck. A notched display leaves only a narrow strip for status items — remove a few and it will appear.",
-                      systemImage: "menubar.arrow.up.rectangle")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            if !model.status.isEmpty {
-                Text(model.status)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(18)
     }
 }
 
@@ -373,8 +511,7 @@ struct LevelBar: View {
 
     private var fraction: Double {
         guard level > 0 else { return 0 }
-        let db = 20 * log10(Double(level))
-        return min(1, max(0, (db + 60) / 60))
+        return min(1, max(0, (20 * log10(Double(level)) + 60) / 60))
     }
 
     private var color: Color {

@@ -43,8 +43,10 @@ final class MenuBarController: NSObject, ObservableObject, NSPopoverDelegate {
             rootView: MenuBarPanelView()
                 .environmentObject(AppModels.shared.mixer))
 
-        // Fill the icon while running so the state is obvious at a glance.
-        AppModels.shared.mixer.$isRunning
+        // Fill the icon while any mix is running so the state is obvious at a
+        // glance.
+        AppModels.shared.mixer.$runningCount
+            .map { $0 > 0 }
             .removeDuplicates()
             .sink { [weak self] running in
                 self?.statusItem?.button?.image = Self.symbol(isRunning: running)
