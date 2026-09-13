@@ -362,6 +362,10 @@ func runMix(seconds: Double, deviceName: String, placements: [String]) throws {
         MasterVolume.shared.volume = value
         print("Master : \(value)")
     }
+    if ProcessInfo.processInfo.environment["TAPDECK_REPLACE"] == "1" {
+        for source in mixer.sources { source.replacesOriginal = true }
+        print("Replace: original sound silenced while mixing")
+    }
     // "Monitor=300,Tapdeck=0" sets output delays in milliseconds.
     if let spec = ProcessInfo.processInfo.environment["TAPDECK_OUTPUT_DELAYS"] {
         for pair in spec.split(separator: ",") {
