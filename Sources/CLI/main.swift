@@ -362,6 +362,16 @@ func runMix(seconds: Double, deviceName: String, placements: [String]) throws {
         MasterVolume.shared.volume = value
         print("Master : \(value)")
     }
+    // "Monitor=300,Tapdeck=0" sets output delays in milliseconds.
+    if let spec = ProcessInfo.processInfo.environment["TAPDECK_OUTPUT_DELAYS"] {
+        for pair in spec.split(separator: ",") {
+            let parts = pair.split(separator: "=").map(String.init)
+            guard parts.count == 2, let ms = Double(parts[1]),
+                  let output = mixer.outputs.first(where: { $0.deviceName == parts[0] }) else { continue }
+            output.delayMilliseconds = ms
+            print("Delay  : \(parts[0]) \(ms) ms")
+        }
+    }
     if let value = ProcessInfo.processInfo.environment["TAPDECK_MIX_VOLUME"].flatMap(Float.init) {
         mixer.volume = value
         print("Volume : \(value)")
@@ -388,36 +398,66 @@ func runMix(seconds: Double, deviceName: String, placements: [String]) throws {
     print("Stopped.")
 }
 
-/// Record every input channel of a device to a file, reading it through our own
-/// AUHAL path. ffmpeg's avfoundation capture is not trustworthy for this: it
-/// drops blocks, and for multichannel devices its channel handling cannot be
-/// relied on either.
-func runCapture(deviceName: String, seconds: Double, output: URL) throws {
-    guard let device = try AudioDevice.all().first(where: { $0.name == deviceName }) else {
-        print("No device named \(deviceName)."); exit(1)
+/// Record every input channel of one or more devices, reading them through our
+/// own AUHAL path. ffmpeg's avfoundation capture is not trustworthy for this: it
+/// drops blocks, and its multichannel handling cannot be relied on either.
+///
+/// Several devices are captured by one process, and the host time of each
+/// file's first frame is printed, so recordings can be lined up in time.
+func runCapture(deviceNames: [String], seconds: Double, output: URL) throws {
+    final class Recording {
+        let name: String
+        let input: DeviceInput
+        let url: URL
+        let lock = NSLock()
+        var file: AVAudioFile?
+        var frames = 0
+        var firstHostTime: UInt64 = 0
+        init(name: String, input: DeviceInput, url: URL) { self.name = name; self.input = input; self.url = url }
     }
-    let input = try DeviceInput(device: device)
-    let lock = NSLock()
-    var file: AVAudioFile?
-    var frames = 0
 
-    try input.start { buffer, _ in
-        lock.lock(); defer { lock.unlock() }
-        if file == nil {
-            file = try? AVAudioFile(forWriting: output,
-                                    settings: buffer.format.settings,
-                                    commonFormat: buffer.format.commonFormat,
-                                    interleaved: buffer.format.isInterleaved)
+    let all = try AudioDevice.all()
+    var recordings: [Recording] = []
+    for name in deviceNames {
+        guard let device = all.first(where: { $0.name == name }) else {
+            print("No device named \(name)."); exit(1)
         }
-        try? file?.write(from: buffer)
-        frames += Int(buffer.frameLength)
+        // One device keeps the given name; several get "<name>-<device>.wav".
+        let url = deviceNames.count == 1
+            ? output
+            : output.deletingLastPathComponent().appendingPathComponent(
+                "\(output.deletingPathExtension().lastPathComponent)-\(name).wav")
+        recordings.append(Recording(name: name, input: try DeviceInput(device: device), url: url))
     }
-    print("Capture: \(device.name) — \(input.format.channelCount)ch at \(Int(input.format.sampleRate)) Hz")
-    print("AUHAL  : \(input.describeFormats())")
+
+    for recording in recordings {
+        try recording.input.start { buffer, timeStamp in
+            recording.lock.lock(); defer { recording.lock.unlock() }
+            if recording.file == nil {
+                recording.firstHostTime = timeStamp.mHostTime
+                recording.file = try? AVAudioFile(forWriting: recording.url,
+                                                  settings: buffer.format.settings,
+                                                  commonFormat: buffer.format.commonFormat,
+                                                  interleaved: buffer.format.isInterleaved)
+            }
+            try? recording.file?.write(from: buffer)
+            recording.frames += Int(buffer.frameLength)
+        }
+    }
     Thread.sleep(forTimeInterval: seconds)
-    input.stop()
-    lock.lock(); file = nil; let total = frames; lock.unlock()
-    print("Captured \(total) frames to \(output.path)")
+
+    var timebase = mach_timebase_info()
+    mach_timebase_info(&timebase)
+    for recording in recordings {
+        recording.input.stop()
+        recording.lock.lock()
+        recording.file = nil
+        let seconds = Double(recording.firstHostTime) * Double(timebase.numer) / Double(timebase.denom) / 1e9
+        print("Captured \(recording.name): \(recording.frames) frames, "
+              + "\(Int(recording.input.format.sampleRate)) Hz, first frame at host \(String(format: "%.6f", seconds)) s "
+              + "-> \(recording.url.lastPathComponent)")
+        recording.lock.unlock()
+    }
 }
 
 
@@ -800,7 +840,8 @@ do {
     case "capture":
         guard args.count >= 3, let seconds = Double(args[2]) else { usage() }
         let out = URL(fileURLWithPath: args.count >= 4 ? args[3] : "capture.wav")
-        try runCapture(deviceName: args[1], seconds: seconds, output: out)
+        try runCapture(deviceNames: args[1].split(separator: ",").map(String.init),
+                       seconds: seconds, output: out)
 
     case "virtual":
         if args.count == 1 {
