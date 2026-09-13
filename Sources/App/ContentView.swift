@@ -14,7 +14,8 @@ struct RecorderPanelView: View {
             controlSection
         }
         .padding(18)
-        .frame(width: 460)
+        .frame(maxWidth: 520)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await rec.refreshContent() }
     }
 

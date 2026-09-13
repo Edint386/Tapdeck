@@ -9,6 +9,7 @@ struct TapdeckApp: App {
     @ObservedObject private var audio = AppModels.shared.audio
     @ObservedObject private var mixer = AppModels.shared.mixer
     @ObservedObject private var menuBar = AppModels.shared.menuBar
+    @ObservedObject private var settings = AppModels.shared.settings
 
     var body: some Scene {
         Window("Tapdeck", id: "main") {
@@ -17,8 +18,17 @@ struct TapdeckApp: App {
                 .environmentObject(audio)
                 .environmentObject(mixer)
                 .environmentObject(menuBar)
+                .environmentObject(settings)
         }
-        .windowResizability(.contentSize)
+        // Resizable in both directions, down to a size where nothing clips.
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 860, height: 620)
+
+        Settings {
+            SettingsView()
+                .environmentObject(audio)
+                .environmentObject(settings)
+        }
     }
 }
 
@@ -42,19 +52,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// The mixer (the engine itself), device status, and screen recording (one of
-/// the engine's consumers).
+/// The mixes (the engine itself) and screen recording (one of its consumers).
+/// Device management and diagnostics live in Settings.
 struct ContentView: View {
     var body: some View {
         TabView {
             MixerPanelView()
                 .tabItem { Label("Mixer", systemImage: "slider.vertical.3") }
-            AudioPanelView()
-                .tabItem { Label("Devices", systemImage: "waveform") }
             RecorderPanelView()
                 .tabItem { Label("Recording", systemImage: "record.circle") }
         }
-        .frame(width: 780)
+        .frame(minWidth: 760, maxWidth: .infinity, minHeight: 540, maxHeight: .infinity)
         .padding(.top, 6)
     }
 }

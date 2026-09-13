@@ -1,21 +1,18 @@
 import SwiftUI
 
-struct AudioPanelView: View {
+/// Settings pane: the virtual devices the driver publishes.
+struct VirtualDevicesSettingsView: View {
     @EnvironmentObject private var model: AudioEngineModel
     @State private var newDeviceName = ""
     @State private var newDeviceChannels = 2
     @State private var isAddingDevice = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        ScrollView {
             virtualDeviceSection
-            Divider()
-            loopbackSection
-            Divider()
-            deviceListSection
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(18)
-        .frame(width: 460)
         .task { model.refresh() }
     }
 
@@ -129,6 +126,26 @@ struct AudioPanelView: View {
         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
     }
 
+}
+
+/// Settings pane: checks that the virtual devices and capture paths work, and
+/// every audio device the system can see.
+struct DiagnosticsSettingsView: View {
+    @EnvironmentObject private var model: AudioEngineModel
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                loopbackSection
+                Divider()
+                deviceListSection
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .task { model.refresh() }
+    }
+
     // MARK: Loopback check
 
     private var loopbackSection: some View {
@@ -217,11 +234,10 @@ struct AudioPanelView: View {
     private var deviceListSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Audio Devices").font(.headline)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                     ForEach(model.devices) { device in
                         HStack(spacing: 8) {
-                            Text(device.name).frame(width: 200, alignment: .leading)
+                            Text(device.name).frame(width: 240, alignment: .leading).lineLimit(1)
                             Text("in \(device.inputChannels)")
                                 .foregroundStyle(device.canInput ? .primary : .tertiary)
                             Text("out \(device.outputChannels)")
@@ -230,9 +246,7 @@ struct AudioPanelView: View {
                         }
                         .font(.system(.caption, design: .monospaced))
                     }
-                }
             }
-            .frame(height: 92)
         }
     }
 }

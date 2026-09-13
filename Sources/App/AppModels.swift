@@ -12,6 +12,7 @@ final class AppModels {
     let audio = AudioEngineModel()
     let mixer = MixerModel()
     let menuBar = MenuBarController()
+    let settings = AppSettings.shared
 
     private init() {}
 }
