@@ -34,25 +34,31 @@ private struct MixListView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
+            HStack(spacing: 8) {
                 Text("Mixes").font(.headline)
                 Spacer()
-                Menu {
-                    Button("New Mix") { model.addMix() }
-                    let virtual = model.availableInputs.filter { MixerModel.isVirtual($0.uid) }
-                    if !virtual.isEmpty {
-                        Menu("Listen to a Virtual Device") {
+                let virtual = model.availableInputs.filter { MixerModel.isVirtual($0.uid) }
+                if !virtual.isEmpty {
+                    Menu {
+                        Section("Listen to a virtual device") {
                             ForEach(virtual) { device in
                                 Button(device.name) { model.addMonitor(for: device) }
                             }
                         }
+                    } label: {
+                        Image(systemName: "headphones")
                     }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("Hear what apps are playing into a Tapdeck device")
+                }
+                Button {
+                    model.addMix()
                 } label: {
                     Image(systemName: "plus")
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
+                .buttonStyle(.borderless)
                 .help("New mix")
             }
 
@@ -157,6 +163,18 @@ private struct MixEditorView: View {
                 .font(.title3.weight(.semibold))
 
             LevelBar(level: mix.level).frame(width: 90, height: 6)
+
+            Button {
+                model.duplicate(mix.id)
+            } label: { Image(systemName: "plus.square.on.square") }
+            .buttonStyle(.borderless)
+            .help("Duplicate this mix")
+
+            Button {
+                model.delete(mix.id)
+            } label: { Image(systemName: "trash") }
+            .buttonStyle(.borderless)
+            .help("Delete this mix")
 
             Button {
                 mix.toggleRunning()

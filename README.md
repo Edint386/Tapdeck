@@ -34,6 +34,27 @@ microphone / interface  ┘                                         │
                                         Zoom / OBS read it as a microphone
 ```
 
+### Mixes and outputs
+
+A **mix** is a set of sources and a set of outputs. Any number of mixes can run
+at the same time, so a meeting and a stream can each have their own.
+
+Each mix can play to several **outputs** at once. The usual pair is a Tapdeck
+device, so another app can pick the mix up, and your speakers or headphones, so
+you hear what you are sending. The first output is the **main** one: its clock
+drives the mix and channel placement refers to its channels. Every other output
+receives a copy, converted to its own sample rate and folded to its own channel
+count.
+
+If you set the system output to a Tapdeck device so that apps play into it, you
+will hear nothing — the audio went into the virtual device, not your speakers.
+**Listen to a Virtual Device** creates a mix from that device's input side to
+your speakers.
+
+A mix will not start if it would create a feedback loop. Audio flows from every
+device a running mix captures to every device it plays into; any cycle in that
+graph, across all running mixes, is refused with the route that would loop.
+
 ### Mixing versus keeping sources apart
 
 A stereo device has one pair of channels, so every source is summed into it and
@@ -72,8 +93,10 @@ Screen recording sits on top of this rather than beside it.
 | Per-app audio capture | Working. Measured 113 dB of separation between two apps playing at once. |
 | Virtual audio devices | Working. Up to 8, named, created and removed live. |
 | Mixer | Working. Verified with zero discontinuities across a three-source mix. |
+| Several mixes at once | Working. Each mix has its own engine; two mixes into one device measured independently. |
+| Several outputs per mix | Working. A 44.1 kHz second output received the mix at the right pitch with zero discontinuities. |
+| Feedback protection | Working. Loops across any number of running mixes are refused before they start. |
 | Channel mapping | Working. Each source can take its own channel pair on a wide device; measured 112 dB between pairs. |
-| Presets | Working. |
 | Menu bar item | Working, but a full menu bar can leave no room for it (see below). |
 | Screen recording | Working. Audio can come from ScreenCaptureKit or from the mixer, and a multichannel source is written as one audio track per channel pair. |
 
@@ -115,6 +138,9 @@ swift tools/make-icon.swift  # regenerate the icon
 ./build/tapproof virtual Tapdeck Podcast:4        # replace the virtual devices
 ./build/tapproof rec Chrome 10 out.wav            # record one app for 10s
 ./build/tapproof mix 5 Podcast 1234@1 5678@3      # two apps on separate pairs
+./build/tapproof mix 5 Tapdeck,Monitor 1234@1     # one mix, two outputs
+./build/tapproof rate Monitor 44100               # change a device's sample rate
+./build/tapproof graphtest                        # feedback loop detection
 ./build/tapproof tone Podcast 3 1000 5            # a tone on channel 3 only
 ./build/tapproof capture Podcast 3 out.wav        # record every channel of a device
 ./build/tapproof muxtest out.mov                  # multitrack muxing, offline
@@ -191,6 +217,21 @@ processes with the same name — two instances of one app, or two helper tools �
 then both tapped whichever was found first. One source silently carried the
 other's audio, which looked exactly like a channel mapping bug. The session PID
 is now kept (never saved) and checked before the bundle identifier and the name.
+
+### The driver must never reuse object IDs
+
+Object IDs used to be derived from the slot a device occupied. Removing a device
+and adding another put the new one into the same slot with the same IDs, and
+because the HAL caches properties per object ID, the new device appeared wearing
+the old one's UID and a mix of both stream layouts — observed as a device
+reporting eight input channels and four output channels. IDs now come from a
+counter that never goes backwards while Core Audio runs.
+
+### The driver forgets its devices when Core Audio restarts
+
+The device list lives in the driver's memory. After a reboot or a driver
+reinstall only the default device exists until the app sends the list again,
+which it now does at launch.
 
 ### Real-time paths must not take a lock the disk can hold
 

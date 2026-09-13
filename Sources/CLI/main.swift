@@ -542,6 +542,40 @@ func runRate(deviceName: String, rate: Double) throws {
     print("\(device.name): \(Int(now?.sampleRate ?? 0)) Hz")
 }
 
+
+/// Check RoutingGraph against cases whose answer is known.
+func runGraphTest() {
+    func check(_ label: String, _ build: (inout RoutingGraph) -> Void, expectLoop: Bool) -> Bool {
+        var graph = RoutingGraph()
+        build(&graph)
+        let loop = graph.firstCycle()
+        let ok = (loop != nil) == expectLoop
+        print("\(ok ? "PASS" : "FAIL")  \(label)  ->  \(loop?.joined(separator: " → ") ?? "no loop")")
+        return ok
+    }
+    var results: [Bool] = []
+    results.append(check("mic -> Tapdeck", { $0.connect(from: ["mic"], to: ["Tapdeck"]) }, expectLoop: false))
+    results.append(check("Tapdeck -> Tapdeck (same mix)", { $0.connect(from: ["Tapdeck"], to: ["Tapdeck", "speakers"]) }, expectLoop: true))
+    results.append(check("Tapdeck -> speakers (listen)", { $0.connect(from: ["Tapdeck"], to: ["speakers"]) }, expectLoop: false))
+    results.append(check("A -> B, B -> A (two mixes)", {
+        $0.connect(from: ["Streaming"], to: ["Meetings"])
+        $0.connect(from: ["Meetings"], to: ["Streaming"])
+    }, expectLoop: true))
+    results.append(check("A -> B -> C (chain)", {
+        $0.connect(from: ["A"], to: ["B"])
+        $0.connect(from: ["B"], to: ["C"])
+    }, expectLoop: false))
+    results.append(check("A -> B -> C -> A (three mixes)", {
+        $0.connect(from: ["A"], to: ["B"])
+        $0.connect(from: ["B"], to: ["C"])
+        $0.connect(from: ["C"], to: ["A"])
+    }, expectLoop: true))
+    results.append(check("app sources only (no device edges)", { $0.connect(from: [], to: ["Tapdeck"]) }, expectLoop: false))
+    let passed = results.filter { $0 }.count
+    print("\(passed)/\(results.count) passed")
+    if passed != results.count { exit(1) }
+}
+
 // MARK: - entry
 
 setvbuf(stdout, nil, _IOLBF, 0)
@@ -585,6 +619,9 @@ do {
     case "mix":
         guard args.count >= 4, let seconds = Double(args[1]) else { usage() }
         try runMix(seconds: seconds, deviceName: args[2], placements: Array(args.dropFirst(3)))
+
+    case "graphtest":
+        runGraphTest()
 
     case "muxtest":
         try runMuxTest(output: URL(fileURLWithPath: args.count >= 2 ? args[1] : "muxtest.mov"))

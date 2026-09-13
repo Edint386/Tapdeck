@@ -168,7 +168,7 @@ final class MixerModel: ObservableObject {
     func feedbackProblem(for session: MixSession,
                          addingOutput: String? = nil,
                          addingInput: String? = nil) -> String? {
-        var edges: [String: Set<String>] = [:]
+        var graph = RoutingGraph()
         for mix in mixes where mix.isRunning || mix === session {
             var inputs = mix.inputDeviceUIDs
             var outputs = mix.outputDeviceUIDs
@@ -176,29 +176,10 @@ final class MixerModel: ObservableObject {
                 if let addingInput { inputs.append(addingInput) }
                 if let addingOutput { outputs.append(addingOutput) }
             }
-            for input in inputs {
-                edges[input, default: []].formUnion(outputs)
-            }
+            graph.connect(from: inputs, to: outputs)
         }
-
-        // Depth-first search for a path that returns to where it started.
-        func cycle(from start: String) -> [String]? {
-            var stack: [(node: String, path: [String])] = [(start, [start])]
-            var visited: Set<String> = []
-            while let (node, path) = stack.popLast() {
-                for next in edges[node] ?? [] {
-                    if next == start { return path + [start] }
-                    if visited.insert(next).inserted { stack.append((next, path + [next])) }
-                }
-            }
-            return nil
-        }
-
-        for node in edges.keys.sorted() {
-            if let loop = cycle(from: node) {
-                let route = loop.map(deviceName).joined(separator: " → ")
-                return "This would feed back on itself: \(route)"
-            }
+        if let loop = graph.firstCycle() {
+            return "This would feed back on itself: " + loop.map(deviceName).joined(separator: " → ")
         }
         return nil
     }
