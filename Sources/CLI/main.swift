@@ -648,6 +648,90 @@ func runGainTest() {
     if passed != total { exit(1) }
 }
 
+
+/// Check the delay line without any devices.
+func runDelayTest() {
+    var passed = 0, total = 0
+    func report(_ label: String, _ ok: Bool, _ detail: String) {
+        total += 1; if ok { passed += 1 }
+        print("\(ok ? "PASS" : "FAIL")  \(label.padding(toLength: 48, withPad: " ", startingAt: 0)) \(detail)")
+    }
+    let rate = 48_000.0
+    let block = 512
+
+    /// Feed `input` through the line in blocks and return the output.
+    func run(_ input: [Float], delays: (Int) -> Int, maximum: Int = 48_000) -> [Float] {
+        let line = DelayLine(channels: 1, maximumFrames: maximum)
+        var output = input
+        output.withUnsafeMutableBufferPointer { buffer in
+            var offset = 0
+            var blockIndex = 0
+            while offset < buffer.count {
+                let count = min(block, buffer.count - offset)
+                line.process([buffer.baseAddress! + offset], frameCount: count,
+                             targetDelay: delays(blockIndex))
+                offset += count
+                blockIndex += 1
+            }
+        }
+        return output
+    }
+
+    // An impulse after a delay set before any audio arrives lands exactly.
+    for delay in [0, 1, 480, 12_000, 47_999] {
+        var input = [Float](repeating: 0, count: 60_000)
+        input[100] = 1
+        // Hold the delay from the start by fading in over silence first.
+        let line = DelayLine(channels: 1, maximumFrames: 48_000, fadeFrames: 1)
+        var output = input
+        output.withUnsafeMutableBufferPointer { buffer in
+            var offset = 0
+            while offset < buffer.count {
+                let count = min(block, buffer.count - offset)
+                line.process([buffer.baseAddress! + offset], frameCount: count, targetDelay: delay)
+                offset += count
+            }
+        }
+        let position = output.firstIndex { abs($0) > 0.5 } ?? -1
+        report("impulse delayed by \(delay) frames", position == 100 + delay,
+               "arrived at \(position), expected \(100 + delay)")
+    }
+
+    // Changing the delay mid-stream must not leave a discontinuity.
+    let sine = (0..<96_000).map { Float(sin(2 * .pi * 440 * Double($0) / rate)) }
+    let changed = run(sine, delays: { $0 < 40 ? 0 : 9_600 })
+    let slope = Float(2 * sin(Double.pi * 440 / rate))
+    var largest: Float = 0
+    for i in 1..<changed.count { largest = max(largest, abs(changed[i] - changed[i - 1])) }
+    report("delay change is crossfaded, not stepped", largest <= slope * 1.05,
+           String(format: "largest step %.4f (sine alone %.4f)", largest, slope))
+
+    // After the fade, the output is the input exactly 200 ms later. Compare a
+    // whole window: a single sample can land on a zero crossing and pass
+    // whatever the delay.
+    var worst: Float = 0
+    var energy: Float = 0
+    for i in 80_000..<81_000 {
+        worst = max(worst, abs(changed[i] - sine[i - 9_600]))
+        energy += changed[i] * changed[i]
+    }
+    report("after the change the output is 200 ms behind", worst < 1e-5 && energy > 100,
+           String(format: "largest error %.2e over 1000 samples (energy %.0f)", worst, energy))
+    var wrong: Float = 0
+    for i in 80_000..<81_000 { wrong = max(wrong, abs(changed[i] - sine[i - 9_601])) }
+    report("and not 199.98 ms (the comparison can fail)", wrong > 1e-3,
+           String(format: "error against one frame off %.2e", wrong))
+
+    // Requests beyond the capacity are clamped, not wrapped around.
+    let clamped = DelayLine(channels: 1, maximumFrames: 1000)
+    var probe: [Float] = [0]
+    probe.withUnsafeMutableBufferPointer { clamped.process([$0.baseAddress!], frameCount: 1, targetDelay: 5000) }
+    report("delay beyond capacity is clamped", clamped.currentDelay == 1000, "got \(clamped.currentDelay)")
+
+    print("\(passed)/\(total) passed")
+    if passed != total { exit(1) }
+}
+
 // MARK: - entry
 
 setvbuf(stdout, nil, _IOLBF, 0)
@@ -691,6 +775,9 @@ do {
     case "mix":
         guard args.count >= 4, let seconds = Double(args[1]) else { usage() }
         try runMix(seconds: seconds, deviceName: args[2], placements: Array(args.dropFirst(3)))
+
+    case "delaytest":
+        runDelayTest()
 
     case "gaintest":
         runGainTest()
