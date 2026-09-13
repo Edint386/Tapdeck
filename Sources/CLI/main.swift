@@ -772,6 +772,135 @@ func runDelayTest() {
     if passed != total { exit(1) }
 }
 
+/// Measure each effect against signals whose correct result is known.
+func runEffectsTest() {
+    let rate = 48_000.0
+    let format = AVAudioFormat.discrete(sampleRate: rate, channels: 2)!
+    var passed = 0, total = 0
+
+    func report(_ label: String, _ ok: Bool, _ detail: String) {
+        total += 1; if ok { passed += 1 }
+        print("\(ok ? "PASS" : "FAIL")  \(label.padding(toLength: 44, withPad: " ", startingAt: 0)) \(detail)")
+    }
+
+    /// Run a sine of the given level through a chain for `seconds`, and return
+    /// the steady-state peak (dBFS) of each output channel over the last 200 ms.
+    func sineThrough(_ settings: EffectSettings, frequency: Double, level: Double,
+                     seconds: Double = 1.0, rightLevel: Double? = nil) -> (Double, Double) {
+        let chain = EffectChain()
+        chain.update(settings)
+        let block = 512
+        let totalFrames = Int(seconds * rate)
+        let amplitudeL = pow(10, level / 20), amplitudeR = pow(10, (rightLevel ?? level) / 20)
+        var phase = 0.0
+        var peakL: Float = 0, peakR: Float = 0
+        var done = 0
+        while done < totalFrames {
+            let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(block))!
+            buffer.frameLength = AVAudioFrameCount(block)
+            let d = buffer.floatChannelData!
+            for i in 0..<block {
+                d[0][i] = Float(sin(phase) * amplitudeL)
+                d[1][i] = Float(sin(phase) * amplitudeR)
+                phase += 2 * .pi * frequency / rate
+            }
+            chain.process(buffer)
+            if done >= totalFrames - Int(0.2 * rate) {
+                for i in 0..<block { peakL = max(peakL, abs(d[0][i])); peakR = max(peakR, abs(d[1][i])) }
+            }
+            done += block
+        }
+        func db(_ x: Float) -> Double { x > 0 ? 20 * log10(Double(x)) : -999 }
+        return (db(peakL), db(peakR))
+    }
+
+    // Low cut at 100 Hz, 24 dB/octave.
+    var lowCut = EffectSettings(); lowCut.lowCutEnabled = true; lowCut.lowCutFrequency = 100
+    let lc25 = sineThrough(lowCut, frequency: 25, level: -6).0
+    let lc100 = sineThrough(lowCut, frequency: 100, level: -6).0
+    let lc1k = sineThrough(lowCut, frequency: 1_000, level: -6).0
+    report("low cut 100Hz: 25 Hz (two octaves below)", lc25 < -6 - 40, String(format: "%.1f dB (expect about -54)", lc25))
+    report("low cut 100Hz: 100 Hz (corner, -3 dB)", abs(lc100 - (-9)) < 1, String(format: "%.1f dB (expect -9.0)", lc100))
+    report("low cut 100Hz: 1 kHz passes", abs(lc1k - (-6)) < 0.2, String(format: "%.1f dB (expect -6.0)", lc1k))
+
+    // High cut at 1 kHz, 24 dB/octave, mirrored.
+    var highCut = EffectSettings(); highCut.highCutEnabled = true; highCut.highCutFrequency = 1_000
+    let hc4k = sineThrough(highCut, frequency: 4_000, level: -6).0
+    let hc1k = sineThrough(highCut, frequency: 1_000, level: -6).0
+    let hc100 = sineThrough(highCut, frequency: 100, level: -6).0
+    report("high cut 1kHz: 4 kHz (two octaves above)", hc4k < -6 - 40, String(format: "%.1f dB (expect about -54)", hc4k))
+    report("high cut 1kHz: 1 kHz (corner, -3 dB)", abs(hc1k - (-9)) < 1, String(format: "%.1f dB (expect -9.0)", hc1k))
+    report("high cut 1kHz: 100 Hz passes", abs(hc100 - (-6)) < 0.2, String(format: "%.1f dB (expect -6.0)", hc100))
+
+    // EQ: +6 dB peak at 1 kHz.
+    var peak = EffectSettings(); peak.eqEnabled = true; peak.bands[2].gain = 6
+    let p1k = sineThrough(peak, frequency: 1_000, level: -12).0
+    let p100 = sineThrough(peak, frequency: 100, level: -12).0
+    report("EQ +6dB at 1kHz: 1 kHz", abs(p1k - (-6)) < 0.3, String(format: "%.1f dB (expect -6.0)", p1k))
+    report("EQ +6dB at 1kHz: 100 Hz untouched", abs(p100 - (-12)) < 0.5, String(format: "%.1f dB (expect -12.0)", p100))
+
+    var shelf = EffectSettings(); shelf.eqEnabled = true; shelf.bands[0].gain = -8
+    let s30 = sineThrough(shelf, frequency: 30, level: -12).0
+    let s5k = sineThrough(shelf, frequency: 5_000, level: -12).0
+    report("low shelf -8dB: 30 Hz", abs(s30 - (-20)) < 0.7, String(format: "%.1f dB (expect about -20)", s30))
+    report("low shelf -8dB: 5 kHz untouched", abs(s5k - (-12)) < 0.3, String(format: "%.1f dB (expect -12.0)", s5k))
+
+    // Gate at -40 dBFS.
+    var gate = EffectSettings(); gate.gateEnabled = true; gate.gateThreshold = -40
+    let quiet = sineThrough(gate, frequency: 440, level: -55).0
+    let loud = sineThrough(gate, frequency: 440, level: -20).0
+    report("gate -40: signal at -55 is silenced", quiet < -100, String(format: "%.1f dB", quiet))
+    report("gate -40: signal at -20 passes", abs(loud - (-20)) < 0.2, String(format: "%.1f dB (expect -20.0)", loud))
+
+    // Compressor: threshold -20, ratio 4, no makeup. Well above the knee a
+    // -4 dBFS input is 16 dB over, so 12 dB is removed: -16 dBFS out.
+    var comp = EffectSettings(); comp.compressorEnabled = true
+    comp.compressorThreshold = -20; comp.compressorRatio = 4; comp.compressorMakeup = 0
+    let c4 = sineThrough(comp, frequency: 440, level: -4).0
+    let c40 = sineThrough(comp, frequency: 440, level: -40).0
+    report("compressor 4:1 at -20: input -4 dBFS", abs(c4 - (-16)) < 0.8, String(format: "%.1f dB (expect -16.0)", c4))
+    report("compressor 4:1 at -20: quiet input untouched", abs(c40 - (-40)) < 0.2, String(format: "%.1f dB (expect -40.0)", c40))
+
+    // Limiter: ceiling -3 dBFS, input at 0 dBFS.
+    var lim = EffectSettings(); lim.limiterEnabled = true; lim.limiterCeiling = -3
+    let l0 = sineThrough(lim, frequency: 440, level: 0).0
+    let l12 = sineThrough(lim, frequency: 440, level: -12).0
+    report("limiter -3: input 0 dBFS never exceeds -3", l0 <= -3 + 0.01, String(format: "%.2f dB", l0))
+    report("limiter -3: input -12 untouched", abs(l12 - (-12)) < 0.1, String(format: "%.1f dB (expect -12.0)", l12))
+
+    // Balance fully left, and mono.
+    var bal = EffectSettings(); bal.balance = -1
+    let b = sineThrough(bal, frequency: 440, level: -6)
+    report("balance fully left: right is silent", b.1 < -100 && abs(b.0 - (-6)) < 0.1, String(format: "L %.1f / R %.1f", b.0, b.1))
+    var mono = EffectSettings(); mono.mono = true
+    let m = sineThrough(mono, frequency: 440, level: -6, rightLevel: -100)
+    report("mono: left-only input lands on both", abs(m.0 - m.1) < 0.01 && abs(m.0 - (-12)) < 0.2,
+           String(format: "L %.1f / R %.1f (expect -12 each)", m.0, m.1))
+
+    // Delay: an impulse comes out exactly 100 ms later.
+    var delaySettings = EffectSettings(); delaySettings.delay = 100
+    let chain = EffectChain(); chain.update(delaySettings)
+    var impulseAt = -1, cursor = 0
+    for blockIndex in 0..<20 {
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 512)!
+        buffer.frameLength = 512
+        let d = buffer.floatChannelData!
+        for i in 0..<512 { d[0][i] = 0; d[1][i] = 0 }
+        if blockIndex == 0 { d[0][0] = 1; d[1][0] = 1 }
+        chain.process(buffer)
+        for i in 0..<512 where d[0][i] > 0.5 && impulseAt < 0 { impulseAt = cursor + i }
+        cursor += 512
+    }
+    report("delay 100 ms: impulse position", impulseAt == 4_800, "sample \(impulseAt) (expect 4800)")
+
+    // Everything off must leave the signal bit-identical.
+    let off = sineThrough(EffectSettings(), frequency: 440, level: -9).0
+    report("all effects off: untouched", abs(off - (-9)) < 0.01, String(format: "%.2f dB (expect -9.00)", off))
+
+    print("\(passed)/\(total) passed")
+    if passed != total { exit(1) }
+}
+
 // MARK: - entry
 
 setvbuf(stdout, nil, _IOLBF, 0)
@@ -821,6 +950,9 @@ do {
 
     case "gaintest":
         runGainTest()
+
+    case "fxtest":
+        runEffectsTest()
 
     case "graphtest":
         runGraphTest()

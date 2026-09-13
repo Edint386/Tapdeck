@@ -71,6 +71,13 @@ final class Mixer: @unchecked Sendable {
         var gain: Float = 1.0
         var isMuted = false
 
+        /// This source's effects. Applied after sample rate conversion and
+        /// before buffering, so every effect sees the mix's own sample rate.
+        var effectSettings = EffectSettings() {
+            didSet { effects.update(effectSettings) }
+        }
+        let effects = EffectChain()
+
         /// The output channel this source's left channel lands on. Its right
         /// channel goes to the one after. 0 means channels 1–2, 2 means 3–4.
         ///
@@ -119,12 +126,19 @@ final class Mixer: @unchecked Sendable {
 
         /// Take a buffer from the source, convert it if needed, and queue it.
         fileprivate func accept(_ buffer: AVAudioPCMBuffer) {
+            let prepared: AVAudioPCMBuffer
             if let converter {
                 guard let converted = converter.convert(buffer) else { return }
-                ring.write(converted)
+                prepared = converted
             } else {
-                ring.write(buffer)
+                prepared = buffer
             }
+            // Buffers reaching here are always our own copies — the tap
+            // normalises into a new buffer, the input path allocates one per
+            // callback, the converter returns a fresh one — so processing in
+            // place never touches memory Core Audio owns.
+            effects.process(prepared)
+            ring.write(prepared)
         }
 
         fileprivate func stop() {
