@@ -163,6 +163,18 @@ final class Mixer: @unchecked Sendable {
         fileprivate var converter: FormatConverter?
         fileprivate var scratch: AVAudioPCMBuffer?
 
+        /// Ramp for this output's gain combined with the master volume.
+        fileprivate var gainRamp = GainRamp()
+
+        /// Everything after the mix: this output's gain times the master
+        /// volume, then clipping and metering. Runs on this output's own
+        /// real-time thread.
+        fileprivate func finish(_ channels: [UnsafeMutablePointer<Float>], frameCount: Int) {
+            let target = (isMuted ? 0 : gain) * MasterVolume.shared.gain
+            gainRamp.apply(to: channels, frameCount: frameCount, target: target)
+            record(peak: clipAndMeasure(channels, frameCount: frameCount))
+        }
+
         private let meterLock = NSLock()
         private var peak: Float = 0
 
@@ -229,6 +241,11 @@ final class Mixer: @unchecked Sendable {
     }
 
     private(set) var outputs: [Output] = []
+
+    /// This mix's volume, applied to the summed sources before the mix is
+    /// copied to any output — one fader for everything the mix sends.
+    var volume: Float = 1
+    private var volumeRamp = GainRamp()
 
     private(set) var sources: [Source] = []
     private(set) var isRunning = false
@@ -419,6 +436,10 @@ final class Mixer: @unchecked Sendable {
             }
         }
 
+        volumeRamp.reset(to: volume)
+        for output in outputs {
+            output.gainRamp.reset(to: (output.isMuted ? 0 : output.gain) * MasterVolume.shared.gain)
+        }
         for source in snapshot {
             source.ring.setPrimeFrames(Mixer.bufferCushionFrames)
             try? attach(source)
@@ -433,9 +454,8 @@ final class Mixer: @unchecked Sendable {
         for output in secondaries {
             try? output.device?.start { [weak output] channels, frameCount in
                 guard let output, let ring = output.ring else { return }
-                ring.mixInto(channels, frameCount: frameCount,
-                             gain: output.isMuted ? 0 : output.gain)
-                output.record(peak: Self.peak(of: channels, frameCount: frameCount))
+                ring.mixInto(channels, frameCount: frameCount, gain: 1)
+                output.finish(channels, frameCount: frameCount)
             }
         }
         try primaryStage.start { [weak self] channels, frameCount in
@@ -545,25 +565,20 @@ final class Mixer: @unchecked Sendable {
                                 channelOffset: source.channelOffset)
         }
 
+        // The mix's own volume applies to everything it sends.
+        volumeRamp.apply(to: channels, frameCount: frameCount, target: volume)
+
         // Fan out before the primary's gain, so muting or turning down one
         // output never affects the others.
         for output in secondaries {
             Self.fanOut(channels, frameCount: frameCount, to: output)
         }
 
-        let gain: Float = (primary?.isMuted ?? false) ? 0 : (primary?.gain ?? 1)
-        var peak: Float = 0
-        for channel in channels {
-            for frame in 0..<frameCount {
-                var value = channel[frame] * gain
-                // Guard against clipping: anything past ±1 would be squashed.
-                if value > 1.0 { value = 1.0 } else if value < -1.0 { value = -1.0 }
-                channel[frame] = value
-                let magnitude = abs(value)
-                if magnitude > peak { peak = magnitude }
-            }
+        if let primary {
+            primary.finish(channels, frameCount: frameCount)
+        } else {
+            _ = clipAndMeasure(channels, frameCount: frameCount)
         }
-        primary?.record(peak: peak)
     }
 
     /// Copy the mix to a secondary output, folding its channels to the output's
@@ -608,17 +623,6 @@ final class Mixer: @unchecked Sendable {
         } else {
             ring.write((0..<width).map { UnsafePointer(folded[$0]) }, frameCount: frameCount)
         }
-    }
-
-    private static func peak(of channels: [UnsafeMutablePointer<Float>], frameCount: Int) -> Float {
-        var peak: Float = 0
-        for channel in channels {
-            for frame in 0..<frameCount {
-                let magnitude = abs(channel[frame])
-                if magnitude > peak { peak = magnitude }
-            }
-        }
-        return peak
     }
 
     /// Peak of the primary output, reset on read.
