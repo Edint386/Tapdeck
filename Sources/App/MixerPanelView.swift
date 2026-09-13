@@ -21,7 +21,7 @@ struct MixerPanelView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .frame(height: 560)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task { model.refresh() }
     }
 }

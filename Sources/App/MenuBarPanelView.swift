@@ -38,6 +38,12 @@ struct MenuBarPanelView: View {
                     openWindow(id: "main")
                     NSApp.activate(ignoringOtherApps: true)
                 }
+                Button("Settings…") {
+                    // The popover is hosted by AppKit, outside any SwiftUI scene,
+                    // so ask the responder chain rather than openSettings.
+                    NSApp.activate(ignoringOtherApps: true)
+                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                }
                 Spacer()
                 Button("Quit") { NSApp.terminate(nil) }
             }
