@@ -29,7 +29,7 @@ final class AudioRingBuffer: @unchecked Sendable {
     /// waveform. It shows up as the overall level being right while one
     /// frequency drops: a 440 Hz sine measured -39.2 dB where -21.1 dB was
     /// expected.
-    private let primeFrames: Int
+    private var primeFrames: Int
 
     /// Whether enough has accumulated for reading to begin. Reset on underflow
     /// so the cushion is rebuilt.
@@ -43,6 +43,15 @@ final class AudioRingBuffer: @unchecked Sendable {
         self.capacityFrames = max(512, capacityFrames)
         self.primeFrames = min(max(0, primeFrames), self.capacityFrames / 2)
         self.storage = [Float](repeating: 0, count: self.channelCount * self.capacityFrames)
+    }
+
+    /// Change the cushion. Takes effect the next time the buffer primes, so it
+    /// is applied when a mix starts rather than mid-stream.
+    func setPrimeFrames(_ frames: Int) {
+        lock.lock()
+        primeFrames = min(max(0, frames), capacityFrames / 2)
+        isPrimed = false
+        lock.unlock()
     }
 
     /// How often reading ran dry. If this climbs, raise primeFrames.

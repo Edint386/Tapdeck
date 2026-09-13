@@ -15,6 +15,11 @@ import Foundation
 ///     microphone / interface  ┘
 final class Mixer: @unchecked Sendable {
 
+    /// Frames every buffer accumulates before playing: latency traded for
+    /// resilience against clock drift and scheduling hiccups. Read when a mix
+    /// starts, so changing it affects mixes started afterwards.
+    static var bufferCushionFrames = 2048
+
     /// What a source refers to.
     ///
     /// The concrete AudioProcess or AudioDevice is resolved when the mixer
@@ -92,7 +97,7 @@ final class Mixer: @unchecked Sendable {
 
         fileprivate init(target: Target, channels: Int) {
             self.target = target
-            self.ring = AudioRingBuffer(channels: channels)
+            self.ring = AudioRingBuffer(channels: channels, primeFrames: Mixer.bufferCushionFrames)
         }
 
         fileprivate func markAttached(sourceFormat: AVAudioFormat?, targetFormat: AVAudioFormat) {
@@ -400,7 +405,8 @@ final class Mixer: @unchecked Sendable {
         // Each secondary gets a buffer, and a converter when its rate differs.
         for output in secondaries {
             guard let stage = output.device else { continue }
-            output.ring = AudioRingBuffer(channels: stage.channelCount)
+            output.ring = AudioRingBuffer(channels: stage.channelCount,
+                                          primeFrames: Mixer.bufferCushionFrames)
             output.scratch = AVAudioFormat.discrete(sampleRate: primaryStage.sampleRate,
                                                     channels: stage.channelCount)
                 .flatMap { AVAudioPCMBuffer(pcmFormat: $0, frameCapacity: 8192) }
@@ -413,7 +419,10 @@ final class Mixer: @unchecked Sendable {
             }
         }
 
-        for source in snapshot { try? attach(source) }
+        for source in snapshot {
+            source.ring.setPrimeFrames(Mixer.bufferCushionFrames)
+            try? attach(source)
+        }
 
         sourceLock.lock()
         fanOut = secondaries
