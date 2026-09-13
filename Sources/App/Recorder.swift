@@ -329,8 +329,7 @@ final class Recorder: NSObject, ObservableObject {
     }
 
     private static func makeOutputURL() -> URL {
-        let dir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Movies/Tapdeck", isDirectory: true)
+        let dir = AppSettings.shared.recordingFolder
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyyMMdd-HHmmss"
