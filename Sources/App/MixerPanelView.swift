@@ -140,6 +140,9 @@ private struct MixListRow: View {
 private struct MixEditorView: View {
     @EnvironmentObject private var model: MixerModel
     @ObservedObject var mix: MixSession
+    /// Outputs whose delay control is open. An output with a delay set is
+    /// always shown open, so the setting is never hidden.
+    @State private var openDelays: Set<UUID> = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -461,7 +464,20 @@ private struct MixEditorView: View {
                         .frame(width: 38, alignment: .trailing)
                     LevelBar(level: row.isMuted ? 0 : row.level).frame(width: 60, height: 4)
                 }
+                if row.delayMilliseconds > 0 || openDelays.contains(row.id) {
+                    delayControl(row)
+                }
             }
+
+            Button {
+                if openDelays.contains(row.id) { openDelays.remove(row.id) } else { openDelays.insert(row.id) }
+            } label: {
+                Image(systemName: row.delayMilliseconds > 0 ? "clock.fill" : "clock")
+                    .font(.caption)
+                    .foregroundStyle(row.delayMilliseconds > 0 ? Color.accentColor : Color.secondary)
+            }
+            .buttonStyle(.borderless)
+            .help("Delay this output to line it up with a slower one")
 
             if !row.isPrimary {
                 Button {
@@ -481,6 +497,61 @@ private struct MixEditorView: View {
         .overlay(RoundedRectangle(cornerRadius: 9)
             .strokeBorder(mix.isRunning && !row.isAttached ? Color.orange.opacity(0.45) : .clear))
         .opacity(row.isMuted ? 0.55 : 1)
+    }
+
+    private func delayControl(_ row: MixSession.OutputRow) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 8) {
+                Text("Delay")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 30, alignment: .leading)
+                Slider(value: Binding(get: { row.delayMilliseconds },
+                                      set: { mix.setOutputDelay($0, for: row.id) }),
+                       in: 0...Mixer.Output.maximumDelayMilliseconds)
+                    .controlSize(.mini)
+                // Coarse slider, fine buttons: aligning by ear needs 5 ms steps.
+                Button { mix.setOutputDelay(row.delayMilliseconds - 5, for: row.id) } label: {
+                    Image(systemName: "minus").font(.system(size: 8, weight: .bold))
+                }
+                .buttonStyle(.borderless)
+                .help("5 ms less")
+                Text("\(Int(row.delayMilliseconds)) ms")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(row.delayMilliseconds > 0 ? .primary : .secondary)
+                    .frame(width: 50, alignment: .trailing)
+                Button { mix.setOutputDelay(row.delayMilliseconds + 5, for: row.id) } label: {
+                    Image(systemName: "plus").font(.system(size: 8, weight: .bold))
+                }
+                .buttonStyle(.borderless)
+                .help("5 ms more")
+                Menu {
+                    Button("None") { mix.setOutputDelay(0, for: row.id) }
+                    Button("Bluetooth, roughly 150 ms") { mix.setOutputDelay(150, for: row.id) }
+                    Button("AirPlay, roughly 2000 ms") { mix.setOutputDelay(2000, for: row.id) }
+                } label: {
+                    Image(systemName: "ellipsis.circle").font(.caption)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Starting points; fine-tune by ear")
+            }
+            Text(delayHint(row))
+                .font(.system(size: 9))
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.top, 2)
+    }
+
+    private func delayHint(_ row: MixSession.OutputRow) -> String {
+        var hint = "Delay the faster outputs until the echo between them disappears."
+        if let reported = row.reportedLatencyMilliseconds {
+            hint += String(format: " This device reports %.0f ms of its own; wireless devices often report less than they add.",
+                           reported)
+        }
+        return hint
     }
 
     // MARK: Footer
