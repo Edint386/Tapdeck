@@ -110,6 +110,29 @@ final class AudioRingBuffer: @unchecked Sendable {
         if peak > recentPeak { recentPeak = peak }
     }
 
+    /// Write planar samples directly. Used to fan a finished mix out to extra
+    /// outputs without wrapping it in an AVAudioPCMBuffer first.
+    func write(_ source: [UnsafePointer<Float>], frameCount frames: Int) {
+        guard frames > 0, !source.isEmpty else { return }
+        lock.lock()
+        defer { lock.unlock() }
+
+        var peak: Float = 0
+        for frame in 0..<frames {
+            let slot = (writePosition + frame) % capacityFrames
+            for channel in 0..<channelCount {
+                let value = channel < source.count ? source[channel][frame] : 0
+                storage[channel * capacityFrames + slot] = value
+                let magnitude = abs(value)
+                if magnitude > peak { peak = magnitude }
+            }
+        }
+        writePosition = (writePosition + frames) % capacityFrames
+        if filledFrames + frames > capacityFrames { overrunCount += 1 }
+        filledFrames = min(filledFrames + frames, capacityFrames)
+        if peak > recentPeak { recentPeak = peak }
+    }
+
     // MARK: - Reading
 
     /// Add into the output buffer. The mixer calls this once per source.

@@ -62,21 +62,27 @@ static const Float64 kSupportedSampleRates[] = { 44100.0, 48000.0, 88200.0, 9600
 #pragma mark - Object IDs
 //
 //  plug-in        : 1
-//  device i       : 2 + i*3
-//  input stream i : 3 + i*3
-//  output stream i: 4 + i*3
+//  each device    : n        (n from a counter starting at 2)
+//  its input      : n + 1
+//  its output     : n + 2
 
 #define kObjectID_PlugIn        kAudioObjectPlugInObject
-#define kDeviceObjectID(i)      ((AudioObjectID)(2 + (i) * 3))
-#define kInputStreamObjectID(i) ((AudioObjectID)(3 + (i) * 3))
-#define kOutputStreamObjectID(i)((AudioObjectID)(4 + (i) * 3))
+//  Object IDs are handed out from a counter and never reused while the host is
+//  running. They used to be derived from the slot index, which meant a device
+//  added into the slot a removed device had occupied got the same IDs. The HAL
+//  caches properties per object ID, so the new device showed up wearing the old
+//  one's UID and a mix of old and new stream layouts.
+#define kDeviceObjectID(i)       (gDevices[(i)].objectID)
+#define kInputStreamObjectID(i)  ((AudioObjectID)(gDevices[(i)].objectID + 1))
+#define kOutputStreamObjectID(i) ((AudioObjectID)(gDevices[(i)].objectID + 2))
 
 enum { kObjectKind_None = 0, kObjectKind_Device, kObjectKind_InputStream, kObjectKind_OutputStream };
 
 #pragma mark - State for one device
 
 typedef struct {
-    Boolean  isPublished;
+    Boolean       isPublished;
+    AudioObjectID objectID;
     char     uid[kNameLength];
     char     name[kNameLength];
     UInt32   channelCount;
@@ -94,6 +100,7 @@ typedef struct {
 } TapdeckDevice;
 
 static TapdeckDevice            gDevices[kMaxDevices];
+static AudioObjectID            gNextObjectID = 2;
 static pthread_mutex_t          gStateMutex = PTHREAD_MUTEX_INITIALIZER;
 static UInt32                   gRefCount   = 0;
 static AudioServerPlugInHostRef gHost       = NULL;
@@ -155,14 +162,18 @@ static Boolean IsSupportedSampleRate(Float64 rate)
 static int ResolveObject(AudioObjectID objectID, UInt32* outIndex)
 {
     if (objectID < 2) return kObjectKind_None;
-    UInt32 index = (objectID - 2) / 3;
-    if (index >= kMaxDevices || !gDevices[index].isPublished) return kObjectKind_None;
-    *outIndex = index;
-    switch ((objectID - 2) % 3) {
-        case 0:  return kObjectKind_Device;
-        case 1:  return kObjectKind_InputStream;
-        default: return kObjectKind_OutputStream;
+    for (UInt32 i = 0; i < kMaxDevices; ++i) {
+        const TapdeckDevice* device = &gDevices[i];
+        if (!device->isPublished) continue;
+        if (objectID < device->objectID || objectID > device->objectID + 2) continue;
+        *outIndex = i;
+        switch (objectID - device->objectID) {
+            case 0:  return kObjectKind_Device;
+            case 1:  return kObjectKind_InputStream;
+            default: return kObjectKind_OutputStream;
+        }
     }
+    return kObjectKind_None;
 }
 
 static UInt32 PublishedDeviceIDs(AudioObjectID* out, UInt32 capacity)
@@ -300,6 +311,19 @@ static Boolean ApplyConfigurationLocked(const TapdeckDeviceSpec* specs, UInt32 s
         Boolean alreadyPublished = false;
         for (UInt32 i = 0; i < kMaxDevices; ++i) {
             if (gDevices[i].isPublished && strcmp(gDevices[i].uid, specs[s].uid) == 0) {
+                // A different channel count changes the stream layout, which
+                // clients cache. Retire the device so it is published again below
+                // under fresh object IDs — unless IO is running, in which case the
+                // change waits for the next pass.
+                if (gDevices[i].channelCount != specs[s].channelCount) {
+                    if (gDevices[i].ioRunningCount == 0) {
+                        gDevices[i].isPublished = false;
+                        changed = true;
+                        break;
+                    }
+                    alreadyPublished = true;
+                    break;
+                }
                 // A rename can be applied in place.
                 if (strcmp(gDevices[i].name, specs[s].name) != 0) {
                     strlcpy(gDevices[i].name, specs[s].name, sizeof(gDevices[i].name));
@@ -317,6 +341,8 @@ static Boolean ApplyConfigurationLocked(const TapdeckDeviceSpec* specs, UInt32 s
             memset(device, 0, sizeof(TapdeckDevice));
             strlcpy(device->uid,  specs[s].uid,  sizeof(device->uid));
             strlcpy(device->name, specs[s].name, sizeof(device->name));
+            device->objectID           = gNextObjectID;
+            gNextObjectID += 3;
             device->channelCount       = specs[s].channelCount;
             device->sampleRate         = 48000.0;
             device->inputStreamActive  = 1;

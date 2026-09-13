@@ -51,7 +51,7 @@ func usage() -> Never {
       tapproof virtual [name[:channels] ...]
           Show the virtual devices, or replace them with the given names
 
-      tapproof mix <seconds> <device name> <pid or name>@<channel> ...
+      tapproof mix <seconds> <output[,output...]> <pid or name>@<channel> ...
           Mix applications onto a Tapdeck device, each on its own channel pair
           (@1 means channels 1-2, @3 means channels 3-4)
 
@@ -333,13 +333,15 @@ func runLoopback(seconds: Double, output: URL) throws {
 // MARK: - mix: checking the mixer
 
 func runMix(seconds: Double, deviceName: String, placements: [String]) throws {
-    guard let device = try AudioDevice.all().first(where: {
-        $0.uid.hasPrefix("TapdeckDevice") && $0.name == deviceName
-    }) else {
-        print("No Tapdeck virtual device named \(deviceName)."); exit(1)
-    }
-
+    // Several outputs may be given, comma separated. The first is the primary.
+    let all = try AudioDevice.all()
     let mixer = Mixer()
+    for name in deviceName.split(separator: ",").map(String.init) {
+        guard let device = all.first(where: { $0.name == name && $0.canOutput }) else {
+            print("No output device named \(name)."); exit(1)
+        }
+        mixer.addOutput(uid: device.uid, name: device.name)
+    }
     var entries: [(Mixer.Source, String)] = []
     for placement in placements {
         // "<pid or name>@<first channel>", e.g. "1234@3" puts it on channels 3-4.
@@ -356,8 +358,12 @@ func runMix(seconds: Double, deviceName: String, placements: [String]) throws {
         entries.append((entry, "\(process.name) (pid \(process.pid))"))
     }
 
-    try mixer.start(to: device)
-    print("Output : \(device.name) — \(mixer.outputChannelCount)ch at \(Int(device.sampleRate)) Hz")
+    try mixer.start()
+    for output in mixer.outputs {
+        print("Output : \(output.deviceName) — \(output.channelCount)ch at \(Int(output.sampleRate)) Hz"
+              + (output.isPrimary ? "  (primary)" : "")
+              + (output.detachReason.map { "  [\($0)]" } ?? ""))
+    }
     for (entry, label) in entries {
         print("  \(label) -> channels \(entry.channelOffset + 1)-\(entry.channelOffset + 2)"
               + "  [\(entry.formatDescription)]")
@@ -516,6 +522,26 @@ func runMuxTest(output: URL) throws {
     print("Wrote \(output.path)")
 }
 
+
+/// Set a device's nominal sample rate. Used to give a virtual device a rate that
+/// differs from the rest of the chain, so sample rate conversion can be tested.
+func runRate(deviceName: String, rate: Double) throws {
+    guard let device = try AudioDevice.all().first(where: { $0.name == deviceName }) else {
+        print("No device named \(deviceName)."); exit(1)
+    }
+    var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyNominalSampleRate,
+                                             mScope: kAudioObjectPropertyScopeGlobal,
+                                             mElement: kAudioObjectPropertyElementMain)
+    var value = rate
+    try ca("setting the sample rate") {
+        AudioObjectSetPropertyData(device.deviceID, &address, 0, nil,
+                                   UInt32(MemoryLayout<Float64>.size), &value)
+    }
+    Thread.sleep(forTimeInterval: 0.5)
+    let now = try AudioDevice.find(uid: device.uid)
+    print("\(device.name): \(Int(now?.sampleRate ?? 0)) Hz")
+}
+
 // MARK: - entry
 
 setvbuf(stdout, nil, _IOLBF, 0)
@@ -562,6 +588,10 @@ do {
 
     case "muxtest":
         try runMuxTest(output: URL(fileURLWithPath: args.count >= 2 ? args[1] : "muxtest.mov"))
+
+    case "rate":
+        guard args.count >= 3, let rate = Double(args[2]) else { usage() }
+        try runRate(deviceName: args[1], rate: rate)
 
     case "tone":
         guard args.count >= 5, let channel = Int(args[2]),
