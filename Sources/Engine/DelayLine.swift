@@ -37,6 +37,14 @@ final class DelayLine {
     /// The delay currently in effect, in frames.
     var currentDelay: Int { delay }
 
+    /// Set the delay without a crossfade. For the first position, before any
+    /// audio has been written, when there is nothing earlier to fade from.
+    func jump(to frames: Int) {
+        delay = min(max(0, frames), capacityFrames - 1)
+        fadeRemaining = 0
+        fadingFrom = delay
+    }
+
     /// Delay the channels in place by `targetDelay` frames.
     ///
     /// Runs on a real-time thread: no allocation and no locking.

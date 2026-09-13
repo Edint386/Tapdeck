@@ -71,6 +71,35 @@ final class Mixer: @unchecked Sendable {
         var gain: Float = 1.0
         var isMuted = false
 
+        /// This source's effects. Applied after sample rate conversion and
+        /// before buffering, so every effect sees the mix's own sample rate.
+        var effectSettings = EffectSettings() {
+            didSet { effects.update(effectSettings) }
+        }
+        let effects = EffectChain()
+
+        /// Silence the app's own output while Tapdeck plays its audio, so the
+        /// processed version replaces the original instead of doubling it.
+        ///
+        /// Without this a source is only a copy: the app still plays straight
+        /// to its device, and effects or loudness changes apply to what the mix
+        /// sends but not to what you hear. It also lets an app be sent to a
+        /// different device than the rest of the system.
+        ///
+        /// Uses the tap's muted-when-tapped behaviour, so the original sound
+        /// comes back by itself if Tapdeck stops or quits. Has no meaning for
+        /// an input device, which is not playing anywhere to begin with.
+        var replacesOriginal = false
+
+        var canReplaceOriginal: Bool {
+            if case .inputDevice = target { return false }
+            return true
+        }
+
+        fileprivate var tapMuteBehavior: CATapMuteBehavior {
+            replacesOriginal && canReplaceOriginal ? .mutedWhenTapped : .unmuted
+        }
+
         /// The output channel this source's left channel lands on. Its right
         /// channel goes to the one after. 0 means channels 1–2, 2 means 3–4.
         ///
@@ -119,12 +148,19 @@ final class Mixer: @unchecked Sendable {
 
         /// Take a buffer from the source, convert it if needed, and queue it.
         fileprivate func accept(_ buffer: AVAudioPCMBuffer) {
+            let prepared: AVAudioPCMBuffer
             if let converter {
                 guard let converted = converter.convert(buffer) else { return }
-                ring.write(converted)
+                prepared = converted
             } else {
-                ring.write(buffer)
+                prepared = buffer
             }
+            // Buffers reaching here are always our own copies — the tap
+            // normalises into a new buffer, the input path allocates one per
+            // callback, the converter returns a fresh one — so processing in
+            // place never touches memory Core Audio owns.
+            effects.process(prepared)
+            ring.write(prepared)
         }
 
         fileprivate func stop() {
@@ -392,6 +428,20 @@ final class Mixer: @unchecked Sendable {
         try? start()
     }
 
+    /// Change whether a source replaces the app's original sound. The tap's
+    /// mute behaviour is fixed when it is created, so a running source is
+    /// reconnected.
+    func setReplacesOriginal(_ replaces: Bool, for id: UUID) {
+        sourceLock.lock()
+        let source = sources.first { $0.id == id }
+        sourceLock.unlock()
+        guard let source, source.replacesOriginal != replaces else { return }
+        source.replacesOriginal = replaces
+        guard isRunning, source.tap != nil else { return }
+        source.stop()
+        try? attach(source)
+    }
+
     /// Reconnect sources that are not attached, for when the target app
     /// starts up later.
     @discardableResult
@@ -537,7 +587,7 @@ final class Mixer: @unchecked Sendable {
                 return
             }
             let tap = ProcessTap()
-            try tap.start(mode: .include([process])) { [weak source] buffer in
+            try tap.start(mode: .include([process]), mute: source.tapMuteBehavior) { [weak source] buffer in
                 source?.accept(buffer)
             }
             source.tap = tap
@@ -548,7 +598,8 @@ final class Mixer: @unchecked Sendable {
             // straight back into the input and loop.
             let me = try? AudioProcess.find(pid: ProcessInfo.processInfo.processIdentifier)
             let tap = ProcessTap()
-            try tap.start(mode: .excluding(me.map { [$0] } ?? [])) { [weak source] buffer in
+            try tap.start(mode: .excluding(me.map { [$0] } ?? []),
+                          mute: source.tapMuteBehavior) { [weak source] buffer in
                 source?.accept(buffer)
             }
             source.tap = tap
