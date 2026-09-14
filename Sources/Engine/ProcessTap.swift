@@ -59,8 +59,9 @@ final class ProcessTap {
             // Create the aggregate first: the real format has to be read from
             // it rather than from the tap. See resolveFormat below.
             try createAggregateDevice(clockUID: clock?.uid)
-            let fmt = try resolveFormat()
-            try attachIOProc(format: fmt)
+            _ = try resolveFormat()
+            listenForRateChanges()
+            try attachIOProc()
             isRunning = true
         } catch {
             stop()
@@ -128,6 +129,104 @@ final class ProcessTap {
     /// Records a disagreement between the tap's reported rate and the real one.
     private(set) var sampleRateCorrection: (declared: Float64, actual: Float64)?
 
+    // MARK: - Rate changes
+
+    /// How many times the stream's sample rate changed while running.
+    private(set) var sampleRateChanges = 0
+
+    /// The rate the audio actually arrives at, measured from the timestamps
+    /// over roughly the last second. Zero until measured. For diagnostics.
+    private(set) var measuredSampleRate: Double = 0
+    private var measureStart: (hostTime: UInt64, sampleTime: Float64)?
+
+    private var rateListener: AudioObjectPropertyListenerBlock?
+    private var rateAddress = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyNominalSampleRate,
+                                                         mScope: kAudioObjectPropertyScopeGlobal,
+                                                         mElement: kAudioObjectPropertyElementMain)
+
+    /// The aggregate runs on the default output device's clock, and that
+    /// device can change rate while the tap runs — another app opening it at a
+    /// different rate, or the default output switching devices. The audio
+    /// then arrives at the new rate. Keeping the old format plays it at the
+    /// wrong speed: measured, a 997 Hz tone came out of a mix at 916 Hz once
+    /// its audio started arriving at 48000 Hz while still read as 44100 Hz.
+    /// Changing the clock device's rate under a running tap was confirmed to
+    /// fire this listener.
+    ///
+    /// The listener runs on the IOProc's own serial queue, so the format never
+    /// changes in the middle of a callback.
+    private func listenForRateChanges() {
+        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            self?.adoptNominalRate()
+        }
+        if AudioObjectAddPropertyListenerBlock(aggregateID, &rateAddress, queue, block) == noErr {
+            rateListener = block
+        }
+    }
+
+    private func adoptNominalRate() {
+        guard aggregateID != 0,
+              let rate: Float64 = try? AudioObjectID(aggregateID)
+                .read(kAudioDevicePropertyNominalSampleRate, label: "reading the aggregate sample rate")
+        else { return }
+        adopt(rate: rate)
+    }
+
+    /// Switch the stream format to a new rate. Runs on the IOProc's queue.
+    private func adopt(rate: Float64) {
+        guard let current = rawFormat, rate > 0, abs(rate - current.sampleRate) > 1 else { return }
+        var asbd = current.streamDescription.pointee
+        asbd.mSampleRate = rate
+        guard let raw = AVAudioFormat(streamDescription: &asbd),
+              let normalized = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: rate,
+                                             channels: raw.channelCount, interleaved: false) else { return }
+        rawFormat = raw
+        format = normalized
+        sampleRateChanges += 1
+        measureStart = nil
+    }
+
+    /// Rates a device can plausibly run at, for snapping a measurement to.
+    static let standardSampleRates: [Double] = [8_000, 11_025, 16_000, 22_050, 24_000, 32_000,
+                                                44_100, 48_000, 88_200, 96_000, 176_400, 192_000]
+
+    static func nearestStandardRate(to measured: Double) -> Double {
+        standardSampleRates.min { abs($0 - measured) < abs($1 - measured) } ?? measured
+    }
+
+    private func stopListening() {
+        if let rateListener, aggregateID != 0 {
+            AudioObjectRemovePropertyListenerBlock(aggregateID, &rateAddress, queue, rateListener)
+        }
+        rateListener = nil
+    }
+
+    /// Update the measured rate from one callback's timestamp.
+    private func measureRate(_ time: AudioTimeStamp) {
+        guard time.mFlags.contains([.hostTimeValid, .sampleTimeValid]) else { return }
+        guard let start = measureStart else {
+            measureStart = (time.mHostTime, time.mSampleTime)
+            return
+        }
+        let seconds = Double(time.mHostTime &- start.hostTime) * Self.hostTimeScale
+        guard seconds >= 1 else { return }
+        measuredSampleRate = (time.mSampleTime - start.sampleTime) / seconds
+        measureStart = (time.mHostTime, time.mSampleTime)
+
+        // A safety net for a change the nominal rate property does not
+        // report: audio arriving more than 3% away from the assumed rate over
+        // a whole second cannot be drift.
+        if let assumed = rawFormat?.sampleRate, abs(measuredSampleRate - assumed) > assumed * 0.03 {
+            adopt(rate: Self.nearestStandardRate(to: measuredSampleRate))
+        }
+    }
+
+    private static let hostTimeScale: Double = {
+        var info = mach_timebase_info_data_t()
+        mach_timebase_info(&info)
+        return Double(info.numer) / Double(info.denom) / 1_000_000_000
+    }()
+
     /// How often the sample times handed to the IOProc were discontinuous.
     /// If this climbs, audio is being dropped before it reaches the mixer.
     private(set) var discontinuityCount = 0
@@ -192,14 +291,15 @@ final class ProcessTap {
         }
     }
 
-    private func attachIOProc(format rawFmt: AVAudioFormat) throws {
+    private func attachIOProc() throws {
         try ca("creating the IOProc") {
             AudioDeviceCreateIOProcIDWithBlock(&ioProcID, aggregateID, queue) {
                 [weak self] _, inInputData, inInputTime, _, _ in
-                guard let self, let handler = self.handler else { return }
+                guard let self, let handler = self.handler, let rawFmt = self.rawFormat else { return }
                 guard let raw = AVAudioPCMBuffer(pcmFormat: rawFmt,
                                                  bufferListNoCopy: inInputData),
                       let buffer = self.normalize(raw) else { return }
+                self.measureRate(inInputTime.pointee)
 
                 // Check the sample times run continuously. If this block does
                 // not start where the last one ended, audio was already
@@ -220,6 +320,7 @@ final class ProcessTap {
     // MARK: - Stopping
 
     func stop() {
+        stopListening()
         if let ioProcID, aggregateID != 0 {
             AudioDeviceStop(aggregateID, ioProcID)
             AudioDeviceDestroyIOProcID(aggregateID, ioProcID)
