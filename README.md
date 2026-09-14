@@ -75,6 +75,39 @@ not matter, since the call app mixes everything to stereo anyway.
 Recordings taken from a multichannel device keep this separation: the file gets
 one stereo audio track per channel pair.
 
+### Which device goes where
+
+Leave the Mac's own output and input alone. Choose a Tapdeck device only inside
+the app that should receive a mix — as the microphone in Zoom, as an audio
+source in OBS — and add your speakers or headphones to the same mix to hear it.
+Use one virtual device per destination: a meeting and a stream that want
+different mixes each get their own device and their own mix.
+
+A mix works from inputs to outputs in one place: sources are apps, all system
+audio, microphones and interfaces; outputs are virtual devices, speakers,
+headphones, Bluetooth and AirPlay.
+
+### Shaping the sound
+
+- **Effects per source.** Low and high cut (24 dB/octave), a five-band
+  equaliser with presets, noise gate, compressor, limiter, balance, mono and
+  delay. With everything off a source is bit-identical to what was captured.
+- **Replace the original sound.** A source normally works on a copy while the
+  app still plays straight to its device. Switched on, the app's own output is
+  silenced while the mix runs, so what you hear is the processed version on the
+  mix's outputs. The original comes back by itself if the mix stops or Tapdeck
+  quits.
+- **Even out loudness.** On a mix or a source, brings whatever plays to one
+  loudness (−16 LUFS by default), so one video, site or song is about as loud
+  as the next. Measured per ITU-R BS.1770; silence and short pauses hold the
+  level, and a −1 dBFS limiter catches sudden jumps. Target, maximum boost and
+  speed are in Settings › Audio.
+- **Volume at three levels.** Master volume for everything, a volume per mix,
+  and a gain per output, all ramped so moving a fader never clicks.
+- **Delay per output.** Bluetooth and AirPlay play late — about 150 ms and 2 s.
+  Delaying the other outputs lines them up; a mix with a wireless output offers
+  **Line Up** to set typical values, to be fine-tuned by ear.
+
 Three pieces:
 
 1. **Per-app capture** uses Core Audio process taps (macOS 14.2+). No virtual
@@ -99,6 +132,12 @@ Screen recording sits on top of this rather than beside it.
 | Channel mapping | Working. Each source can take its own channel pair on a wide device; measured 112 dB between pairs. |
 | Menu bar item | Working, but a full menu bar can leave no room for it (see below). |
 | Screen recording | Working. Audio can come from ScreenCaptureKit or from the mixer, and a multichannel source is written as one audio track per channel pair. |
+| Effects | Working. Filters, EQ and dynamics measured against theory, e.g. a 100 Hz low cut leaves 25 Hz at −54 dB. |
+| Replace original sound | Working. The app is silent while mixing and returns within 1.5 s of Tapdeck being killed. |
+| Loudness | Working. A −30/−10 dBFS pair plays at −18/−16 LUFS through a mix; the meter reads the standard's −3.01 LUFS calibration tone exactly. |
+| Master, mix and output volume | Working. 0.5 × 0.5 measured −12.05 dB. |
+| Output delay | Working. 300 ms set, 300.7 ms measured. |
+| AirPlay and Bluetooth | Working as outputs. The AirPlay receiver is chosen in Control Center. |
 
 ## Install
 
@@ -141,11 +180,20 @@ swift tools/make-icon.swift  # regenerate the icon
 ./build/tapproof mix 5 Tapdeck,Monitor 1234@1     # one mix, two outputs
 ./build/tapproof rate Monitor 44100               # change a device's sample rate
 ./build/tapproof graphtest                        # feedback loop detection
+./build/tapproof gaintest                         # master, mix and output gain
+./build/tapproof delaytest                        # output delay line
+./build/tapproof fxtest                           # effects against theory
+./build/tapproof loudtest                         # loudness meter and normaliser
+./build/tapproof devicetest                       # finding devices under new UIDs
 ./build/tapproof tone Podcast 3 1000 5            # a tone on channel 3 only
 ./build/tapproof capture Podcast 3 out.wav        # record every channel of a device
 ./build/tapproof muxtest out.mov                  # multitrack muxing, offline
 ./build/tapproof loopback 4                       # check a device round-trips
 ```
+
+`mix` also reads `TAPDECK_MASTER`, `TAPDECK_MIX_VOLUME`, `TAPDECK_OUTPUT_DELAYS`
+(`Name=ms,…`), `TAPDECK_REPLACE=1` and `TAPDECK_LOUDNESS=1`, and prints each
+tap's assumed, measured and clock sample rates every second.
 
 ## Implementation notes
 
@@ -182,6 +230,48 @@ every `write(from:)` throw and leaves a file containing only a header.
 Matching the tap's clock to the mixer's output removes the need to resample,
 which seems like the right move. It also stops the tap from hearing anything
 that is not already flowing to that device — measured as complete silence.
+
+A Tapdeck virtual device cannot clock a tap's aggregate at all: with audio
+flowing into it, the IOProc was never called.
+
+### A tap's clock can change rate under it
+
+Reading the rate once at start is not enough. During one measurement a 997 Hz
+tone came out of a mix at 916 Hz from a certain moment on — 997 × 44100/48000 —
+because the audio had started arriving at 48000 Hz while still being converted
+as 44100 Hz. The tap now listens for nominal rate changes on its aggregate (on
+the IOProc's own queue, so the format never changes mid-callback), falls back to
+the rate measured from timestamps when that is more than 3% off, and each source
+rebuilds its converter when buffers arrive at a new rate.
+
+### The AirPlay device gets a new UID every time it appears
+
+Its UID carries a long number that changes between sessions
+(`…-50150987687166-Audio`, later `…-89446392180958-Audio`), so an output saved
+by UID could never be found again. A missing UID now falls back to the single
+device with the same name whose UID matches once such numbers are ignored.
+
+### Wireless devices under-report their latency
+
+AirPlay reported zero latency through the HAL while playing about two seconds
+late. Reported latency is shown as a hint; lining outputs up uses typical values
+and the ear.
+
+### Published properties run their observers during init
+
+`@Published var volume: Float = 1 { didSet { … save … } }` runs `didSet` when an
+initializer assigns it, because the default value has already initialised the
+wrapper. Restoring a mix whose volume was not exactly 1 therefore saved the
+library while it was still being loaded — as an empty list, at every launch.
+Only a later edit saved it again, which hid the bug. Restoring now never saves,
+and the library refuses to save before loading finishes.
+
+### Loudness without look-ahead has to chase jumps
+
+Following the 400 ms momentary loudness alone left a jump from quiet to loud
+audibly too loud for half a second. After a jump the estimate now follows the
+newest 100 ms block with a 0.1 s time constant, which brings the output back
+near the target within about 0.4 s; the limiter covers the first block.
 
 ### Ring buffers need a cushion
 
