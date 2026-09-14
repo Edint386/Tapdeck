@@ -401,7 +401,20 @@ func runMix(seconds: Double, deviceName: String, placements: [String]) throws {
         print("Render : \(output.observedLayout)")
     }
     let steps = max(1, Int(seconds) - 1)
-    for _ in 1...steps { Thread.sleep(forTimeInterval: 1) }
+    for second in 1...steps {
+        Thread.sleep(forTimeInterval: 1)
+        // Rate diagnostics: what the tap assumes, what arrives, and the clock.
+        let clock = (try? AudioObjectID.system.read(kAudioHardwarePropertyDefaultOutputDevice,
+                                                     as: AudioDeviceID.self))
+        let clockRate = clock.flatMap { try? AudioObjectID($0).read(kAudioDevicePropertyNominalSampleRate,
+                                                                     as: Float64.self) } ?? 0
+        for (entry, label) in entries {
+            guard let tap = entry.tapForDiagnostics else { continue }
+            print(String(format: "  %2ds %@: tap %.0f Hz, measured %.0f Hz, clock %.0f Hz, changes tap %d / source %d",
+                         second + 1, label, tap.format?.sampleRate ?? 0, tap.measuredSampleRate, clockRate,
+                         tap.sampleRateChanges, entry.sampleRateChanges))
+        }
+    }
     mixer.stop()
     print("Stopped.")
 }
@@ -1147,6 +1160,7 @@ do {
 
     case "loudtest":
         runLoudnessTest()
+
 
     case "graphtest":
         runGraphTest()

@@ -132,12 +132,24 @@ final class Mixer: @unchecked Sendable {
         fileprivate func markAttached(sourceFormat: AVAudioFormat?, targetFormat: AVAudioFormat) {
             isAttached = true
             detachReason = nil
+            self.targetFormat = targetFormat
             guard let sourceFormat else { return }
-            formatDescription = "\(Int(sourceFormat.sampleRate)) Hz / \(sourceFormat.channelCount)ch"
+            configureConverter(from: sourceFormat, to: targetFormat)
+        }
+
+        /// The mix's format, which every buffer is converted to.
+        private var targetFormat: AVAudioFormat?
+        /// The sample rate buffers were last seen arriving at.
+        private var inputSampleRate: Double = 0
+
+        /// How many times the source changed sample rate while running.
+        private(set) var sampleRateChanges = 0
+
+        private func configureConverter(from sourceFormat: AVAudioFormat, to targetFormat: AVAudioFormat) {
+            inputSampleRate = sourceFormat.sampleRate
             converter = FormatConverter(from: sourceFormat, to: targetFormat)
-            if converter != nil {
-                formatDescription += " → \(Int(targetFormat.sampleRate)) Hz"
-            }
+            formatDescription = "\(Int(sourceFormat.sampleRate)) Hz / \(sourceFormat.channelCount)ch"
+                + (converter != nil ? " → \(Int(targetFormat.sampleRate)) Hz" : "")
         }
 
         fileprivate func markDetached(_ reason: String) {
@@ -148,6 +160,14 @@ final class Mixer: @unchecked Sendable {
 
         /// Take a buffer from the source, convert it if needed, and queue it.
         fileprivate func accept(_ buffer: AVAudioPCMBuffer) {
+            // A tap follows its clock device, which can change rate mid-run.
+            // Convert from the rate the audio arrives at now, or it plays at
+            // the wrong speed and pitch.
+            if let targetFormat, buffer.format.sampleRate != inputSampleRate, inputSampleRate > 0 {
+                configureConverter(from: buffer.format, to: targetFormat)
+                sampleRateChanges += 1
+            }
+
             let prepared: AVAudioPCMBuffer
             if let converter {
                 guard let converted = converter.convert(buffer) else { return }
