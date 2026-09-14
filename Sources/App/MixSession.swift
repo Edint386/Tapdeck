@@ -89,10 +89,16 @@ final class MixSession: ObservableObject, Identifiable {
     private weak var library: MixerModel?
     private var iconCache: [String: NSImage] = [:]
 
+    /// True while the saved state is being applied. Observers on published
+    /// properties with a default value do run when init assigns them, and
+    /// saving from there would write the library before it has loaded.
+    private var isRestoring = true
+
     init(saved: SavedMix, library: MixerModel) {
         id = saved.id
         name = saved.name
         self.library = library
+        defer { isRestoring = false }
 
         var stored = MixerConfiguration()
         stored.sources = saved.sources
@@ -149,6 +155,7 @@ final class MixSession: ObservableObject, Identifiable {
     }
 
     private func changed() {
+        guard !isRestoring else { return }
         library?.persist()
     }
 

@@ -25,9 +25,14 @@ final class MixerModel: ObservableObject {
 
     private var meterTimer: Timer?
 
+    /// Saving is refused until the library has loaded, so nothing that runs
+    /// while mixes are being rebuilt can overwrite it with a partial list.
+    private var hasLoaded = false
+
     init() {
         refreshLists()
         mixes = MixLibraryStore.load().map { MixSession(saved: $0, library: self) }
+        hasLoaded = true
         selectedMixID = mixes.first?.id
 
         meterTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20, repeats: true) { [weak self] _ in
@@ -149,6 +154,7 @@ final class MixerModel: ObservableObject {
     // MARK: - State
 
     func persist() {
+        guard hasLoaded else { return }
         MixLibraryStore.save(mixes.map(\.saved))
     }
 
