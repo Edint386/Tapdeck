@@ -67,6 +67,40 @@ struct GainRamp {
     mutating func reset(to value: Float) { current = value }
 }
 
+/// Keeps every sample under a ceiling.
+///
+/// Instant attack, so no sample ever passes the ceiling; smooth release so the
+/// gain does not flutter.
+struct PeakLimiter {
+    private var gain: Double = 1
+
+    /// - Parameters:
+    ///   - ceiling: linear amplitude no sample may exceed.
+    ///   - release: per-sample smoothing coefficient for recovering gain.
+    mutating func process(_ channels: [UnsafeMutablePointer<Float>], frameCount: Int,
+                          ceiling: Double, release: Double) {
+        let hardCeiling = Float(ceiling)
+        var current = gain
+        for frame in 0..<frameCount {
+            var peak: Double = 0
+            for channel in channels { peak = max(peak, Double(abs(channel[frame]))) }
+            let needed = peak > ceiling ? ceiling / peak : 1
+            current = needed < current ? needed : needed + (current - needed) * release
+
+            let value = Float(current)
+            for channel in channels {
+                var sample = channel[frame] * value
+                // Rounding can leave a sample a hair over; never let it through.
+                if sample > hardCeiling { sample = hardCeiling } else if sample < -hardCeiling { sample = -hardCeiling }
+                channel[frame] = sample
+            }
+        }
+        gain = current
+    }
+
+    mutating func reset() { gain = 1 }
+}
+
 /// Clamp every sample to ±1 and return the peak, for metering.
 @inline(__always)
 func clipAndMeasure(_ channels: [UnsafeMutablePointer<Float>], frameCount: Int) -> Float {

@@ -323,6 +323,17 @@ final class Mixer: @unchecked Sendable {
     var isMuted = false
     private var volumeRamp = GainRamp()
 
+    /// Evens out the loudness of everything the mix plays, applied to the
+    /// summed sources before the mix volume — so the volume still sets how
+    /// loud the evened-out result is.
+    var normalizesLoudness = false
+    private var wasNormalizing = false
+    private let normalizer = LoudnessNormalizer()
+    private var renderSampleRate: Double = 48_000
+
+    /// What mix-level normalisation is doing. Safe to read from any thread.
+    var loudnessReading: LoudnessReading { normalizer.reading }
+
     private(set) var sources: [Source] = []
     private(set) var isRunning = false
 
@@ -528,6 +539,9 @@ final class Mixer: @unchecked Sendable {
         }
 
         volumeRamp.reset(to: isMuted ? 0 : volume)
+        renderSampleRate = primaryStage.sampleRate
+        // A new run starts measuring from scratch.
+        wasNormalizing = false
         for output in outputs {
             output.gainRamp.reset(to: (output.isMuted ? 0 : output.gain) * MasterVolume.shared.gain)
         }
@@ -656,6 +670,13 @@ final class Mixer: @unchecked Sendable {
             source.ring.mixInto(channels, frameCount: frameCount, gain: gain,
                                 channelOffset: source.channelOffset)
         }
+
+        let normalizing = normalizesLoudness
+        if normalizing {
+            if !wasNormalizing { normalizer.reset() }
+            normalizer.process(channels, frameCount: frameCount, sampleRate: renderSampleRate)
+        }
+        wasNormalizing = normalizing
 
         // The mix's own volume applies to everything it sends.
         volumeRamp.apply(to: channels, frameCount: frameCount, target: isMuted ? 0 : volume)
