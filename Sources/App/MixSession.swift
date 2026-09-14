@@ -44,6 +44,7 @@ final class MixSession: ObservableObject, Identifiable {
         var delayMilliseconds: Double
         /// What the device says its own latency is, once the mix has started.
         var reportedLatencyMilliseconds: Double?
+        var transport: AudioDevice.Transport
     }
 
     let id: UUID
@@ -117,7 +118,9 @@ final class MixSession: ObservableObject, Identifiable {
         engine.isMuted = isMuted
         engine.normalizesLoudness = normalizesLoudness
         for savedOutput in saved.outputs {
-            let output = engine.addOutput(uid: savedOutput.uid, name: savedOutput.name)
+            let known = library.outputCandidates.first { $0.uid == savedOutput.uid }?.transport
+            let output = engine.addOutput(uid: savedOutput.uid, name: savedOutput.name,
+                                          transport: savedOutput.transport ?? known ?? .other)
             output.gain = savedOutput.gain
             output.isMuted = savedOutput.isMuted
             output.delayMilliseconds = savedOutput.delayMilliseconds ?? 0
@@ -131,7 +134,8 @@ final class MixSession: ObservableObject, Identifiable {
                  sources: MixerConfiguration(sources: engine.sources, outputDeviceUID: "").sources,
                  outputs: engine.outputs.map {
                      SavedOutput(uid: $0.deviceUID, name: $0.deviceName, gain: $0.gain, isMuted: $0.isMuted,
-                                 delayMilliseconds: $0.delayMilliseconds == 0 ? nil : $0.delayMilliseconds)
+                                 delayMilliseconds: $0.delayMilliseconds == 0 ? nil : $0.delayMilliseconds,
+                                 transport: $0.transport == .other ? nil : $0.transport)
                  },
                  volume: volume,
                  isMuted: isMuted,
@@ -304,7 +308,7 @@ final class MixSession: ObservableObject, Identifiable {
             status = problem
             return
         }
-        engine.addOutput(uid: device.uid, name: device.name)
+        engine.addOutput(uid: device.uid, name: device.name, transport: device.transport)
         afterOutputChange()
     }
 
@@ -340,6 +344,36 @@ final class MixSession: ObservableObject, Identifiable {
         changed()
     }
 
+    /// Delays that line every speaker up with the slowest wireless one, from
+    /// typical latencies. Virtual devices feed other apps rather than ears, so
+    /// they are left alone. Nil when there is nothing to line up.
+    var suggestedOutputDelays: [UUID: Double]? {
+        let audible = outputs.filter { !MixerModel.isVirtual($0.deviceUID) && $0.transport != .virtual }
+        let slowest = audible.map(\.transport.typicalLatencyMilliseconds).max() ?? 0
+        guard audible.count >= 2, slowest > 0 else { return nil }
+        return Dictionary(uniqueKeysWithValues: audible.map {
+            ($0.id, slowest - $0.transport.typicalLatencyMilliseconds)
+        })
+    }
+
+    /// Whether the speakers are already delayed as suggested.
+    var outputsAreLinedUp: Bool {
+        guard let suggested = suggestedOutputDelays else { return true }
+        return outputs.allSatisfy { row in
+            suggested[row.id].map { abs($0 - row.delayMilliseconds) < 1 } ?? true
+        }
+    }
+
+    func lineUpOutputs() {
+        guard let suggested = suggestedOutputDelays else { return }
+        for (id, delay) in suggested {
+            engine.outputs.first { $0.id == id }?.delayMilliseconds = delay
+        }
+        syncRows()
+        changed()
+        status = "Outputs lined up from typical wireless delays. Fine-tune each by ear with its clock button."
+    }
+
     func toggleOutputMute(_ id: UUID) {
         guard let output = engine.outputs.first(where: { $0.id == id }) else { return }
         output.isMuted.toggle()
@@ -369,9 +403,12 @@ final class MixSession: ObservableObject, Identifiable {
             status = problem
             return
         }
+        let identities = engine.outputs.map { "\($0.deviceUID)|\($0.transport)" }
         do {
             try engine.start()
             isRunning = true
+            // An output found under a new UID has adopted it; save that.
+            if engine.outputs.map({ "\($0.deviceUID)|\($0.transport)" }) != identities { changed() }
             let attached = engine.sources.filter(\.isAttached).count
             let outputsOpen = engine.outputs.filter(\.isAttached).count
             status = "Running — \(attached) of \(engine.sources.count) source(s), "
@@ -461,7 +498,8 @@ final class MixSession: ObservableObject, Identifiable {
                       detail: outputDetail(output),
                       delayMilliseconds: output.delayMilliseconds,
                       reportedLatencyMilliseconds: isRunning && output.isAttached
-                          ? output.reportedLatencyMilliseconds : nil)
+                          ? output.reportedLatencyMilliseconds : nil,
+                      transport: output.transport)
         }
     }
 

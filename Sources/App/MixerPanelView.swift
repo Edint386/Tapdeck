@@ -432,6 +432,26 @@ private struct MixEditorView: View {
                 }
             }
 
+            if mix.suggestedOutputDelays != nil && !mix.outputsAreLinedUp {
+                lineUpHint
+            }
+
+            if mix.outputs.contains(where: { $0.transport == .airPlay }) {
+                HStack(spacing: 6) {
+                    Label("AirPlay plays to the receiver chosen in Control Center › Sound.",
+                          systemImage: "airplayaudio")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Sound Settings…") {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.Sound-Settings.extension") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    .controlSize(.small)
+                }
+            }
+
             if mix.outputs.contains(where: { MixerModel.isVirtual($0.deviceUID) }) {
                 Label("Choose a Tapdeck device as the microphone in Zoom, OBS or a recorder and it receives this mix.",
                       systemImage: "info.circle")
@@ -442,15 +462,56 @@ private struct MixEditorView: View {
         }
     }
 
+    /// Offered when a wireless output plays behind the other speakers.
+    private var lineUpHint: some View {
+        let slowest = mix.outputs.max { $0.transport.typicalLatencyMilliseconds < $1.transport.typicalLatencyMilliseconds }
+        let name = slowest?.transport == .airPlay ? "AirPlay" : "Bluetooth"
+        let seconds = (slowest?.transport.typicalLatencyMilliseconds ?? 0) / 1000
+        return HStack(spacing: 8) {
+            Label(String(format: "%@ usually plays about %@ behind the other speakers, which sounds like an echo.",
+                         name, seconds >= 1 ? String(format: "%.0f s", seconds) : String(format: "%.0f ms", seconds * 1000)),
+                  systemImage: "clock.badge.exclamationmark")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Button("Line Up") { mix.lineUpOutputs() }
+                .controlSize(.small)
+                .help("Delay the other speakers by the typical difference. Fine-tune each by ear afterwards.")
+        }
+        .padding(8)
+        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func outputSymbol(_ row: MixSession.OutputRow) -> String {
+        if MixerModel.isVirtual(row.deviceUID) { return "arrow.triangle.branch" }
+        switch row.transport {
+        case .airPlay:   return "airplayaudio"
+        case .bluetooth: return "headphones"
+        default:         return "hifispeaker.fill"
+        }
+    }
+
     private var outputMenu: some View {
         Menu {
             let used = Set(mix.outputs.map(\.deviceUID))
-            let virtual = model.outputCandidates.filter { MixerModel.isVirtual($0.uid) && !used.contains($0.uid) }
-            let hardware = model.outputCandidates.filter { !MixerModel.isVirtual($0.uid) && !used.contains($0.uid) }
+            let available = model.outputCandidates.filter { !used.contains($0.uid) }
+            let virtual = available.filter { MixerModel.isVirtual($0.uid) }
+            let wireless = available.filter { !MixerModel.isVirtual($0.uid) && $0.transport.isWireless }
+            let hardware = available.filter { !MixerModel.isVirtual($0.uid) && !$0.transport.isWireless }
             if !virtual.isEmpty {
                 Section("Virtual devices") {
                     ForEach(virtual) { device in
                         Button("\(device.name) (\(device.outputChannels)ch)") { mix.addOutput(device) }
+                    }
+                }
+            }
+            if !wireless.isEmpty {
+                Section("AirPlay and Bluetooth") {
+                    ForEach(wireless) { device in
+                        Button("\(device.name) — \(device.transport == .airPlay ? "AirPlay" : "Bluetooth")") {
+                            mix.addOutput(device)
+                        }
                     }
                 }
             }
@@ -473,7 +534,7 @@ private struct MixEditorView: View {
 
     private func outputRow(_ row: MixSession.OutputRow) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: MixerModel.isVirtual(row.deviceUID) ? "arrow.triangle.branch" : "hifispeaker.fill")
+            Image(systemName: outputSymbol(row))
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .frame(width: 24, height: 24)

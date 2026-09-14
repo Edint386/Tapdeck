@@ -24,6 +24,9 @@ struct SavedOutput: Codable {
     var isMuted = false
     /// Optional so outputs saved before delays existed still decode.
     var delayMilliseconds: Double?
+    /// How the device is connected, so a wireless output is recognised even
+    /// while it is switched off.
+    var transport: AudioDevice.Transport?
 }
 
 enum MixLibraryStore {
