@@ -37,13 +37,17 @@ work.
 | File | Role |
 |---|---|
 | `CoreAudioSupport.swift` | Property helpers, `ca()` status checking, `AVAudioFormat.discrete` for formats above two channels |
-| `AudioDevice.swift` | Device enumeration with channel counts and sample rate |
+| `AudioDevice.swift` | Device enumeration with channel counts, sample rate and transport; finding a saved device under a new UID |
 | `AudioProcess.swift` | Processes Core Audio considers audio-active; names via NSRunningApplication, bundle ID, then libproc |
 | `ProcessTap.swift` | One process tap plus the private aggregate device that reads it; normalises to non-interleaved Float32 and corrects the reported sample rate |
 | `DeviceIO.swift` | `DeviceOutput` and `DeviceInput`, both driving an AUHAL directly |
 | `FormatConverter.swift` | AVAudioConverter wrapper used when a source's rate differs from the mix |
 | `AudioRingBuffer.swift` | Per-source and per-output buffering with a priming cushion, channel offsets on read |
-| `Mixer.swift` | One mix: sources, outputs, attach/detach, the real-time render and fan-out to secondary outputs |
+| `Mixer.swift` | One mix: sources, outputs, attach/detach, the real-time render and fan-out to secondary outputs; mix volume, loudness, per-output delay and gain |
+| `Effects.swift` | `EffectSettings` (Codable, every key optional) and `EffectChain`: filters, EQ, gate, compressor, loudness, limiter, balance, mono, delay |
+| `Loudness.swift` | `LoudnessTuning` (app-wide), BS.1770 `LoudnessMeter`, `LoudnessNormalizer` |
+| `GainStage.swift` | `MasterVolume`, `GainRamp`, `PeakLimiter`, clipping and metering |
+| `DelayLine.swift` | Multichannel delay with crossfaded changes |
 | `RoutingGraph.swift` | Feedback-loop detection across running mixes |
 | `MuxedRecorder.swift` | Screen video plus device audio into a .mov, one AAC track per channel pair |
 | `VirtualDeviceConfiguration.swift` | The virtual device list, pushed to the driver through a custom property |
@@ -59,8 +63,11 @@ work.
 | `MixLibrary.swift` | Saved mixes, and migration from the older single-mixer and preset storage |
 | `MixerConfiguration.swift` | Codable source representation shared by saved mixes |
 | `MixerPanelView.swift` | Sidebar of mixes and the mix editor |
+| `SourceEffectsView.swift` | Effects popover for one source |
+| `VolumeControl.swift` | Volume fader with mute and dB readout; master volume control |
+| `AppSettings.swift`, `SettingsView.swift` | Preferences pushed into the engine, and the Settings window |
 | `MenuBarController.swift`, `MenuBarPanelView.swift` | NSStatusItem and its popover |
-| `AudioEngineModel.swift`, `AudioPanelView.swift` | Virtual device management and diagnostics |
+| `AudioEngineModel.swift`, `DeviceSettingsViews.swift` | Virtual device management and diagnostics, shown in Settings |
 | `Recorder.swift`, `ContentView.swift` | Screen recording model and its tab |
 
 ### Driver (`Driver/TapdeckDriver.c`)
@@ -85,6 +92,7 @@ sudo ./install-driver.sh            # build and install the HAL driver (restarts
 ./Driver/build-driver.sh            # driver only
 ./build/tapproof                    # list harness commands
 ./build/tapproof graphtest          # routing graph tests (no devices needed)
+./build/tapproof fxtest             # effects, gaintest, delaytest, loudtest, devicetest likewise
 ./build/tapproof muxtest out.mov    # multitrack recording test (no devices needed)
 ```
 
@@ -104,3 +112,11 @@ most likely to recur:
 - A command line tool cannot show TCC prompts; anything reading an input device
   must be verified from an app bundle.
 - SwiftUI `MenuBarExtra` created no status item in this build setup.
+- `didSet` on a `@Published` property with a default value runs when init
+  assigns it. Never let that path save the mix library.
+- The AirPlay device's UID changes between sessions; match saved outputs with
+  `AudioDevice.find(uid:name:in:)`.
+- A tap's stream rate can change mid-run; `ProcessTap` follows it.
+- UI checks: render views offscreen in a scratch binary and capture only that
+  window (`screencapture -l <windowNumber>`). Never capture screen regions, which
+  pick up other apps' windows.
