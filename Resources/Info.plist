@@ -2,21 +2,29 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key>              <string>Tapdeck</string>
-    <key>CFBundleDisplayName</key>       <string>Tapdeck</string>
-    <key>CFBundleExecutable</key>        <string>Tapdeck</string>
-    <key>CFBundleIdentifier</key>        <string>dev.kosuke.Tapdeck</string>
-    <key>CFBundlePackageType</key>       <string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.1.0</string>
-    <key>CFBundleVersion</key>           <string>1</string>
-    <key>LSMinimumSystemVersion</key>    <string>15.0</string>
-    <key>CFBundleIconFile</key>          <string>Tapdeck</string>
-    <key>NSHighResolutionCapable</key>   <true/>
-    <!-- Required for Core Audio process taps (per-app audio capture).
-         Without this key TCC returns no error, only silence. -->
-    <key>NSAudioCaptureUsageDescription</key>
-    <string>Tapdeck captures audio from individual apps so it can mix them.</string>
-    <key>NSMicrophoneUsageDescription</key>
-    <string>Tapdeck uses the microphone to include it in recordings and mixes.</string>
+	<key>CFBundleDisplayName</key>
+	<string>Tapdeck</string>
+	<key>CFBundleExecutable</key>
+	<string>Tapdeck</string>
+	<key>CFBundleIconFile</key>
+	<string>Tapdeck</string>
+	<key>CFBundleIdentifier</key>
+	<string>dev.kosuke.Tapdeck</string>
+	<key>CFBundleName</key>
+	<string>Tapdeck</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.2.1</string>
+	<key>CFBundleVersion</key>
+	<string>4</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>15.0</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Tapdeck captures audio from individual apps so it can mix them.</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Tapdeck uses the microphone to include it in recordings and mixes.</string>
 </dict>
 </plist>
