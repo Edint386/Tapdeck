@@ -60,6 +60,12 @@ struct EffectSettings: Codable, Equatable {
     var limiterEnabled = false
     var limiterCeiling: Double = -1
 
+    // Loudness
+
+    /// Brings the source to the loudness set in Settings, however loud or
+    /// quiet it plays on its own.
+    var loudnessEnabled = false
+
     // Stereo
 
     /// -1 is fully left, +1 fully right. Balance, not pan: the centre position
@@ -80,8 +86,38 @@ struct EffectSettings: Codable, Equatable {
     /// Whether anything at all is switched on.
     var isActive: Bool {
         lowCutEnabled || highCutEnabled || (eqEnabled && bands.contains { $0.gain != 0 })
-            || gateEnabled || compressorEnabled || limiterEnabled
+            || gateEnabled || compressorEnabled || limiterEnabled || loudnessEnabled
             || balance != 0 || mono || delay > 0
+    }
+}
+
+extension EffectSettings {
+    /// Every key is optional, so settings saved before an effect existed still
+    /// load — with that effect off — instead of failing and losing the mix.
+    init(from decoder: Decoder) throws {
+        self.init()
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        func load<Value: Decodable>(_ key: CodingKeys, _ value: inout Value) throws {
+            if let decoded = try container.decodeIfPresent(Value.self, forKey: key) { value = decoded }
+        }
+        try load(.lowCutEnabled, &lowCutEnabled)
+        try load(.lowCutFrequency, &lowCutFrequency)
+        try load(.highCutEnabled, &highCutEnabled)
+        try load(.highCutFrequency, &highCutFrequency)
+        try load(.eqEnabled, &eqEnabled)
+        try load(.bands, &bands)
+        try load(.gateEnabled, &gateEnabled)
+        try load(.gateThreshold, &gateThreshold)
+        try load(.compressorEnabled, &compressorEnabled)
+        try load(.compressorThreshold, &compressorThreshold)
+        try load(.compressorRatio, &compressorRatio)
+        try load(.compressorMakeup, &compressorMakeup)
+        try load(.limiterEnabled, &limiterEnabled)
+        try load(.limiterCeiling, &limiterCeiling)
+        try load(.loudnessEnabled, &loudnessEnabled)
+        try load(.balance, &balance)
+        try load(.mono, &mono)
+        try load(.delay, &delay)
     }
 }
 
@@ -230,10 +266,15 @@ final class EffectChain: @unchecked Sendable {
     private var compressorEnvelope: Double = 0
     private var compressorReduction: Double = 0
 
-    private var limiterGain: Double = 1
+    private var limiter = PeakLimiter()
+    private let normalizer = LoudnessNormalizer()
 
     private var delayLine: DelayLine?
     private var delayChannels = 0
+
+    /// What loudness normalisation is doing, when it is on. Safe to read from
+    /// any thread.
+    var loudnessReading: LoudnessReading { normalizer.reading }
 
     /// Replace the settings. Safe to call from any thread.
     func update(_ settings: EffectSettings) {
@@ -261,6 +302,9 @@ final class EffectChain: @unchecked Sendable {
 
         if version != appliedVersion || rate != sampleRate {
             let rateChanged = rate != sampleRate
+            // Start measuring afresh each time normalisation is switched on,
+            // rather than from whatever was heard the last time.
+            if latest.loudnessEnabled && !settings.loudnessEnabled { normalizer.reset() }
             settings = latest
             sampleRate = rate
             appliedVersion = version
@@ -290,6 +334,9 @@ final class EffectChain: @unchecked Sendable {
         if settings.gateEnabled { gate(channels, frameCount) }
         if settings.compressorEnabled { compress(channels, frameCount) }
         if settings.balance != 0 && channels.count >= 2 { applyBalance(channels, frameCount) }
+        if settings.loudnessEnabled {
+            normalizer.process(channels, frameCount: frameCount, sampleRate: sampleRate)
+        }
         if settings.limiterEnabled { limit(channels, frameCount) }
 
         if settings.delay > 0, let delayLine {
@@ -425,26 +472,9 @@ final class EffectChain: @unchecked Sendable {
         }
     }
 
-    /// Instant attack, so no sample ever passes the ceiling; smooth release so
-    /// the gain does not flutter.
     private func limit(_ channels: [UnsafeMutablePointer<Float>], _ frameCount: Int) {
-        let ceiling = pow(10, settings.limiterCeiling / 20)
-        let release = coefficient(milliseconds: 80)
-        let hardCeiling = Float(ceiling)
-
-        for frame in 0..<frameCount {
-            var peak: Double = 0
-            for channel in channels { peak = max(peak, Double(abs(channel[frame]))) }
-            let needed = peak > ceiling ? ceiling / peak : 1
-            limiterGain = needed < limiterGain ? needed : needed + (limiterGain - needed) * release
-
-            let gain = Float(limiterGain)
-            for channel in channels {
-                var value = channel[frame] * gain
-                // Rounding can leave a sample a hair over; never let it through.
-                if value > hardCeiling { value = hardCeiling } else if value < -hardCeiling { value = -hardCeiling }
-                channel[frame] = value
-            }
-        }
+        limiter.process(channels, frameCount: frameCount,
+                        ceiling: pow(10, settings.limiterCeiling / 20),
+                        release: coefficient(milliseconds: 80))
     }
 }

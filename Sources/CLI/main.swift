@@ -376,6 +376,10 @@ func runMix(seconds: Double, deviceName: String, placements: [String]) throws {
             print("Delay  : \(parts[0]) \(ms) ms")
         }
     }
+    if ProcessInfo.processInfo.environment["TAPDECK_LOUDNESS"] == "1" {
+        mixer.normalizesLoudness = true
+        print("Loudness: evened out to \(LoudnessTuning.shared.values.target) LUFS")
+    }
     if let value = ProcessInfo.processInfo.environment["TAPDECK_MIX_VOLUME"].flatMap(Float.init) {
         mixer.volume = value
         print("Volume : \(value)")
@@ -905,6 +909,189 @@ func runEffectsTest() {
     if passed != total { exit(1) }
 }
 
+func runLoudnessTest() {
+    var passed = 0, total = 0
+
+    func report(_ label: String, _ ok: Bool, _ detail: String) {
+        total += 1; if ok { passed += 1 }
+        print("\(ok ? "PASS" : "FAIL")  \(label.padding(toLength: 50, withPad: " ", startingAt: 0)) \(detail)")
+    }
+
+    /// Momentary loudness of a steady signal, after `seconds` of it.
+    func meterReading(rate: Double, seconds: Double, fill: (Int, Int) -> Float, channels: Int) -> Double {
+        var meter = LoudnessMeter()
+        meter.configure(sampleRate: rate)
+        let storage = (0..<channels).map { _ in UnsafeMutablePointer<Float>.allocate(capacity: 512) }
+        defer { storage.forEach { $0.deallocate() } }
+        var last = 0.0, cursor = 0
+        while cursor < Int(seconds * rate) {
+            for channel in 0..<channels { for i in 0..<512 { storage[channel][i] = fill(channel, cursor + i) } }
+            var offset = 0
+            while offset < 512 {
+                let chunk = min(512 - offset, meter.framesUntilBlockEnds)
+                if let value = meter.measure(storage, offset: offset, frameCount: chunk) { last = value.momentary }
+                offset += chunk
+            }
+            cursor += 512
+        }
+        return LoudnessMeter.loudness(meanSquare: last)
+    }
+
+    // The standard's calibration: a 0 dBFS 997 Hz sine in one channel of a
+    // stereo pair reads -3.01 LUFS, and in both reads 0.
+    for rate in [48_000.0, 44_100.0] {
+        let sine: (Int, Int) -> Float = { _, i in Float(sin(2 * .pi * 997 * Double(i) / rate)) }
+        let left = meterReading(rate: rate, seconds: 2, fill: { c, i in c == 0 ? sine(c, i) : 0 }, channels: 2)
+        let both = meterReading(rate: rate, seconds: 2, fill: sine, channels: 2)
+        report("meter \(Int(rate)) Hz: 997 Hz 0 dBFS in one channel", abs(left - (-3.01)) < 0.05,
+               String(format: "%.2f LUFS (expect -3.01)", left))
+        report("meter \(Int(rate)) Hz: same in both channels", abs(both) < 0.05,
+               String(format: "%.2f LUFS (expect 0.00)", both))
+    }
+    // K-weighting's high-pass: deep bass counts for much less.
+    let bass = meterReading(rate: 48_000, seconds: 2, fill: { _, i in Float(sin(2 * .pi * 20 * Double(i) / 48_000)) },
+                            channels: 2)
+    report("meter: 20 Hz counts for much less than 1 kHz", bass < -10, String(format: "%.2f LUFS", bass))
+
+    // Noise, scaled to a given loudness. Uniform white noise from a fixed seed.
+    let rate = 48_000.0
+    var seed: UInt64 = 0x9E3779B97F4A7C15
+    func noise() -> Float {
+        seed = seed &* 6364136223846793005 &+ 1442695040888963407
+        return Float(Int64(bitPattern: seed >> 11) - (1 << 52)) / Float(1 << 52)
+    }
+    let unitLoudness = meterReading(rate: rate, seconds: 3, fill: { _, _ in noise() }, channels: 2)
+
+    struct Segment { var lufs: Double; var seconds: Double }
+    struct Result { var outputLoudness: Double; var peak: Double; var reading: LoudnessReading; var peakAfter: [Double] }
+
+    /// Play noise segments through `process`, reporting per segment the output
+    /// loudness over its last second, its peak, and the reading at its end.
+    func play(_ segments: [Segment], process: ([UnsafeMutablePointer<Float>], Int) -> LoudnessReading) -> [Result] {
+        let block = 512
+        let storage = (0..<2).map { _ in UnsafeMutablePointer<Float>.allocate(capacity: block) }
+        defer { storage.forEach { $0.deallocate() } }
+        var results: [Result] = []
+        for segment in segments {
+            let scale = Float(pow(10, (segment.lufs - unitLoudness) / 20))
+            let frames = Int(segment.seconds * rate)
+            var energy = 0.0, counted = 0, peak: Float = 0
+            var reading = LoudnessReading(loudness: nil, gain: 0)
+            var peakAfter: [Double] = []
+            var cursor = 0
+            var meter = LoudnessMeter()
+            meter.configure(sampleRate: rate)
+            while cursor < frames {
+                for channel in 0..<2 { for i in 0..<block { storage[channel][i] = noise() * scale } }
+                reading = process(storage, block)
+                for i in 0..<block { peak = max(peak, abs(storage[0][i]), abs(storage[1][i])) }
+                if cursor >= frames - Int(rate) {
+                    var offset = 0
+                    while offset < block {
+                        let chunk = min(block - offset, meter.framesUntilBlockEnds)
+                        _ = meter.measure(storage, offset: offset, frameCount: chunk)
+                        offset += chunk
+                    }
+                    for channel in 0..<2 { for i in 0..<block { energy += Double(storage[channel][i] * storage[channel][i]) } }
+                    counted += block
+                }
+                cursor += block
+                // Momentary gain every 100 ms, for the catch-up check.
+                if cursor % 4800 < block { peakAfter.append(reading.gain) }
+            }
+            // Loudness from the K-weighted meter would need its own accumulator;
+            // noise is flat, so plain mean square plus the unit offset is close.
+            let meanSquare = energy / Double(max(1, counted))
+            let unitMeanSquare = 2.0 / 3.0 // two channels of uniform noise in ±1
+            let loudness = unitLoudness + 10 * log10(max(meanSquare, 1e-12) / unitMeanSquare)
+            results.append(Result(outputLoudness: loudness, peak: 20 * log10(Double(max(peak, 1e-9))),
+                                  reading: reading, peakAfter: peakAfter))
+        }
+        return results
+    }
+
+    func normalizer(_ tuning: LoudnessTuning.Values) -> ([UnsafeMutablePointer<Float>], Int) -> LoudnessReading {
+        let n = LoudnessNormalizer()
+        return { channels, frames in
+            n.process(channels, frameCount: frames, sampleRate: rate, tuning: tuning)
+            return n.reading
+        }
+    }
+
+    var tuning = LoudnessTuning.Values() // -16 LUFS, +12 dB at most, balanced
+
+    // A loud programme is brought down to the target.
+    let loud = play([Segment(lufs: -6, seconds: 8)], process: normalizer(tuning))[0]
+    report("loud -6 LUFS lands on the -16 target", abs(loud.outputLoudness - (-16)) < 0.5,
+           String(format: "%.2f LUFS, gain %+.1f dB", loud.outputLoudness, loud.reading.gain))
+
+    // A quiet one is raised, but no more than the maximum boost.
+    let quiet = play([Segment(lufs: -34, seconds: 20)], process: normalizer(tuning))[0]
+    report("quiet -34 LUFS raised by the 12 dB maximum", abs(quiet.outputLoudness - (-22)) < 0.5,
+           String(format: "%.2f LUFS (expect -22), gain %+.1f dB", quiet.outputLoudness, quiet.reading.gain))
+    tuning.maximumBoost = 24
+    let quietFull = play([Segment(lufs: -34, seconds: 20)], process: normalizer(tuning))[0]
+    report("quiet -34 LUFS with 24 dB allowed reaches -16", abs(quietFull.outputLoudness - (-16)) < 0.5,
+           String(format: "%.2f LUFS", quietFull.outputLoudness))
+    tuning.maximumBoost = 12
+
+    // Silence does not pull the gain up.
+    let silence = play([Segment(lufs: -26, seconds: 8), Segment(lufs: -75, seconds: 10)], process: normalizer(tuning))
+    report("silence after -26 LUFS holds the +10 dB gain", abs(silence[1].reading.gain - 10) < 0.5,
+           String(format: "%+.2f dB before, %+.2f dB after 10 s of silence",
+                  silence[0].reading.gain, silence[1].reading.gain))
+
+    // A short pause is ignored; a lasting drop is followed.
+    let pause = play([Segment(lufs: -16, seconds: 8), Segment(lufs: -40, seconds: 1.5)], process: normalizer(tuning))
+    report("1.5 s drop of 24 LU is taken for a pause", abs(pause[1].reading.gain - pause[0].reading.gain) < 0.3,
+           String(format: "%+.2f dB -> %+.2f dB", pause[0].reading.gain, pause[1].reading.gain))
+    let drop = play([Segment(lufs: -16, seconds: 8), Segment(lufs: -32, seconds: 15)], process: normalizer(tuning))
+    report("lasting 16 LU drop is followed", drop[1].reading.gain > 12 - 1,
+           String(format: "%+.2f dB after 15 s (expect +12, the maximum)", drop[1].reading.gain))
+
+    // A sudden jump: caught within a second, and no peak past the ceiling.
+    let jump = play([Segment(lufs: -40, seconds: 10), Segment(lufs: -4, seconds: 3)], process: normalizer(tuning))
+    let gainAfterOneSecond = jump[1].peakAfter.count > 10 ? jump[1].peakAfter[10] : 99
+    report("jump from -40 to -4 LUFS: gain after 1 s", gainAfterOneSecond < -8,
+           String(format: "%+.1f dB (target -12)", gainAfterOneSecond))
+    report("jump: no peak above the -1 dBFS ceiling", jump[1].peak <= -1 + 0.01,
+           String(format: "peak %.2f dBFS", jump[1].peak))
+    let gainAfterAThird = jump[1].peakAfter.count > 3 ? jump[1].peakAfter[3] : 99
+    report("jump: most of the way there within 0.4 s", gainAfterAThird < -9,
+           String(format: "%+.1f dB (target -12)", gainAfterAThird))
+
+    // The first sound after silence is judged on its own, not averaged with the
+    // silence before it.
+    let onset = play([Segment(lufs: -75, seconds: 2), Segment(lufs: -6, seconds: 2)], process: normalizer(tuning))
+    let onsetGain = onset[1].peakAfter.count > 2 ? onset[1].peakAfter[2] : 99
+    report("first sound after silence: gain after 0.3 s", abs(onsetGain - (-10)) < 1,
+           String(format: "%+.1f dB (target -10)", onsetGain))
+
+    // Through the effect chain.
+    var settings = EffectSettings(); settings.loudnessEnabled = true
+    let chain = EffectChain(); chain.update(settings)
+    let format = AVAudioFormat.discrete(sampleRate: rate, channels: 2)!
+    let chained = play([Segment(lufs: -8, seconds: 8)]) { channels, frames in
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames))!
+        buffer.frameLength = AVAudioFrameCount(frames)
+        for c in 0..<2 { buffer.floatChannelData![c].update(from: channels[c], count: frames) }
+        chain.process(buffer)
+        for c in 0..<2 { channels[c].update(from: buffer.floatChannelData![c], count: frames) }
+        return chain.loudnessReading
+    }[0]
+    report("effect chain: -8 LUFS source lands on -16", abs(chained.outputLoudness - (-16)) < 0.5,
+           String(format: "%.2f LUFS", chained.outputLoudness))
+
+    // Settings saved before loudness existed still load.
+    let old = #"{"lowCutEnabled":true,"lowCutFrequency":120}"#
+    let decoded = try? JSONDecoder().decode(EffectSettings.self, from: Data(old.utf8))
+    report("older saved effects still decode", decoded?.lowCutFrequency == 120 && decoded?.loudnessEnabled == false,
+           decoded.map { "low cut \($0.lowCutFrequency) Hz, loudness \($0.loudnessEnabled)" } ?? "failed to decode")
+
+    print("\(passed)/\(total) passed")
+    if passed != total { exit(1) }
+}
+
 // MARK: - entry
 
 setvbuf(stdout, nil, _IOLBF, 0)
@@ -957,6 +1144,9 @@ do {
 
     case "fxtest":
         runEffectsTest()
+
+    case "loudtest":
+        runLoudnessTest()
 
     case "graphtest":
         runGraphTest()
