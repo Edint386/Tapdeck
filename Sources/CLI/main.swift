@@ -612,6 +612,44 @@ func runRate(deviceName: String, rate: Double) throws {
 }
 
 
+/// Finding a saved device again, including under a new UID.
+func runDeviceMatchTest() {
+    var passed = 0, total = 0
+    func report(_ label: String, _ ok: Bool) {
+        total += 1; if ok { passed += 1 }
+        print("\(ok ? "PASS" : "FAIL")  \(label)")
+    }
+    func device(_ uid: String, _ name: String, _ transport: AudioDevice.Transport = .other) -> AudioDevice {
+        AudioDevice(deviceID: 1, uid: uid, name: name, inputChannels: 0, outputChannels: 2, sampleRate: 44_100,
+                    transport: transport)
+    }
+    let savedAirPlay = "d1c3a716-81a7-4657-bfaa-b6c7ff1538b3-50150987687166-Audio"
+    let currentAirPlay = "d1c3a716-81a7-4657-bfaa-b6c7ff1538b3-89446392180958-Audio"
+    let speakers = device("BuiltInSpeakerDevice", "MacBook Pro Speakers", .builtIn)
+    let airPlay = device(currentAirPlay, "AirPlay", .airPlay)
+
+    report("exact UID still wins", AudioDevice.find(uid: "BuiltInSpeakerDevice", name: "MacBook Pro Speakers",
+                                                   in: [speakers, airPlay])?.uid == "BuiltInSpeakerDevice")
+    report("AirPlay found under its new UID",
+           AudioDevice.find(uid: savedAirPlay, name: "AirPlay", in: [speakers, airPlay])?.uid == currentAirPlay)
+    report("not matched when the name differs",
+           AudioDevice.find(uid: savedAirPlay, name: "Kitchen", in: [speakers, airPlay]) == nil)
+    report("not matched when two candidates look alike",
+           AudioDevice.find(uid: savedAirPlay, name: "AirPlay",
+                            in: [airPlay, device("d1c3a716-81a7-4657-bfaa-b6c7ff1538b3-11111111111-Audio", "AirPlay")]) == nil)
+    report("a UID without long numbers has no fallback",
+           AudioDevice.find(uid: "BuiltInHeadphones", name: "MacBook Pro Speakers", in: [speakers]) == nil)
+    report("short numbers are part of the identity",
+           AudioDevice.stableSignature(of: "AppleUSBAudioEngine:Vendor:Box:1234-2") == "AppleUSBAudioEngine:Vendor:Box:1234-2")
+    report("GUID segments are kept", AudioDevice.stableSignature(of: savedAirPlay)
+           == "d1c3a716-81a7-4657-bfaa-b6c7ff1538b3-Audio")
+    report("typical latencies", AudioDevice.Transport.airPlay.typicalLatencyMilliseconds == 2_000
+           && AudioDevice.Transport.bluetooth.typicalLatencyMilliseconds == 150
+           && AudioDevice.Transport.builtIn.typicalLatencyMilliseconds == 0)
+    print("\(passed)/\(total) passed")
+    if passed != total { exit(1) }
+}
+
 /// Check RoutingGraph against cases whose answer is known.
 func runGraphTest() {
     func check(_ label: String, _ build: (inout RoutingGraph) -> Void, expectLoop: Bool) -> Bool {
@@ -1160,6 +1198,9 @@ do {
 
     case "loudtest":
         runLoudnessTest()
+
+    case "devicetest":
+        runDeviceMatchTest()
 
 
     case "graphtest":

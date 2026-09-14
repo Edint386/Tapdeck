@@ -202,8 +202,11 @@ final class Mixer: @unchecked Sendable {
     /// what you are sending.
     final class Output: Identifiable {
         let id = UUID()
-        let deviceUID: String
+        /// Can change when the device has come back under a new UID.
+        fileprivate(set) var deviceUID: String
         let deviceName: String
+        /// How the device is connected, as last seen.
+        var transport: AudioDevice.Transport = .other
 
         var gain: Float = 1.0
         var isMuted = false
@@ -431,8 +434,9 @@ final class Mixer: @unchecked Sendable {
     /// Add an output. Changing outputs while running restarts the mix, since
     /// the primary output's clock may change.
     @discardableResult
-    func addOutput(uid: String, name: String) -> Output {
+    func addOutput(uid: String, name: String, transport: AudioDevice.Transport = .other) -> Output {
         let output = Output(deviceUID: uid, deviceName: name)
+        output.transport = transport
         outputs.append(output)
         restartIfRunning()
         return output
@@ -517,13 +521,19 @@ final class Mixer: @unchecked Sendable {
         var reasons: [String] = []
         var primary: Output?
         var secondaries: [Output] = []
+        let devices = (try? AudioDevice.all()) ?? []
         for output in outputs {
             do {
-                guard let device = try AudioDevice.find(uid: output.deviceUID) else {
-                    output.markDetached("\(output.deviceName) was not found")
-                    reasons.append("\(output.deviceName) was not found")
+                guard let device = AudioDevice.find(uid: output.deviceUID, name: output.deviceName, in: devices) else {
+                    let reason = output.transport == .airPlay
+                        ? "\(output.deviceName) is not available — turn the receiver on, or choose it in Control Center › Sound"
+                        : "\(output.deviceName) was not found"
+                    output.markDetached(reason)
+                    reasons.append(reason)
                     continue
                 }
+                output.deviceUID = device.uid
+                output.transport = device.transport
                 let stage = try DeviceOutput(device: device)
                 output.attach(device: stage, primary: primary == nil)
                 output.readReportedLatency(of: device.deviceID)
