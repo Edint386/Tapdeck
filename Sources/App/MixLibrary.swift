@@ -14,6 +14,7 @@ struct SavedMix: Codable, Identifiable {
     /// Optional so mixes saved before mix volume existed still decode.
     var volume: Float?
     var isMuted: Bool?
+    var normalizesLoudness: Bool?
 }
 
 struct SavedOutput: Codable {

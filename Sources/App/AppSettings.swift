@@ -58,6 +58,45 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    // MARK: - Loudness
+
+    /// Loudness every normaliser aims for, in LUFS.
+    @Published var loudnessTarget: Double {
+        didSet {
+            defaults.set(loudnessTarget, forKey: Keys.loudnessTarget)
+            pushLoudnessTuning()
+        }
+    }
+
+    /// The most a quiet programme is raised, in dB.
+    @Published var loudnessMaximumBoost: Double {
+        didSet {
+            defaults.set(loudnessMaximumBoost, forKey: Keys.loudnessMaximumBoost)
+            pushLoudnessTuning()
+        }
+    }
+
+    @Published var loudnessSpeed: LoudnessTuning.Speed {
+        didSet {
+            defaults.set(loudnessSpeed.rawValue, forKey: Keys.loudnessSpeed)
+            pushLoudnessTuning()
+        }
+    }
+
+    /// Common delivery targets, loudest last.
+    static let loudnessTargets: [(value: Double, title: String)] = [
+        (-23, "−23 LUFS — broadcast, most headroom"),
+        (-18, "−18 LUFS — quiet listening"),
+        (-16, "−16 LUFS — Apple Music, podcasts"),
+        (-14, "−14 LUFS — YouTube, Spotify"),
+    ]
+
+    private func pushLoudnessTuning() {
+        LoudnessTuning.shared.values = LoudnessTuning.Values(target: loudnessTarget,
+                                                             maximumBoost: loudnessMaximumBoost,
+                                                             speed: loudnessSpeed)
+    }
+
     // MARK: - General
 
     @Published var showsMenuBarItem: Bool {
@@ -78,6 +117,9 @@ final class AppSettings: ObservableObject {
         static let bufferSize = "settings.bufferSize"
         static let masterVolume = "settings.masterVolume"
         static let masterMuted = "settings.masterMuted"
+        static let loudnessTarget = "settings.loudnessTarget"
+        static let loudnessMaximumBoost = "settings.loudnessMaximumBoost"
+        static let loudnessSpeed = "settings.loudnessSpeed"
         static let showsMenuBarItem = "settings.showsMenuBarItem"
         static let recordingFolder = "settings.recordingFolder"
     }
@@ -91,11 +133,18 @@ final class AppSettings: ObservableObject {
         masterVolume = defaults.object(forKey: Keys.masterVolume) as? Float ?? 1
         isMasterMuted = defaults.bool(forKey: Keys.masterMuted)
 
+        let tuning = LoudnessTuning.Values()
+        loudnessTarget = defaults.object(forKey: Keys.loudnessTarget) as? Double ?? tuning.target
+        loudnessMaximumBoost = defaults.object(forKey: Keys.loudnessMaximumBoost) as? Double ?? tuning.maximumBoost
+        loudnessSpeed = defaults.string(forKey: Keys.loudnessSpeed)
+            .flatMap(LoudnessTuning.Speed.init(rawValue:)) ?? tuning.speed
+
         // Property observers do not run during init, so apply engine-facing
         // values explicitly.
         Mixer.bufferCushionFrames = bufferSize.rawValue
         MasterVolume.shared.volume = masterVolume
         MasterVolume.shared.isMuted = isMasterMuted
+        pushLoudnessTuning()
     }
 
     /// Ask for a folder with the standard panel.

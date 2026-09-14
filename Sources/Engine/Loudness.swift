@@ -63,6 +63,13 @@ struct LoudnessReading: Equatable {
     var loudness: Double?
     /// Gain being applied, in dB.
     var gain: Double
+
+    /// "−21 LUFS → +5.0 dB", or a note that nothing has been heard yet.
+    static func caption(_ reading: LoudnessReading?) -> String {
+        guard let reading, let loudness = reading.loudness else { return "waiting for sound" }
+        return String(format: "%.0f LUFS → %+.1f dB", loudness, reading.gain)
+            .replacingOccurrences(of: "-", with: "−")
+    }
 }
 
 // MARK: - Meter
@@ -137,10 +144,16 @@ struct LoudnessMeter {
     /// Frames still needed to complete the current block.
     var framesUntilBlockEnds: Int { blockLength - blockFrames }
 
+    /// Mean square of the block just completed, and of the last 400 ms.
+    struct Measurement {
+        var block: Double
+        var momentary: Double
+    }
+
     /// Measure `frameCount` frames starting at `offset`, which must not run
-    /// past the end of the current block. Returns the momentary mean square
-    /// when this completes a block, otherwise nil.
-    mutating func measure(_ channels: [UnsafeMutablePointer<Float>], offset: Int, frameCount: Int) -> Double? {
+    /// past the end of the current block. Returns a measurement when this
+    /// completes a block, otherwise nil.
+    mutating func measure(_ channels: [UnsafeMutablePointer<Float>], offset: Int, frameCount: Int) -> Measurement? {
         let width = min(channels.count, Self.maximumChannels)
         let s = shelf, h = highPass
         var energy: Double = 0
@@ -167,7 +180,8 @@ struct LoudnessMeter {
         blockFrames += frameCount
         guard blockFrames >= blockLength else { return nil }
 
-        blocks[nextBlock] = blockEnergy / Double(blockFrames)
+        let block = blockEnergy / Double(blockFrames)
+        blocks[nextBlock] = block
         nextBlock = (nextBlock + 1) % Self.momentaryBlocks
         filledBlocks = min(filledBlocks + 1, Self.momentaryBlocks)
         blockEnergy = 0
@@ -175,7 +189,7 @@ struct LoudnessMeter {
 
         var sum: Double = 0
         for index in 0..<filledBlocks { sum += blocks[index] }
-        return sum / Double(filledBlocks)
+        return Measurement(block: block, momentary: sum / Double(filledBlocks))
     }
 
     /// Mean square to loudness in LUFS.
@@ -203,7 +217,7 @@ final class LoudnessNormalizer: @unchecked Sendable {
     /// A rise this far above the estimate is followed quickly whatever the
     /// speed, in LU.
     static let jumpThreshold: Double = 10
-    static let jumpTimeConstant: Double = 0.25
+    static let jumpTimeConstant: Double = 0.1
     /// A drop this far below the estimate is taken for a pause at first and
     /// only followed once it has lasted `pauseSeconds`.
     static let pauseThreshold: Double = 20
@@ -262,8 +276,8 @@ final class LoudnessNormalizer: @unchecked Sendable {
         var offset = 0
         while offset < frameCount {
             let chunk = min(frameCount - offset, meter.framesUntilBlockEnds)
-            if let momentary = meter.measure(channels, offset: offset, frameCount: chunk) {
-                follow(momentary, tuning: tuning)
+            if let measurement = meter.measure(channels, offset: offset, frameCount: chunk) {
+                follow(measurement, tuning: tuning)
             }
 
             let target = targetGain
@@ -282,12 +296,18 @@ final class LoudnessNormalizer: @unchecked Sendable {
                         ceiling: pow(10, Self.ceiling / 20), release: limiterRelease)
     }
 
-    /// Move the estimate toward one new block's momentary loudness.
-    private func follow(_ momentary: Double, tuning: LoudnessTuning.Values) {
-        let loudness = LoudnessMeter.loudness(meanSquare: momentary)
+    /// Move the estimate toward the newest measurement.
+    ///
+    /// Normally the estimate follows the 400 ms momentary loudness, which is
+    /// steady enough not to chase every drum hit. After a jump it follows the
+    /// newest 100 ms block instead, because the 400 ms average takes most of
+    /// half a second to show a jump in full.
+    private func follow(_ measurement: LoudnessMeter.Measurement, tuning: LoudnessTuning.Values) {
+        let loudness = LoudnessMeter.loudness(meanSquare: measurement.momentary)
+        let latest = LoudnessMeter.loudness(meanSquare: measurement.block)
 
-        if loudness > Self.silenceThreshold {
-            if let current = estimate {
+        if let current = estimate {
+            if loudness > Self.silenceThreshold {
                 var follows = true
                 if loudness < current - Self.pauseThreshold {
                     pausedBlocks += 1
@@ -296,26 +316,25 @@ final class LoudnessNormalizer: @unchecked Sendable {
                     pausedBlocks = 0
                 }
 
-                if follows {
-                    // Once a jump starts, keep following it quickly until the
-                    // estimate has actually arrived, not just come within range.
-                    if loudness > current + Self.jumpThreshold {
-                        catchingUp = true
-                    } else if loudness < current + 1 {
-                        catchingUp = false
-                    }
-                    let timeConstant: Double
-                    if catchingUp {
-                        timeConstant = min(tuning.speed.rise, Self.jumpTimeConstant)
-                    } else {
-                        timeConstant = loudness > current ? tuning.speed.rise : tuning.speed.fall
-                    }
-                    let alpha = 1 - exp(-LoudnessMeter.blockSeconds / timeConstant)
-                    estimate = current + alpha * (loudness - current)
+                // Once a jump starts, keep following it quickly until the
+                // estimate has actually arrived, not just come within range.
+                if loudness > current + Self.jumpThreshold {
+                    catchingUp = true
+                } else if latest < current + 1 {
+                    catchingUp = false
                 }
-            } else {
-                estimate = loudness
+
+                if catchingUp {
+                    estimate = current + alpha(Self.jumpTimeConstant) * (latest - current)
+                } else if follows {
+                    let timeConstant = loudness > current ? tuning.speed.rise : tuning.speed.fall
+                    estimate = current + alpha(timeConstant) * (loudness - current)
+                }
             }
+        } else if latest > Self.silenceThreshold {
+            // The first sound: take the newest block alone, since the 400 ms
+            // window still holds the silence before it.
+            estimate = latest
         }
 
         if let estimate {
@@ -323,6 +342,11 @@ final class LoudnessNormalizer: @unchecked Sendable {
             targetGain = pow(10, decibels / 20)
         }
         publish()
+    }
+
+    /// Per-block smoothing factor for a time constant in seconds.
+    private func alpha(_ timeConstant: Double) -> Double {
+        1 - exp(-LoudnessMeter.blockSeconds / timeConstant)
     }
 
     private func publish() {

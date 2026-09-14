@@ -929,7 +929,7 @@ func runLoudnessTest() {
             var offset = 0
             while offset < 512 {
                 let chunk = min(512 - offset, meter.framesUntilBlockEnds)
-                if let value = meter.measure(storage, offset: offset, frameCount: chunk) { last = value }
+                if let value = meter.measure(storage, offset: offset, frameCount: chunk) { last = value.momentary }
                 offset += chunk
             }
             cursor += 512
@@ -1056,6 +1056,16 @@ func runLoudnessTest() {
            String(format: "%+.1f dB (target -12)", gainAfterOneSecond))
     report("jump: no peak above the -1 dBFS ceiling", jump[1].peak <= -1 + 0.01,
            String(format: "peak %.2f dBFS", jump[1].peak))
+    let gainAfterAThird = jump[1].peakAfter.count > 3 ? jump[1].peakAfter[3] : 99
+    report("jump: most of the way there within 0.4 s", gainAfterAThird < -9,
+           String(format: "%+.1f dB (target -12)", gainAfterAThird))
+
+    // The first sound after silence is judged on its own, not averaged with the
+    // silence before it.
+    let onset = play([Segment(lufs: -75, seconds: 2), Segment(lufs: -6, seconds: 2)], process: normalizer(tuning))
+    let onsetGain = onset[1].peakAfter.count > 2 ? onset[1].peakAfter[2] : 99
+    report("first sound after silence: gain after 0.3 s", abs(onsetGain - (-10)) < 1,
+           String(format: "%+.1f dB (target -10)", onsetGain))
 
     // Through the effect chain.
     var settings = EffectSettings(); settings.loudnessEnabled = true

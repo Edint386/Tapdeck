@@ -25,6 +25,8 @@ final class MixSession: ObservableObject, Identifiable {
         var effects: EffectSettings
         var replacesOriginal: Bool
         var canReplaceOriginal: Bool
+        /// What the source's loudness normalisation is doing, while running.
+        var loudnessReading: LoudnessReading?
     }
 
     /// One output row, as displayed.
@@ -71,6 +73,18 @@ final class MixSession: ObservableObject, Identifiable {
         }
     }
 
+    /// Brings everything the mix plays to the loudness set in Settings.
+    @Published var normalizesLoudness = false {
+        didSet {
+            engine.normalizesLoudness = normalizesLoudness
+            if !normalizesLoudness { loudnessReading = nil }
+            if oldValue != normalizesLoudness { changed() }
+        }
+    }
+
+    /// What mix-level normalisation is doing while the mix runs.
+    @Published private(set) var loudnessReading: LoudnessReading?
+
     private let engine = Mixer()
     private weak var library: MixerModel?
     private var iconCache: [String: NSImage] = [:]
@@ -92,8 +106,10 @@ final class MixSession: ObservableObject, Identifiable {
         }
         volume = saved.volume ?? 1
         isMuted = saved.isMuted ?? false
+        normalizesLoudness = saved.normalizesLoudness ?? false
         engine.volume = volume
         engine.isMuted = isMuted
+        engine.normalizesLoudness = normalizesLoudness
         for savedOutput in saved.outputs {
             let output = engine.addOutput(uid: savedOutput.uid, name: savedOutput.name)
             output.gain = savedOutput.gain
@@ -112,7 +128,8 @@ final class MixSession: ObservableObject, Identifiable {
                                  delayMilliseconds: $0.delayMilliseconds == 0 ? nil : $0.delayMilliseconds)
                  },
                  volume: volume,
-                 isMuted: isMuted)
+                 isMuted: isMuted,
+                 normalizesLoudness: normalizesLoudness ? true : nil)
     }
 
     /// Device UIDs this mix captures from, for feedback checks.
@@ -364,6 +381,7 @@ final class MixSession: ObservableObject, Identifiable {
         engine.stop()
         isRunning = false
         level = 0
+        loudnessReading = nil
         syncRows()
         sources = sources.map { var row = $0; row.level = 0; return row }
         outputs = outputs.map { var row = $0; row.level = 0; return row }
@@ -387,10 +405,20 @@ final class MixSession: ObservableObject, Identifiable {
         guard isRunning else { return }
         let sourcePeaks = Dictionary(uniqueKeysWithValues: engine.sources.map { ($0.id, $0.ring.takePeak()) })
         let outputPeaks = Dictionary(uniqueKeysWithValues: engine.outputs.map { ($0.id, $0.takePeak()) })
+        let sourceLoudness = Dictionary(uniqueKeysWithValues: engine.sources.map {
+            ($0.id, $0.effectSettings.loudnessEnabled ? $0.effects.loudnessReading : nil)
+        })
         // Ease the fall only; a rise is shown immediately.
-        sources = sources.map { var row = $0; row.level = max(sourcePeaks[row.id] ?? 0, row.level * 0.72); return row }
+        sources = sources.map { source in
+            var row = source
+            row.level = max(sourcePeaks[row.id] ?? 0, row.level * 0.72)
+            row.loudnessReading = sourceLoudness[row.id] ?? nil
+            return row
+        }
         outputs = outputs.map { var row = $0; row.level = max(outputPeaks[row.id] ?? 0, row.level * 0.72); return row }
         level = max(outputs.first(where: \.isPrimary)?.level ?? 0, level * 0.72)
+        let reading = normalizesLoudness ? engine.loudnessReading : nil
+        if reading != loudnessReading { loudnessReading = reading }
     }
 
     // MARK: - Building the display rows
@@ -410,7 +438,9 @@ final class MixSession: ObservableObject, Identifiable {
                       channelOffset: source.channelOffset,
                       effects: source.effectSettings,
                       replacesOriginal: source.replacesOriginal,
-                      canReplaceOriginal: source.canReplaceOriginal)
+                      canReplaceOriginal: source.canReplaceOriginal,
+                      loudnessReading: isRunning && source.effectSettings.loudnessEnabled
+                          ? sources.first { $0.id == source.id }?.loudnessReading : nil)
         }
         outputs = engine.outputs.enumerated().map { index, output in
             OutputRow(id: output.id,

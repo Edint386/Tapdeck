@@ -80,7 +80,51 @@ struct AudioSettingsView: View {
             } header: {
                 Text("Latency")
             }
+
+            Section {
+                LabeledContent("Target") {
+                    HStack(spacing: 8) {
+                        Slider(value: rounded($settings.loudnessTarget), in: -30...(-10))
+                            .frame(maxWidth: 180)
+                        Text(String(format: "%.0f LUFS", settings.loudnessTarget))
+                            .font(.system(.body, design: .monospaced))
+                            .frame(width: 80, alignment: .trailing)
+                        Menu("Presets") {
+                            ForEach(AppSettings.loudnessTargets, id: \.value) { preset in
+                                Button(preset.title) { settings.loudnessTarget = preset.value }
+                            }
+                        }
+                        .fixedSize()
+                    }
+                }
+                LabeledContent("Maximum boost") {
+                    HStack(spacing: 8) {
+                        Slider(value: rounded($settings.loudnessMaximumBoost), in: 0...24)
+                            .frame(maxWidth: 180)
+                        Text(String(format: "+%.0f dB", settings.loudnessMaximumBoost))
+                            .font(.system(.body, design: .monospaced))
+                            .frame(width: 80, alignment: .trailing)
+                    }
+                }
+                Picker("Speed", selection: $settings.loudnessSpeed) {
+                    Text("Gentle").tag(LoudnessTuning.Speed.gentle)
+                    Text("Balanced").tag(LoudnessTuning.Speed.balanced)
+                    Text("Fast").tag(LoudnessTuning.Speed.fast)
+                }
+                .pickerStyle(.segmented)
+                Text("“Even out loudness” on a mix or a source brings whatever plays to the target, so one video, site or song is about as loud as the next. Quiet material is raised by at most the maximum boost, so background noise is not blown up. Gentle keeps the rise and fall inside a song or film; Fast evens out more. Silence and short pauses leave the level alone, and a peak limiter at −1 dBFS catches sudden jumps.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                Text("Loudness")
+            }
         }
         .formStyle(.grouped)
+    }
+
+    /// Whole units, without the tick marks a stepped slider draws.
+    private func rounded(_ value: Binding<Double>) -> Binding<Double> {
+        Binding(get: { value.wrappedValue }, set: { value.wrappedValue = $0.rounded() })
     }
 }

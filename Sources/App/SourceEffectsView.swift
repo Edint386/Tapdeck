@@ -24,6 +24,7 @@ struct SourceEffectsView: View {
                         filterSection
                         equaliserSection
                         dynamicsSection
+                        loudnessSection(row)
                         stereoSection
                         delaySection
                     }
@@ -165,6 +166,23 @@ struct SourceEffectsView: View {
             labeledSlider("Ceiling", value: effects.limiterCeiling, range: -24...0, unit: "dB")
                 .disabled(!effects.wrappedValue.limiterEnabled)
             hint("No peak ever goes above the ceiling.")
+        }
+    }
+
+    // MARK: Loudness
+
+    private func loudnessSection(_ row: MixSession.SourceRow) -> some View {
+        section("Loudness") {
+            HStack {
+                Toggle("Even out loudness", isOn: effects.loudnessEnabled)
+                Spacer()
+                if row.effects.loudnessEnabled, mix.isRunning {
+                    Text(LoudnessReading.caption(row.loudnessReading))
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            hint("Brings this source to the loudness set in Settings › Audio, however loud or quiet it plays on its own. With the original sound replaced, it evens out what you hear too.")
         }
     }
 

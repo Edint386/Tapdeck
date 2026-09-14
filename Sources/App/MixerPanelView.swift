@@ -164,11 +164,31 @@ private struct MixEditorView: View {
 
     // MARK: Header
 
+    /// What mix-level normalisation is doing, in one short line. Kept as a
+    /// space when there is nothing to say, so the header does not jump.
+    private var loudnessCaption: String {
+        guard mix.normalizesLoudness, mix.isRunning else { return " " }
+        return LoudnessReading.caption(mix.loudnessReading)
+    }
+
     private var header: some View {
         HStack(spacing: 10) {
             TextField("Mix name", text: $mix.name)
                 .textFieldStyle(.plain)
                 .font(.title3.weight(.semibold))
+
+            VStack(spacing: 2) {
+                Toggle(isOn: $mix.normalizesLoudness) {
+                    Label("Even Out", systemImage: "waveform")
+                }
+                .toggleStyle(.button)
+                .controlSize(.small)
+                .help("Even out loudness: bring everything this mix plays to the loudness set in Settings › Audio, so one video, site or song is about as loud as the next")
+                Text(loudnessCaption)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
 
             VStack(alignment: .trailing, spacing: 3) {
                 VolumeControl(title: nil, volume: $mix.volume, isMuted: $mix.isMuted)
