@@ -57,6 +57,17 @@ it off at 0 dBFS, and only then did the speakers' own volume turn it down.
 | Know the delay without measuring | Not possible | The device reported 0 ms of latency while playing about 2 s late (Verified). |
 | Measure the delay automatically | Possible in principle, Unknown in practice | Play a test signal to the output, record it with the Mac's microphone, find the offset. Room noise and the microphone permission are the risks. |
 
+## More than one wireless output, and the headphone jack
+
+| Want | Status | Why |
+|---|---|---|
+| Several AirPlay receivers as separate Tapdeck outputs | Not possible | Core Audio shows one AirPlay device, standing for whatever macOS is connected to at the moment, not one device per receiver (seen with one receiver; not checked with several). Separate outputs would need one device per receiver, and apps cannot connect receivers themselves. |
+| Several AirPlay receivers playing the same thing | Unknown | Only if macOS itself groups them (AirPlay 2 receivers) behind that one device. Test: whether Control Center › Sound lets more than one receiver be ticked at once. |
+| AirPlay and Bluetooth from one mix | Possible (not yet tried with Bluetooth here) | A Bluetooth device is an ordinary output, and one mix plays to several outputs (Verified with speakers and AirPlay). Line Up delays the faster ones. A Bluetooth headset's microphone must not be used as a source: opening it switches the headset to call quality. |
+| Use the MacBook Pro's headphone jack (M1 Pro, 2021) as a stereo line input | Not possible | The jack's wiring is fixed in hardware: stereo out for headphones, and on four-pole headsets a mono microphone line. Software cannot turn an output into an input. The mono microphone line is mic-level and not meant for line signals (headset microphone support is Apple's general behaviour, not checked on this Mac). |
+| Bring an external source in by wire | Possible with hardware | A USB audio interface with a line input appears as an ordinary input device and can be a source. |
+| Bring a phone's or tablet's audio in without a cable | Possible in principle, Unknown here | The Mac can be an AirPlay receiver (System Settings › General › AirDrop & Handoff › AirPlay Receiver). What it receives plays on the Mac, where All system audio should capture it. Not tested. |
+
 ## Tests still to run (AirPlay receiver switched on)
 
 - **T1** With the AirPlay device present but not the Mac's output, open it as a Tapdeck output and record the error.
