@@ -12,6 +12,9 @@ elif [ -d /Applications/Xcode.app ]; then
   echo "note: Xcode is not usable (license not accepted?); building with the Command Line Tools" >&2
 fi
 SDK="$(xcrun --sdk macosx --show-sdk-path)"
+
+source tools/signing.sh
+SIGN_ID="$(signing_identity "${TAPDECK_SIGN_ID:-}")"
 TARGET="arm64-apple-macos15.0"
 mkdir -p build
 
@@ -33,7 +36,7 @@ rm -rf "$PROOF"
 mkdir -p "$PROOF/Contents/MacOS"
 cp Resources/Tapproof-Info.plist "$PROOF/Contents/Info.plist"
 cp build/tapproof "$PROOF/Contents/MacOS/tapproof"
-codesign --force --sign "${TAPDECK_SIGN_ID:--}" "$PROOF"
+codesign --force --sign "$SIGN_ID" "$PROOF"
 
 # -- 2. Tapdeck.app ---------------------------------------------------------
 echo "→ Tapdeck.app"
@@ -48,16 +51,6 @@ xcrun swiftc -O "${common_flags[@]}" -parse-as-library \
   -o "$APP/Contents/MacOS/Tapdeck" \
   Sources/Engine/*.swift Sources/App/*.swift
 
-# Signing: prefer the stable self-signed "Tapdeck Local" certificate. An ad-hoc
-# signature changes on every build, which resets the granted permissions.
-SIGN_ID="${TAPDECK_SIGN_ID:-}"
-if [ -z "$SIGN_ID" ]; then
-  if security find-certificate -c "Tapdeck Local" >/dev/null 2>&1; then
-    SIGN_ID="Tapdeck Local"
-  else
-    SIGN_ID="-"
-  fi
-fi
 echo "→ signing with: $SIGN_ID"
 codesign --force --sign "$SIGN_ID" "$APP"
 

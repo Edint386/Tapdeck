@@ -14,8 +14,10 @@ work.
   to `main` with `--no-ff`, and tag a version when a coherent set of changes
   lands (patch for small steps, minor for significant interface or feature
   changes).
-- Deliver the app installed in `/Applications` with the stable signing
-  identity, never as a build-directory prototype.
+- Deliver the app installed in `/Applications`, signed with the shared
+  `Mac Utilities Code Signing` certificate (`tools/signing.sh`), never as a
+  build-directory prototype. Without the certificate builds are ad-hoc and
+  privacy permissions reset on every build.
 - Verify audio behaviour by measurement, not by ear: `tapproof` captures through
   the app's own AUHAL path and the analyses read samples directly. ffmpeg's
   avfoundation capture drops blocks and is not trustworthy for this.

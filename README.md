@@ -153,15 +153,26 @@ sudo ./install-driver.sh     # once, to register the virtual devices
 
 ### About signing
 
-`install.sh` creates a self-signed certificate named `Tapdeck Local` on first
-run. This matters more than it sounds: an ad-hoc signature changes on every
-build, macOS treats each build as a different application, and every granted
-permission — microphone, screen recording, audio capture — resets. With a fixed
-certificate the designated requirement stays constant:
+Every Mac utility, Tapdeck included, is signed with one shared self-signed
+certificate, **Mac Utilities Code Signing**, created once in Keychain Access.
+`build.sh` and `Driver/build-driver.sh` use it when the keychain has it
+(`tools/signing.sh`).
+
+This matters more than it sounds. macOS remembers privacy permissions —
+screen recording, microphone, audio capture — by an app's *designated
+requirement*. Signed with the certificate, that requirement is the certificate
+plus the bundle identifier, so permissions survive rebuilds:
 
 ```
-designated => identifier "dev.kosuke.Tapdeck" and certificate root = H"68b7190f…"
+designated => identifier "dev.kosuke.Tapdeck" and certificate root = H"…"
 ```
+
+Without the certificate the build is signed ad-hoc, with a warning. The
+requirement is then the binary's hash, every build counts as a different app,
+and the permissions reset each time.
+
+The virtual device driver is signed the same way. Core Audio's plug-in host runs
+with library validation disabled, so it loads a plug-in whoever signed it.
 
 Distribution would need a Developer ID and notarisation. This is for running on
 your own machine.
