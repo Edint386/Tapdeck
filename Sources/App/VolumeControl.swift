@@ -2,14 +2,16 @@ import SwiftUI
 
 /// A volume fader with a mute button and a readout in decibels.
 ///
-/// The slider moves in amplitude from silent to +6 dB, but the readout is in
+/// The slider moves in amplitude from silent to 0 dB: Tapdeck's own faders
+/// only turn down. Making something louder is the device's volume or Even Out,
+/// since boosting the signal only pushes it into the ceiling. The readout is in
 /// decibels because that is how loudness is perceived and how the rest of the
 /// app reports levels.
 struct VolumeControl: View {
     let title: String?
     @Binding var volume: Float
     @Binding var isMuted: Bool
-    var maximum: Float = 2
+    var maximum: Float = 1
 
     var body: some View {
         HStack(spacing: 8) {

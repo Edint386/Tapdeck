@@ -48,6 +48,10 @@ final class MixSession: ObservableObject, Identifiable {
         /// How far the output's limiter is turning it down, in dB, eased so
         /// a brief peak stays visible.
         var limiting: Double = 0
+        /// The device's own volume, 0 to 1, or nil when it has none (virtual
+        /// devices) or is not connected.
+        var deviceVolume: Float?
+        var isDeviceMuted = false
     }
 
     let id: UUID
@@ -108,13 +112,15 @@ final class MixSession: ObservableObject, Identifiable {
         stored.sources = saved.sources
         for entry in stored.targets {
             let source = engine.add(entry.target)
-            source.gain = entry.gain
+            // Tapdeck's own faders only turn down now; boosts saved by earlier
+            // versions pushed the signal into the ceiling.
+            source.gain = min(1, entry.gain)
             source.isMuted = entry.isMuted
             source.channelOffset = entry.channelOffset
             source.effectSettings = entry.effects
             source.replacesOriginal = entry.replacesOriginal
         }
-        volume = saved.volume ?? 1
+        volume = min(1, saved.volume ?? 1)
         isMuted = saved.isMuted ?? false
         normalizesLoudness = saved.normalizesLoudness ?? false
         engine.volume = volume
@@ -124,7 +130,7 @@ final class MixSession: ObservableObject, Identifiable {
             let known = library.outputCandidates.first { $0.uid == savedOutput.uid }?.transport
             let output = engine.addOutput(uid: savedOutput.uid, name: savedOutput.name,
                                           transport: savedOutput.transport ?? known ?? .other)
-            output.gain = savedOutput.gain
+            output.gain = min(1, savedOutput.gain)
             output.isMuted = savedOutput.isMuted
             output.delayMilliseconds = savedOutput.delayMilliseconds ?? 0
         }
@@ -237,7 +243,7 @@ final class MixSession: ObservableObject, Identifiable {
     }
 
     func setSourceGain(_ gain: Float, for id: UUID) {
-        engine.sources.first { $0.id == id }?.gain = gain
+        engine.sources.first { $0.id == id }?.gain = min(1, max(0, gain))
         syncRows()
         changed()
     }
@@ -335,7 +341,7 @@ final class MixSession: ObservableObject, Identifiable {
     }
 
     func setOutputGain(_ gain: Float, for id: UUID) {
-        engine.outputs.first { $0.id == id }?.gain = gain
+        engine.outputs.first { $0.id == id }?.gain = min(1, max(0, gain))
         syncRows()
         changed()
     }
@@ -375,6 +381,50 @@ final class MixSession: ObservableObject, Identifiable {
         syncRows()
         changed()
         status = "Outputs lined up from typical wireless delays. Fine-tune each by ear with its clock button."
+    }
+
+    // MARK: - Device volume
+
+    /// The device behind an output, including one back under a new UID.
+    private func device(for output: Mixer.Output) -> AudioDevice? {
+        AudioDevice.find(uid: output.deviceUID, name: output.deviceName, in: library?.outputCandidates ?? [])
+    }
+
+    /// Set an output device's own volume. Every app playing to that device
+    /// hears the change, as with the volume keys.
+    func setDeviceVolume(_ volume: Float, for id: UUID) {
+        guard let output = engine.outputs.first(where: { $0.id == id }), let device = device(for: output) else { return }
+        DeviceVolume.setVolume(volume, of: device.deviceID, channels: device.outputChannels)
+        refreshDeviceVolumes()
+    }
+
+    private var volumeObserver: DeviceVolumeObserver?
+    private var observedDevices: [AudioDeviceID] = []
+
+    /// Watch the output devices' own volumes, so a change from the volume
+    /// keys or System Settings shows up here too.
+    private func observeDeviceVolumes() {
+        let devices = engine.outputs.compactMap { device(for: $0) }
+        let ids = devices.map(\.deviceID)
+        guard ids != observedDevices else { return }
+        observedDevices = ids
+        volumeObserver = DeviceVolumeObserver(devices: devices.map { ($0.deviceID, $0.outputChannels) }) { [weak self] in
+            MainActor.assumeIsolated { self?.refreshDeviceVolumes() }
+        }
+    }
+
+    private func refreshDeviceVolumes() {
+        outputs = outputs.map { row in
+            var row = row
+            if let output = engine.outputs.first(where: { $0.id == row.id }), let device = device(for: output) {
+                row.deviceVolume = DeviceVolume.volume(of: device.deviceID, channels: device.outputChannels)
+                row.isDeviceMuted = DeviceVolume.isMuted(device.deviceID) ?? false
+            } else {
+                row.deviceVolume = nil
+                row.isDeviceMuted = false
+            }
+            return row
+        }
     }
 
     func toggleOutputMute(_ id: UUID) {
@@ -512,6 +562,8 @@ final class MixSession: ObservableObject, Identifiable {
                           ? output.reportedLatencyMilliseconds : nil,
                       transport: output.transport)
         }
+        refreshDeviceVolumes()
+        observeDeviceVolumes()
     }
 
     private func outputDetail(_ output: Mixer.Output) -> String {
