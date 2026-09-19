@@ -102,8 +102,12 @@ headphones, Bluetooth and AirPlay.
   as the next. Measured per ITU-R BS.1770; silence and short pauses hold the
   level, and a −1 dBFS limiter catches sudden jumps. Target, maximum boost and
   speed are in Settings › Audio.
-- **Volume at three levels.** Master volume for everything, a volume per mix,
-  and a gain per output, all ramped so moving a fader never clicks.
+- **One volume per place.** An output's fader is the device's own volume —
+  the one the volume keys change — so turning it up is really louder and never
+  distorts, even for a device that is not the Mac's output. Source, mix and
+  master faders only turn down; Even Out lifts quiet material. Every output
+  ends in a look-ahead limiter at −1 dBFS instead of clipping, and shows LIMIT
+  while it works.
 - **Delay per output.** Bluetooth and AirPlay play late — about 150 ms and 2 s.
   Delaying the other outputs lines them up; a mix with a wireless output offers
   **Line Up** to set typical values, to be fine-tuned by ear.
@@ -135,9 +139,10 @@ Screen recording sits on top of this rather than beside it.
 | Effects | Working. Filters, EQ and dynamics measured against theory, e.g. a 100 Hz low cut leaves 25 Hz at −54 dB. |
 | Replace original sound | Working. The app is silent while mixing and returns within 1.5 s of Tapdeck being killed. |
 | Loudness | Working. A −30/−10 dBFS pair plays at −18/−16 LUFS through a mix; the meter reads the standard's −3.01 LUFS calibration tone exactly. |
-| Master, mix and output volume | Working. 0.5 × 0.5 measured −12.05 dB. |
+| Master, mix and output volume | Working. 0.5 × 0.5 measured −12.05 dB. Output faders set the device's own volume. |
+| Output limiter | Working. A +12 dB boost that used to clip (3rd harmonic −21.5 dB) now stays at −1 dBFS with the 3rd harmonic at −105 dB. |
 | Output delay | Working. 300 ms set, 300.7 ms measured. |
-| AirPlay and Bluetooth | Working as outputs. The AirPlay receiver is chosen in Control Center. |
+| AirPlay and Bluetooth | Working as outputs. The AirPlay receiver is chosen in Control Center; Tapdeck makes AirPlay the Mac's output while a mix plays to it (not yet tested with a receiver). |
 
 ## Install
 
@@ -185,6 +190,7 @@ swift tools/make-icon.swift  # regenerate the icon
 ./build/tapproof fxtest                           # effects against theory
 ./build/tapproof loudtest                         # loudness meter and normaliser
 ./build/tapproof devicetest                       # finding devices under new UIDs
+./build/tapproof limittest                        # the output limiter
 ./build/tapproof tone Podcast 3 1000 5            # a tone on channel 3 only
 ./build/tapproof capture Podcast 3 out.wav        # record every channel of a device
 ./build/tapproof muxtest out.mov                  # multitrack muxing, offline
@@ -194,6 +200,12 @@ swift tools/make-icon.swift  # regenerate the icon
 `mix` also reads `TAPDECK_MASTER`, `TAPDECK_MIX_VOLUME`, `TAPDECK_OUTPUT_DELAYS`
 (`Name=ms,…`), `TAPDECK_REPLACE=1` and `TAPDECK_LOUDNESS=1`, and prints each
 tap's assumed, measured and clock sample rates every second.
+
+## What macOS allows
+
+[`docs/platform-limits.md`](docs/platform-limits.md) maps what is possible,
+what is not and why, and what is still to be tested — AirPlay, device volume,
+per-app routing, inputs. Features are designed inside that map.
 
 ## Implementation notes
 
