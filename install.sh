@@ -6,13 +6,6 @@ cd "$(dirname "$0")"
 
 DESTINATION="/Applications/Tapdeck.app"
 
-# Create the stable signing identity first if it is missing. Without it every
-# build is ad-hoc signed, and macOS resets the granted permissions each time.
-if ! security find-certificate -c "Tapdeck Local" >/dev/null 2>&1; then
-  echo "-> No signing certificate yet; creating one"
-  ./tools/setup-signing.sh
-fi
-
 ./build.sh
 
 if pgrep -x Tapdeck >/dev/null 2>&1; then

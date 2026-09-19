@@ -29,9 +29,11 @@ xcrun clang -bundle -O2 \
   -o "$BUNDLE/Contents/MacOS/TapdeckDriver" \
   TapdeckDriver.c
 
-# Core Audio will not load an unsigned plug-in. Ad-hoc (-) is fine for your own
-# machine; distribution needs a Developer ID signature and notarisation.
-SIGN_ID="${TAPDECK_DRIVER_SIGN_ID:--}"
+# Core Audio will not load an unsigned plug-in. Its plug-in host runs with
+# com.apple.security.cs.disable-library-validation, so it does not insist on a
+# particular signer: the shared certificate works, and so does ad-hoc.
+source ../tools/signing.sh  # the script runs from Driver/
+SIGN_ID="$(signing_identity "${TAPDECK_DRIVER_SIGN_ID:-}")"
 echo "→ signing with: $SIGN_ID"
 codesign --force --sign "$SIGN_ID" "$BUNDLE"
 codesign --verify --verbose=2 "$BUNDLE" 2>&1 | sed 's/^/   /'
