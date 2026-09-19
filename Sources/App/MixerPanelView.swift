@@ -325,7 +325,7 @@ private struct MixEditorView: View {
                 HStack(spacing: 8) {
                     Slider(value: Binding(get: { Double(row.gain) },
                                           set: { mix.setSourceGain(Float($0), for: row.id) }),
-                           in: 0...2)
+                           in: 0...1)
                         .controlSize(.mini)
                         .disabled(row.isMuted)
                     Text(gainLabel(row.gain))
@@ -561,19 +561,36 @@ private struct MixEditorView: View {
                         .lineLimit(1)
                 }
                 HStack(spacing: 8) {
-                    Slider(value: Binding(get: { Double(row.gain) },
-                                          set: { mix.setOutputGain(Float($0), for: row.id) }),
-                           in: 0...2)
-                        .controlSize(.mini)
-                        .disabled(row.isMuted)
-                    Text(gainLabel(row.gain))
-                        .font(.system(size: 9, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 38, alignment: .trailing)
+                    if let deviceVolume = row.deviceVolume {
+                        // The device's own volume: really louder when raised,
+                        // and never distorting.
+                        Slider(value: Binding(get: { Double(deviceVolume) },
+                                              set: { mix.setDeviceVolume(Float($0), for: row.id) }),
+                               in: 0...1)
+                            .controlSize(.mini)
+                            .help("The device's own volume, the one the volume keys change when it is the Mac's output. Every app playing to it hears the change.")
+                        Text(row.isDeviceMuted ? "muted" : "\(Int((deviceVolume * 100).rounded()))%")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(row.isDeviceMuted ? Color.orange : .secondary)
+                            .frame(width: 38, alignment: .trailing)
+                    } else {
+                        Slider(value: Binding(get: { Double(row.gain) },
+                                              set: { mix.setOutputGain(Float($0), for: row.id) }),
+                               in: 0...1)
+                            .controlSize(.mini)
+                            .disabled(row.isMuted)
+                            .help(MixerModel.isVirtual(row.deviceUID)
+                                  ? "Level of this mix on the virtual device. It has no volume of its own."
+                                  : "Level of this mix on the device. Its own volume is not available right now.")
+                        Text(gainLabel(row.gain))
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 38, alignment: .trailing)
+                    }
                     LevelBar(level: row.isMuted ? 0 : row.level).frame(width: 60, height: 4)
                     LimitBadge(decibels: row.limiting)
                 }
-                if row.delayMilliseconds > 0 || openDelays.contains(row.id) {
+                if hasOutputSettings(row) || openDelays.contains(row.id) {
                     delayControl(row)
                 }
             }
@@ -581,12 +598,14 @@ private struct MixEditorView: View {
             Button {
                 if openDelays.contains(row.id) { openDelays.remove(row.id) } else { openDelays.insert(row.id) }
             } label: {
-                Image(systemName: row.delayMilliseconds > 0 ? "clock.fill" : "clock")
+                Image(systemName: "slider.horizontal.3")
                     .font(.caption)
-                    .foregroundStyle(row.delayMilliseconds > 0 ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(hasOutputSettings(row) ? Color.accentColor : Color.secondary)
             }
             .buttonStyle(.borderless)
-            .help("Delay this output to line it up with a slower one")
+            .help(row.deviceVolume != nil
+                  ? "Delay and level for this output"
+                  : "Delay this output to line it up with a slower one")
 
             if !row.isPrimary {
                 Button {
@@ -608,8 +627,31 @@ private struct MixEditorView: View {
         .opacity(row.isMuted ? 0.55 : 1)
     }
 
+    /// Whether an output has a delay or a level trim set, so its settings stay
+    /// in view.
+    private func hasOutputSettings(_ row: MixSession.OutputRow) -> Bool {
+        row.delayMilliseconds > 0 || (row.deviceVolume != nil && row.gain < 1)
+    }
+
     private func delayControl(_ row: MixSession.OutputRow) -> some View {
         VStack(alignment: .leading, spacing: 3) {
+            if row.deviceVolume != nil {
+                HStack(spacing: 8) {
+                    Text("Level")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 30, alignment: .leading)
+                    Slider(value: Binding(get: { Double(row.gain) },
+                                          set: { mix.setOutputGain(Float($0), for: row.id) }),
+                           in: 0...1)
+                        .controlSize(.mini)
+                        .help("This mix's level on the device, against other apps playing there. The fader above is the device's own volume.")
+                    Text(gainLabel(row.gain))
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(row.gain < 1 ? .primary : .secondary)
+                        .frame(width: 50, alignment: .trailing)
+                }
+            }
             HStack(spacing: 8) {
                 Text("Delay")
                     .font(.system(size: 9, weight: .medium))

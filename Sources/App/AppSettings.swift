@@ -130,7 +130,8 @@ final class AppSettings: ObservableObject {
         recordingFolder = defaults.string(forKey: Keys.recordingFolder)
             .map { URL(fileURLWithPath: $0, isDirectory: true) } ?? Self.defaultRecordingFolder
 
-        masterVolume = defaults.object(forKey: Keys.masterVolume) as? Float ?? 1
+        // Only turns down: a boost here pushed every output into the ceiling.
+        masterVolume = min(1, defaults.object(forKey: Keys.masterVolume) as? Float ?? 1)
         isMasterMuted = defaults.bool(forKey: Keys.masterMuted)
 
         let tuning = LoudnessTuning.Values()
