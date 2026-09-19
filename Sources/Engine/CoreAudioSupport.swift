@@ -130,6 +130,17 @@ func defaultOutputDeviceUID() throws -> String {
     return uid
 }
 
+/// Make a device the Mac's output. Returns whether Core Audio accepted it.
+@discardableResult
+func setDefaultOutputDevice(_ device: AudioDeviceID) -> Bool {
+    var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+                                             mScope: kAudioObjectPropertyScopeGlobal,
+                                             mElement: kAudioObjectPropertyElementMain)
+    var value = device
+    return AudioObjectSetPropertyData(AudioObjectID.system, &address, 0, nil,
+                                      UInt32(MemoryLayout<AudioDeviceID>.size), &value) == noErr
+}
+
 extension AVAudioFormat {
     /// Non-interleaved Float32 with any number of discrete channels.
     ///

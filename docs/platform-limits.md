@@ -36,7 +36,8 @@ design routes around them instead of trying its luck.
 
 | Want | Status | Why |
 |---|---|---|
-| Set a device's own volume even when it is not the Mac's output | Verified for MacBook Pro Speakers; Unknown for AirPlay and Bluetooth | `kAudioDevicePropertyVolumeScalar` is settable on the speakers. Virtual devices have no volume of their own; HDMI outputs often have none. Test T4. |
+| Set a device's own volume even when it is not the Mac's output | Verified on a loopback device (write, read back, change notification, restore) and readable on MacBook Pro Speakers, matching `osascript`'s output volume; Unknown for AirPlay and Bluetooth | `kAudioDevicePropertyVolumeScalar` is settable on both. Virtual Tapdeck devices have no volume of their own; HDMI outputs often have none. Test T4. |
+| Notice volume changes made elsewhere (volume keys, menu bar) | Verified | Property listeners on the volume and mute; no polling. |
 | Make a device louder than its own maximum | Not possible cleanly | Digital audio has a ceiling (0 dBFS). With the device at 100 %, anything boosted further in software is cut off: that is the distortion. Only *perceived* loudness can rise, through compression, limiting or loudness normalisation. |
 | Volume keys control a Tapdeck mix | Only indirectly | The keys change the volume of the Mac's current output device and nothing else. |
 
@@ -49,7 +50,7 @@ it off at 0 dBFS, and only then did the speakers' own volume turn it down.
 | Want | Status | Why |
 |---|---|---|
 | Choose an AirPlay receiver from inside the app for the Mac's output | Not possible with public API | On macOS, `AVRoutePickerView` routes only an `AVPlayer` — its header: "The player for which to perform routing operations". `AVCustomRoutingController` is unavailable on macOS. The Core Audio AirPlay device exposes no list of receivers. The receiver is chosen in Control Center or Sound settings. |
-| Make AirPlay the output from the app, once a receiver has been used | Unknown | Setting the Mac's output device is allowed; whether that connects the receiver is test T2. |
+| Make AirPlay the output from the app, once a receiver has been used | Unknown — implemented, awaiting T2 | Setting the Mac's output device is allowed; whether that connects the receiver is test T2. Tapdeck now does this while a mix plays to AirPlay and restores the previous output afterwards, or at the next launch after a crash. |
 | Stream to a receiver without macOS | Not realistic | It means implementing the AirPlay protocol itself, pairing and encryption included, which is what Airfoil does. Private frameworks are not used: they change without notice. |
 | Route the mix through `AVPlayer` so the route picker applies | Impractical | `AVPlayer` plays media items, not a live callback. The mix would have to be packaged as a live stream, adding seconds of delay. Not planned. |
 | Remove AirPlay's delay | Not possible | The receiver buffers about 2 s by design. Other outputs can only be delayed to match. |
@@ -62,6 +63,7 @@ it off at 0 dBFS, and only then did the speakers' own volume turn it down.
 - **T2** Set the Mac's output to the AirPlay device from Tapdeck: does the receiver connect and play?
 - **T3** After T2, set the Mac's output back to the speakers: does Tapdeck's AirPlay output keep playing?
 - **T4** Is the AirPlay device's own volume readable and settable?
+- **T5** With AirPlay as the Mac's output, does a process tap still hear apps? A tap's aggregate runs on the Mac's output as its clock, and a Tapdeck virtual device was measured unable to clock one (no callbacks at all).
 
 ## What the design does with this
 

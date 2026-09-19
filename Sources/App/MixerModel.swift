@@ -33,6 +33,9 @@ final class MixerModel: ObservableObject {
         refreshLists()
         mixes = MixLibraryStore.load().map { MixSession(saved: $0, library: self) }
         hasLoaded = true
+        // Nothing runs at launch, so an output still borrowed for AirPlay can
+        // only be left over from a crash. Give it back.
+        restoreOutputAfterAirPlay()
         selectedMixID = mixes.first?.id
 
         meterTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20, repeats: true) { [weak self] _ in
@@ -160,6 +163,52 @@ final class MixerModel: ObservableObject {
 
     func sessionStateChanged() {
         runningCount = mixes.filter(\.isRunning).count
+    }
+
+    // MARK: - AirPlay as the Mac's output
+
+    /// macOS only connects an AirPlay receiver once AirPlay is the Mac's
+    /// output, and apps cannot choose a receiver themselves (see
+    /// docs/platform-limits.md). So while a mix plays to AirPlay, Tapdeck makes
+    /// it the Mac's output, and gives the old output back when the last such
+    /// mix stops.
+    private var airPlayClaims: Set<UUID> = []
+
+    /// The output to go back to. Kept in UserDefaults so that a crash is
+    /// undone at the next launch.
+    private static let restoreOutputKey = "airPlay.restoreOutputUID"
+
+    /// Make AirPlay the Mac's output on behalf of a mix. Returns a problem to
+    /// report, or nil.
+    func claimAirPlay(for session: MixSession, device: AudioDevice) -> String? {
+        let current = try? defaultOutputDeviceUID()
+        if current != device.uid {
+            if airPlayClaims.isEmpty, let current {
+                UserDefaults.standard.set(current, forKey: Self.restoreOutputKey)
+            }
+            guard setDefaultOutputDevice(device.deviceID) else {
+                return "Could not make AirPlay the Mac's output"
+            }
+        }
+        airPlayClaims.insert(session.id)
+        return nil
+    }
+
+    func releaseAirPlay(for session: MixSession) {
+        guard airPlayClaims.remove(session.id) != nil, airPlayClaims.isEmpty else { return }
+        restoreOutputAfterAirPlay()
+    }
+
+    /// Put the Mac's output back to what it was before AirPlay was borrowed,
+    /// unless it has been changed to something else since.
+    private func restoreOutputAfterAirPlay() {
+        guard let uid = UserDefaults.standard.string(forKey: Self.restoreOutputKey) else { return }
+        UserDefaults.standard.removeObject(forKey: Self.restoreOutputKey)
+        let devices = (try? AudioDevice.all()) ?? []
+        guard let current = try? defaultOutputDeviceUID(),
+              devices.first(where: { $0.uid == current })?.transport == .airPlay,
+              let previous = devices.first(where: { $0.uid == uid }) else { return }
+        setDefaultOutputDevice(previous.deviceID)
     }
 
     // MARK: - Feedback

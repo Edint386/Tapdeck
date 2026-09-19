@@ -438,7 +438,7 @@ private struct MixEditorView: View {
 
             if mix.outputs.contains(where: { $0.transport == .airPlay }) {
                 HStack(spacing: 6) {
-                    Label("AirPlay plays to the receiver chosen in Control Center › Sound.",
+                    Label("While this mix runs, AirPlay becomes the Mac's output and apps are heard only through the mix. The receiver is chosen in Control Center › Sound.",
                           systemImage: "airplayaudio")
                         .font(.caption)
                         .foregroundStyle(.secondary)
