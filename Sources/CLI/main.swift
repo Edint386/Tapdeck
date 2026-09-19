@@ -53,7 +53,8 @@ func usage() -> Never {
 
       tapproof mix <seconds> <output[,output...]> <pid or name>@<channel> ...
           Mix applications onto a Tapdeck device, each on its own channel pair
-          (@1 means channels 1-2, @3 means channels 3-4)
+          (@1 means channels 1-2, @3 means channels 3-4); "system" is all
+          system audio except the apps listed
 
       tapproof capture <device name> <seconds> [out.wav]
           Record every input channel of a device through the app's own path
@@ -348,6 +349,13 @@ func runMix(seconds: Double, deviceName: String, placements: [String]) throws {
         let parts = placement.split(separator: "@", maxSplits: 1).map(String.init)
         let needle = parts[0]
         let firstChannel = parts.count > 1 ? (Int(parts[1]) ?? 1) : 1
+        // "system@1" is all system audio, less the apps listed separately.
+        if needle == "system" {
+            let entry = mixer.add(.systemAudio)
+            entry.channelOffset = max(0, firstChannel - 1)
+            entries.append((entry, "system audio"))
+            continue
+        }
         let process = try pid_t(needle).flatMap { try AudioProcess.find(pid: $0) }
             ?? AudioProcess.find(matching: needle)
         guard let process else { print("No process matches \"\(needle)\"."); exit(1) }
@@ -611,6 +619,94 @@ func runRate(deviceName: String, rate: Double) throws {
     print("\(device.name): \(Int(now?.sampleRate ?? 0)) Hz")
 }
 
+
+/// The output limiter: transparent below the ceiling, never above it, and far
+/// cleaner than the hard clipping it replaced.
+func runLimiterTest() {
+    var passed = 0, total = 0
+    func report(_ label: String, _ ok: Bool, _ detail: String) {
+        total += 1; if ok { passed += 1 }
+        print("\(ok ? "PASS" : "FAIL")  \(label.padding(toLength: 50, withPad: " ", startingAt: 0)) \(detail)")
+    }
+    let rate = 48_000.0
+    let ceiling = pow(10, -1.0 / 20)
+
+    /// Run `seconds` of a signal through either the limiter or a hard clip,
+    /// returning input and output.
+    func run(_ signal: (Int) -> Float, seconds: Double, limit: Bool) -> (input: [Float], output: [Float], latency: Int) {
+        let limiter = LookaheadLimiter(channels: 2, sampleRate: rate, ceiling: ceiling)
+        let block = 512
+        let frames = Int(seconds * rate) / block * block
+        var input = [Float](), output = [Float]()
+        let left = UnsafeMutablePointer<Float>.allocate(capacity: block)
+        let right = UnsafeMutablePointer<Float>.allocate(capacity: block)
+        defer { left.deallocate(); right.deallocate() }
+        for start in stride(from: 0, to: frames, by: block) {
+            for i in 0..<block { left[i] = signal(start + i); right[i] = left[i]; input.append(left[i]) }
+            if limit {
+                limiter.process([left, right], frameCount: block)
+            } else {
+                for i in 0..<block { left[i] = min(1, max(-1, left[i])) }
+            }
+            for i in 0..<block { output.append(left[i]) }
+        }
+        return (input, output, limit ? limiter.latencyFrames : 0)
+    }
+
+    /// Level of one frequency over the last half second, in dB relative to full scale.
+    func level(_ samples: [Float], hertz: Double) -> Double {
+        let count = Int(rate / 2)
+        let segment = samples.suffix(count)
+        var re = 0.0, im = 0.0, index = 0.0
+        for x in segment {
+            re += Double(x) * cos(2 * .pi * hertz * index / rate)
+            im += Double(x) * sin(2 * .pi * hertz * index / rate)
+            index += 1
+        }
+        return 20 * log10(max(2 * (re * re + im * im).squareRoot() / Double(count), 1e-12))
+    }
+
+    let tone: (Double) -> (Int) -> Float = { amplitude in { Float(amplitude * sin(2 * .pi * 1_000 * Double($0) / rate)) } }
+
+    // Below the ceiling nothing changes except the fixed delay.
+    let quiet = run(tone(0.5), seconds: 1, limit: true)
+    var worst: Float = 0
+    for i in quiet.latency..<quiet.output.count {
+        worst = max(worst, abs(quiet.output[i] - quiet.input[i - quiet.latency]))
+    }
+    report("-6 dBFS passes untouched, only delayed", worst < 1e-6,
+           String(format: "largest difference %.1e, delay %d samples (%.2f ms)", worst, quiet.latency,
+                  Double(quiet.latency) / rate * 1000))
+
+    // A +6 dBFS tone: under the ceiling, and a clean sine rather than a clipped one.
+    let loud = run(tone(2), seconds: 1, limit: true)
+    let clipped = run(tone(2), seconds: 1, limit: false)
+    let loudPeak = 20 * log10(Double(loud.output.map { abs($0) }.max() ?? 0))
+    report("+6 dBFS tone stays at or under -1 dBFS", loudPeak <= -1 + 1e-4, String(format: "peak %.3f dBFS", loudPeak))
+    let limitedThird = level(loud.output, hertz: 3_000) - level(loud.output, hertz: 1_000)
+    let clippedThird = level(clipped.output, hertz: 3_000) - level(clipped.output, hertz: 1_000)
+    report("3rd harmonic far below hard clipping's", limitedThird < -60 && limitedThird < clippedThird - 40,
+           String(format: "limiter %.1f dB, hard clip %.1f dB relative to the tone", limitedThird, clippedThird))
+
+    // A sudden burst out of silence is still held under the ceiling.
+    let burst = run({ $0 < 24_000 ? 0 : Float(4 * sin(2 * .pi * 440 * Double($0) / rate)) }, seconds: 1, limit: true)
+    let burstPeak = 20 * log10(Double(burst.output.map { abs($0) }.max() ?? 0))
+    report("burst from silence to +12 dBFS never passes -1 dBFS", burstPeak <= -1 + 1e-4,
+           String(format: "peak %.3f dBFS", burstPeak))
+
+    // Noise with random peaks.
+    var seed: UInt64 = 42
+    let noisy = run({ _ in
+        seed = seed &* 6364136223846793005 &+ 1442695040888963407
+        return Float(Int64(bitPattern: seed >> 11) - (1 << 52)) / Float(1 << 52) * 3
+    }, seconds: 1, limit: true)
+    let noisyPeak = 20 * log10(Double(noisy.output.map { abs($0) }.max() ?? 0))
+    report("noise with peaks at +9.5 dBFS never passes -1 dBFS", noisyPeak <= -1 + 1e-4,
+           String(format: "peak %.3f dBFS", noisyPeak))
+
+    print("\(passed)/\(total) passed")
+    if passed != total { exit(1) }
+}
 
 /// Finding a saved device again, including under a new UID.
 func runDeviceMatchTest() {
@@ -1201,6 +1297,9 @@ do {
 
     case "devicetest":
         runDeviceMatchTest()
+
+    case "limittest":
+        runLimiterTest()
 
 
     case "graphtest":

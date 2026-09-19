@@ -571,6 +571,7 @@ private struct MixEditorView: View {
                         .foregroundStyle(.secondary)
                         .frame(width: 38, alignment: .trailing)
                     LevelBar(level: row.isMuted ? 0 : row.level).frame(width: 60, height: 4)
+                    LimitBadge(decibels: row.limiting)
                 }
                 if row.delayMilliseconds > 0 || openDelays.contains(row.id) {
                     delayControl(row)
@@ -711,6 +712,24 @@ private struct MixEditorView: View {
 
 /// A level meter. Using amplitude directly makes quiet audio invisible, so it
 /// converts to dB and maps -60 dB to 0 dB across the full width.
+/// Shows while an output's limiter is holding peaks down. Space is always
+/// reserved so the row does not shift when it appears.
+struct LimitBadge: View {
+    let decibels: Double
+
+    var body: some View {
+        Text("LIMIT")
+            .font(.system(size: 8, weight: .bold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 4).padding(.vertical, 1)
+            .background(Color.orange, in: Capsule())
+            .opacity(decibels > 0.3 ? 1 : 0)
+            .help(String(format: "Tapdeck is turning peaks down by %.1f dB here so they do not distort. "
+                         + "To avoid it, turn a source or the mix down, or turn the device volume up.", decibels))
+            .accessibilityHidden(decibels <= 0.3)
+    }
+}
+
 struct LevelBar: View {
     let level: Float
 
