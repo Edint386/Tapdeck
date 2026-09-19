@@ -46,8 +46,9 @@ work.
 | `Mixer.swift` | One mix: sources, outputs, attach/detach, the real-time render and fan-out to secondary outputs; mix volume, loudness, per-output delay and gain |
 | `Effects.swift` | `EffectSettings` (Codable, every key optional) and `EffectChain`: filters, EQ, gate, compressor, loudness, limiter, balance, mono, delay |
 | `Loudness.swift` | `LoudnessTuning` (app-wide), BS.1770 `LoudnessMeter`, `LoudnessNormalizer` |
-| `GainStage.swift` | `MasterVolume`, `GainRamp`, `PeakLimiter`, clipping and metering |
+| `GainStage.swift` | `MasterVolume`, `GainRamp`, `PeakLimiter`, the output `LookaheadLimiter`, clipping and metering |
 | `DelayLine.swift` | Multichannel delay with crossfaded changes |
+| `DeviceVolume.swift` | A device's own volume and mute, and a listener-based change observer |
 | `RoutingGraph.swift` | Feedback-loop detection across running mixes |
 | `MuxedRecorder.swift` | Screen video plus device audio into a .mov, one AAC track per channel pair |
 | `VirtualDeviceConfiguration.swift` | The virtual device list, pushed to the driver through a custom property |
@@ -92,9 +93,15 @@ sudo ./install-driver.sh            # build and install the HAL driver (restarts
 ./Driver/build-driver.sh            # driver only
 ./build/tapproof                    # list harness commands
 ./build/tapproof graphtest          # routing graph tests (no devices needed)
-./build/tapproof fxtest             # effects, gaintest, delaytest, loudtest, devicetest likewise
+./build/tapproof fxtest             # effects; gaintest, delaytest, loudtest, devicetest, limittest likewise
 ./build/tapproof muxtest out.mov    # multitrack recording test (no devices needed)
 ```
+
+## Design boundary
+
+`docs/platform-limits.md` records what macOS allows, with each item marked
+verified, documented, unknown or not possible. Check it before designing a
+feature, and update it when a test settles an unknown.
 
 ## Things that will bite
 
@@ -117,6 +124,10 @@ most likely to recur:
 - The AirPlay device's UID changes between sessions; match saved outputs with
   `AudioDevice.find(uid:name:in:)`.
 - A tap's stream rate can change mid-run; `ProcessTap` follows it.
+- AirPlay only plays once it is the Mac's output; `MixerModel` borrows it while
+  a mix plays to AirPlay and restores the previous output (also after a crash).
+- Tapdeck's own faders stop at 0 dB; loudness belongs to the device volume and
+  Even Out. Outputs end in a limiter, never a hard clip.
 - UI checks: render views offscreen in a scratch binary and capture only that
   window (`screencapture -l <windowNumber>`). Never capture screen regions, which
   pick up other apps' windows.
