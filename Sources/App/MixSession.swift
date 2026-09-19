@@ -457,6 +457,7 @@ final class MixSession: ObservableObject, Identifiable {
             return
         }
         let identities = engine.outputs.map { "\($0.deviceUID)|\($0.transport)" }
+        let airPlayNote = borrowAirPlayIfNeeded()
         do {
             try engine.start()
             isRunning = true
@@ -466,7 +467,9 @@ final class MixSession: ObservableObject, Identifiable {
             let outputsOpen = engine.outputs.filter(\.isAttached).count
             status = "Running — \(attached) of \(engine.sources.count) source(s), "
                    + "\(outputsOpen) of \(engine.outputs.count) output(s)"
+                   + (airPlayNote.map { ". \($0)" } ?? "")
         } catch {
+            returnAirPlay()
             status = "Could not start: \(error.localizedDescription)"
         }
         syncRows()
@@ -476,6 +479,7 @@ final class MixSession: ObservableObject, Identifiable {
     func stop() {
         guard isRunning else { return }
         engine.stop()
+        returnAirPlay()
         isRunning = false
         level = 0
         loudnessReading = nil
@@ -487,6 +491,31 @@ final class MixSession: ObservableObject, Identifiable {
     }
 
     func toggleRunning() { isRunning ? stop() : start() }
+
+    // MARK: - AirPlay
+
+    private var borrowsAirPlay = false
+
+    /// Before starting: when this mix plays to AirPlay, make AirPlay the Mac's
+    /// output so macOS connects the receiver, and replace every original so
+    /// apps are not heard twice on it. Returns a line for the status.
+    private func borrowAirPlayIfNeeded() -> String? {
+        guard let output = engine.outputs.first(where: { $0.transport == .airPlay }) else { return nil }
+        guard let device = device(for: output) else {
+            return "AirPlay is not available: turn the receiver on, or choose it once in Control Center › Sound"
+        }
+        if let problem = library?.claimAirPlay(for: self, device: device) { return problem }
+        borrowsAirPlay = true
+        engine.replacesAllOriginals = true
+        return "AirPlay is the Mac's output while this mix runs"
+    }
+
+    private func returnAirPlay() {
+        guard borrowsAirPlay else { return }
+        borrowsAirPlay = false
+        engine.replacesAllOriginals = false
+        library?.releaseAirPlay(for: self)
+    }
 
     /// Reconnect sources whose app has started since.
     func reattach() {

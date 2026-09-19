@@ -96,8 +96,8 @@ final class Mixer: @unchecked Sendable {
             return true
         }
 
-        fileprivate var tapMuteBehavior: CATapMuteBehavior {
-            replacesOriginal && canReplaceOriginal ? .mutedWhenTapped : .unmuted
+        fileprivate func tapMuteBehavior(forced: Bool) -> CATapMuteBehavior {
+            (replacesOriginal || forced) && canReplaceOriginal ? .mutedWhenTapped : .unmuted
         }
 
         /// The output channel this source's left channel lands on. Its right
@@ -381,6 +381,12 @@ final class Mixer: @unchecked Sendable {
     private var wasNormalizing = false
     private let normalizer = LoudnessNormalizer()
     private var renderSampleRate: Double = 48_000
+
+    /// Replace every app's and the system's original sound while running,
+    /// whatever each source says. Used while the Mac's output points at a
+    /// device this mix also plays to, where the original would be heard twice.
+    /// Takes effect when sources attach, so set it before starting.
+    var replacesAllOriginals = false
 
     /// What mix-level normalisation is doing. Safe to read from any thread.
     var loudnessReading: LoudnessReading { normalizer.reading }
@@ -668,7 +674,8 @@ final class Mixer: @unchecked Sendable {
                 return
             }
             let tap = ProcessTap()
-            try tap.start(mode: .include([process]), mute: source.tapMuteBehavior) { [weak source] buffer in
+            try tap.start(mode: .include([process]),
+                          mute: source.tapMuteBehavior(forced: replacesAllOriginals)) { [weak source] buffer in
                 source?.accept(buffer)
             }
             source.tap = tap
@@ -684,7 +691,7 @@ final class Mixer: @unchecked Sendable {
             let excluded = (me.map { [$0] } ?? []) + separatelyListedProcesses()
             let tap = ProcessTap()
             try tap.start(mode: .excluding(excluded),
-                          mute: source.tapMuteBehavior) { [weak source] buffer in
+                          mute: source.tapMuteBehavior(forced: replacesAllOriginals)) { [weak source] buffer in
                 source?.accept(buffer)
             }
             source.tap = tap
