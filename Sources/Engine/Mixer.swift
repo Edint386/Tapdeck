@@ -235,8 +235,14 @@ final class Mixer: @unchecked Sendable {
 
         fileprivate var delayLine: DelayLine?
 
+        /// Peaks never leave an output above this, in dBFS. A little under full
+        /// scale, so that lossy encoders (AirPlay, Bluetooth) do not overshoot.
+        static let ceilingDecibels: Double = -1
+
+        fileprivate var limiter: LookaheadLimiter?
+
         /// Everything after the mix: delay, this output's gain times the master
-        /// volume, then clipping and metering. Runs on this output's own
+        /// volume, then the limiter and metering. Runs on this output's own
         /// real-time thread, at this output's own sample rate.
         fileprivate func finish(_ channels: [UnsafeMutablePointer<Float>], frameCount: Int) {
             if let delayLine {
@@ -245,6 +251,9 @@ final class Mixer: @unchecked Sendable {
             }
             let target = (isMuted ? 0 : gain) * MasterVolume.shared.gain
             gainRamp.apply(to: channels, frameCount: frameCount, target: target)
+            if let limiter {
+                record(limiting: limiter.process(channels, frameCount: frameCount))
+            }
             record(peak: clipAndMeasure(channels, frameCount: frameCount))
         }
 
@@ -270,9 +279,26 @@ final class Mixer: @unchecked Sendable {
             return value
         }
 
+        /// The most the limiter turned this output down since the last read, in
+        /// dB. Zero when it did nothing.
+        func takeLimiting() -> Double {
+            meterLock.lock(); defer { meterLock.unlock() }
+            let lowest = lowestLimiterGain
+            lowestLimiterGain = 1
+            return -20 * log10(max(lowest, 1e-6))
+        }
+
+        private var lowestLimiterGain: Double = 1
+
         fileprivate func record(peak value: Float) {
             meterLock.lock()
             if value > peak { peak = value }
+            meterLock.unlock()
+        }
+
+        fileprivate func record(limiting gain: Double) {
+            meterLock.lock()
+            if gain < lowestLimiterGain { lowestLimiterGain = gain }
             meterLock.unlock()
         }
 
@@ -287,6 +313,8 @@ final class Mixer: @unchecked Sendable {
             // delay so it can be changed freely while playing.
             delayLine = DelayLine(channels: channelCount,
                                   maximumFrames: Int(Output.maximumDelayMilliseconds / 1000 * sampleRate))
+            limiter = LookaheadLimiter(channels: channelCount, sampleRate: sampleRate,
+                                       ceiling: pow(10, Output.ceilingDecibels / 20))
         }
 
         fileprivate func readReportedLatency(of deviceID: AudioDeviceID) {
@@ -391,7 +419,10 @@ final class Mixer: @unchecked Sendable {
         sourceLock.lock()
         sources.append(source)
         sourceLock.unlock()
-        if isRunning { try? attach(source) }
+        if isRunning {
+            try? attach(source)
+            if case .application = target, source.isAttached { refreshSystemAudioTap() }
+        }
         return source
     }
 
@@ -403,6 +434,7 @@ final class Mixer: @unchecked Sendable {
         let source = sources.remove(at: index)
         sourceLock.unlock()
         source.stop()
+        if case .application = source.target { refreshSystemAudioTap() }
     }
 
     /// Reorder. SwiftUI's move(fromOffsets:toOffset:) is deliberately avoided
@@ -487,9 +519,14 @@ final class Mixer: @unchecked Sendable {
         sourceLock.unlock()
 
         var reattached = 0
+        var appAttached = false
         for source in pending where (try? attach(source)) != nil {
-            if source.isAttached { reattached += 1 }
+            if source.isAttached {
+                reattached += 1
+                if case .application = source.target { appAttached = true }
+            }
         }
+        if appAttached { refreshSystemAudioTap() }
         return reattached
     }
 
@@ -638,11 +675,15 @@ final class Mixer: @unchecked Sendable {
             source.markAttached(sourceFormat: tap.format, targetFormat: targetFormat)
 
         case .systemAudio:
-            // Exclude ourselves. Including our own output would feed the mix
-            // straight back into the input and loop.
+            // Exclude ourselves: including our own output would feed the mix
+            // straight back into the input and loop. Exclude the apps this mix
+            // also has as sources of their own, too. Otherwise their sound
+            // arrives twice, about 6 dB louder, and turning one of them down or
+            // muting it in Tapdeck does nothing.
             let me = try? AudioProcess.find(pid: ProcessInfo.processInfo.processIdentifier)
+            let excluded = (me.map { [$0] } ?? []) + separatelyListedProcesses()
             let tap = ProcessTap()
-            try tap.start(mode: .excluding(me.map { [$0] } ?? []),
+            try tap.start(mode: .excluding(excluded),
                           mute: source.tapMuteBehavior) { [weak source] buffer in
                 source?.accept(buffer)
             }
@@ -661,6 +702,29 @@ final class Mixer: @unchecked Sendable {
             source.input = input
             source.markAttached(sourceFormat: input.format, targetFormat: targetFormat)
         }
+    }
+
+    /// The processes behind this mix's application sources that are running.
+    private func separatelyListedProcesses() -> [AudioProcess] {
+        sourceLock.lock()
+        let snapshot = sources
+        sourceLock.unlock()
+        return snapshot.compactMap { source in
+            guard case .application(let bundleID, let name, let pid) = source.target else { return nil }
+            return try? locateProcess(bundleID: bundleID, name: name, pid: pid)
+        }
+    }
+
+    /// Rebuild the system audio tap after the set of application sources
+    /// changed, so it keeps leaving exactly those apps out.
+    private func refreshSystemAudioTap() {
+        guard isRunning else { return }
+        sourceLock.lock()
+        let system = sources.first { $0.target == .systemAudio }
+        sourceLock.unlock()
+        guard let system, system.isAttached else { return }
+        system.stop()
+        try? attach(system)
     }
 
     /// Find the process a source refers to.
@@ -752,12 +816,9 @@ final class Mixer: @unchecked Sendable {
             let target = folded[index % width]
             for frame in 0..<frameCount { target[frame] += source[frame] }
         }
-        for channel in 0..<width {
-            let target = folded[channel]
-            for frame in 0..<frameCount {
-                target[frame] = min(1, max(-1, target[frame]))
-            }
-        }
+        // No clipping here: the output's own gain comes later, and its limiter
+        // is what keeps it under full scale. Clipping first distorted any mix
+        // above 0 dBFS even on an output turned down.
         buffer.frameLength = AVAudioFrameCount(frameCount)
 
         if let converter = output.converter {

@@ -45,6 +45,9 @@ final class MixSession: ObservableObject, Identifiable {
         /// What the device says its own latency is, once the mix has started.
         var reportedLatencyMilliseconds: Double?
         var transport: AudioDevice.Transport
+        /// How far the output's limiter is turning it down, in dB, eased so
+        /// a brief peak stays visible.
+        var limiting: Double = 0
     }
 
     let id: UUID
@@ -459,7 +462,13 @@ final class MixSession: ObservableObject, Identifiable {
             row.loudnessReading = sourceLoudness[row.id] ?? nil
             return row
         }
-        outputs = outputs.map { var row = $0; row.level = max(outputPeaks[row.id] ?? 0, row.level * 0.72); return row }
+        let limiting = Dictionary(uniqueKeysWithValues: engine.outputs.map { ($0.id, $0.takeLimiting()) })
+        outputs = outputs.map { output in
+            var row = output
+            row.level = max(outputPeaks[row.id] ?? 0, row.level * 0.72)
+            row.limiting = max(limiting[row.id] ?? 0, row.limiting * 0.9)
+            return row
+        }
         level = max(outputs.first(where: \.isPrimary)?.level ?? 0, level * 0.72)
         let reading = normalizesLoudness ? engine.loudnessReading : nil
         if reading != loudnessReading { loudnessReading = reading }
@@ -468,9 +477,11 @@ final class MixSession: ObservableObject, Identifiable {
     // MARK: - Building the display rows
 
     private func syncRows() {
+        // System audio leaves out the apps listed separately, so say so.
+        let hasApps = engine.sources.contains { if case .application = $0.target { return true }; return false }
         sources = engine.sources.map { source in
             SourceRow(id: source.id,
-                      label: source.label,
+                      label: source.target == .systemAudio && hasApps ? "Other system audio" : source.label,
                       kindLabel: source.target.kindLabel,
                       symbolName: Self.symbolName(for: source.target),
                       appIcon: icon(for: source.target),
