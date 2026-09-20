@@ -83,6 +83,12 @@ private struct MenuBarMixRow: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
+            RecordButton(mix: mix, showsElapsed: false)
+            if mix.isRecordingFile {
+                Text(RecordButton.timecode(mix.recordingElapsed))
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.red)
+            }
             LevelBar(level: mix.level).frame(width: 56, height: 4)
         }
         .padding(.horizontal, 8)

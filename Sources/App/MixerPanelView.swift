@@ -197,6 +197,8 @@ private struct MixEditorView: View {
                 LevelBar(level: mix.level).frame(width: 150, height: 4)
             }
 
+            RecordButton(mix: mix)
+
             Button {
                 model.duplicate(mix.id)
             } label: { Image(systemName: "plus.square.on.square") }

@@ -391,6 +391,40 @@ final class Mixer: @unchecked Sendable {
     /// What mix-level normalisation is doing. Safe to read from any thread.
     var loudnessReading: LoudnessReading { normalizer.reading }
 
+    // MARK: - Recording the mix to a file
+
+    /// Set under the source lock, read by the render callback.
+    private var fileRecorder: MixRecorder?
+
+    /// The recording in progress, if any.
+    var recorder: MixRecorder? {
+        sourceLock.lock(); defer { sourceLock.unlock() }
+        return fileRecorder
+    }
+
+    /// Record everything this mix plays — after its own volume, before each
+    /// output's gain and limiter, so the file holds the mix itself rather than
+    /// one destination's version of it.
+    @discardableResult
+    func startRecording(to url: URL, format: MixRecorder.FileFormat) throws -> MixRecorder {
+        stopRecording()
+        let recorder = try MixRecorder(url: url, sampleRate: renderSampleRate,
+                                       channels: outputChannelCount, format: format)
+        recorder.start()
+        sourceLock.lock()
+        fileRecorder = recorder
+        sourceLock.unlock()
+        return recorder
+    }
+
+    func stopRecording() {
+        sourceLock.lock()
+        let recorder = fileRecorder
+        fileRecorder = nil
+        sourceLock.unlock()
+        recorder?.finish()
+    }
+
     private(set) var sources: [Source] = []
     private(set) var isRunning = false
 
@@ -643,6 +677,7 @@ final class Mixer: @unchecked Sendable {
     }
 
     func stop() {
+        stopRecording()
         sourceLock.lock()
         fanOut = []
         primaryOutput = nil
@@ -764,6 +799,7 @@ final class Mixer: @unchecked Sendable {
         let snapshot = sources
         let secondaries = fanOut
         let primary = primaryOutput
+        let recorder = fileRecorder
         sourceLock.unlock()
 
         for source in snapshot {
@@ -781,6 +817,10 @@ final class Mixer: @unchecked Sendable {
 
         // The mix's own volume applies to everything it sends.
         volumeRamp.apply(to: channels, frameCount: frameCount, target: isMuted ? 0 : volume)
+
+        // The file gets the mix itself — source gains, effects, loudness and
+        // the mix volume — but not an output's own gain, delay or limiter.
+        recorder?.append(channels, frameCount: frameCount)
 
         // Fan out before the primary's gain, so muting or turning down one
         // output never affects the others.

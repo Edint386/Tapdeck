@@ -58,6 +58,42 @@ struct VolumeControl: View {
     }
 }
 
+/// Starts and stops recording one mix to an audio file, and shows how long it
+/// has been running.
+struct RecordButton: View {
+    @ObservedObject var mix: MixSession
+    var showsElapsed = true
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Button {
+                mix.toggleFileRecording()
+            } label: {
+                Image(systemName: mix.isRecordingFile ? "stop.circle.fill" : "record.circle")
+                    .foregroundStyle(mix.isRecordingFile ? Color.red : Color.secondary)
+            }
+            .buttonStyle(.borderless)
+            .disabled(!mix.isRunning && !mix.isRecordingFile)
+            .help(mix.isRecordingFile
+                  ? "Stop recording and keep the file"
+                  : (mix.isRunning
+                     ? "Record what this mix plays to an audio file"
+                     : "Start the mix to record it"))
+
+            if showsElapsed, mix.isRecordingFile {
+                Text(Self.timecode(mix.recordingElapsed))
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
+    static func timecode(_ seconds: TimeInterval) -> String {
+        let total = Int(seconds)
+        return String(format: "%02d:%02d", total / 60, total % 60)
+    }
+}
+
 /// The app-wide master volume, bound to settings.
 struct MasterVolumeControl: View {
     @EnvironmentObject private var settings: AppSettings
