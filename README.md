@@ -172,7 +172,13 @@ requirement is then the binary's hash, every build counts as a different app,
 and the permissions reset each time.
 
 The virtual device driver is signed the same way. Core Audio's plug-in host runs
-with library validation disabled, so it loads a plug-in whoever signed it.
+with library validation disabled, so it loads a plug-in whoever signed it:
+measured, the signed driver loads and a 440 Hz tone sent to the virtual device
+comes back from its input at -12 dB.
+
+Moving an app from one signature to another means granting its permissions once
+more. Re-enabling the old switch is not enough: remove the app from the list in
+System Settings and add it again, so macOS records the new signature.
 
 Distribution would need a Developer ID and notarisation. This is for running on
 your own machine.
