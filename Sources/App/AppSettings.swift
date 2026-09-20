@@ -103,6 +103,11 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(showsMenuBarItem, forKey: Keys.showsMenuBarItem) }
     }
 
+    /// What a mix is recorded as.
+    @Published var mixRecordingFormat: MixRecorder.FileFormat {
+        didSet { defaults.set(mixRecordingFormat.rawValue, forKey: Keys.mixRecordingFormat) }
+    }
+
     /// Where screen recordings are written.
     @Published var recordingFolder: URL {
         didSet { defaults.set(recordingFolder.path, forKey: Keys.recordingFolder) }
@@ -122,11 +127,14 @@ final class AppSettings: ObservableObject {
         static let loudnessSpeed = "settings.loudnessSpeed"
         static let showsMenuBarItem = "settings.showsMenuBarItem"
         static let recordingFolder = "settings.recordingFolder"
+        static let mixRecordingFormat = "settings.mixRecordingFormat"
     }
 
     private init() {
         bufferSize = BufferSize(rawValue: defaults.integer(forKey: Keys.bufferSize)) ?? .balanced
         showsMenuBarItem = defaults.object(forKey: Keys.showsMenuBarItem) as? Bool ?? true
+        mixRecordingFormat = defaults.string(forKey: Keys.mixRecordingFormat)
+            .flatMap(MixRecorder.FileFormat.init(rawValue:)) ?? .aac
         recordingFolder = defaults.string(forKey: Keys.recordingFolder)
             .map { URL(fileURLWithPath: $0, isDirectory: true) } ?? Self.defaultRecordingFolder
 

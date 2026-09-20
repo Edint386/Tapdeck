@@ -33,6 +33,11 @@ struct GeneralSettingsView: View {
             }
 
             Section("Recordings") {
+                Picker("Record a mix as", selection: $settings.mixRecordingFormat) {
+                    ForEach(MixRecorder.FileFormat.allCases) { format in
+                        Text(format.title).tag(format)
+                    }
+                }
                 LabeledContent("Save to") {
                     HStack(spacing: 8) {
                         Text(settings.recordingFolder.path(percentEncoded: false)

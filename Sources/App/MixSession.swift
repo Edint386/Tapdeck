@@ -478,7 +478,13 @@ final class MixSession: ObservableObject, Identifiable {
 
     func stop() {
         guard isRunning else { return }
+        // The engine closes the file as it stops; report where it went.
+        let recordingURL = isRecordingFile ? engine.recorder?.url : nil
         engine.stop()
+        if isRecordingFile {
+            isRecordingFile = false
+            lastRecordingURL = recordingURL
+        }
         returnAirPlay()
         isRunning = false
         level = 0
@@ -491,6 +497,55 @@ final class MixSession: ObservableObject, Identifiable {
     }
 
     func toggleRunning() { isRunning ? stop() : start() }
+
+    // MARK: - Recording this mix to a file
+
+    @Published private(set) var isRecordingFile = false
+    @Published private(set) var recordingElapsed: TimeInterval = 0
+    /// The file written by the last recording, for opening it in the Finder.
+    @Published private(set) var lastRecordingURL: URL?
+
+    func toggleFileRecording() {
+        isRecordingFile ? stopFileRecording() : startFileRecording()
+    }
+
+    private func startFileRecording() {
+        guard isRunning else {
+            status = "Start the mix first — recording keeps what it plays"
+            return
+        }
+        do {
+            let url = Self.recordingURL(named: name, format: AppSettings.shared.mixRecordingFormat)
+            try engine.startRecording(to: url, format: AppSettings.shared.mixRecordingFormat)
+            isRecordingFile = true
+            recordingElapsed = 0
+            status = "Recording to \(url.lastPathComponent)"
+        } catch {
+            status = "Could not record: \(error.localizedDescription)"
+        }
+    }
+
+    func stopFileRecording() {
+        guard isRecordingFile else { return }
+        let url = engine.recorder?.url
+        engine.stopRecording()
+        isRecordingFile = false
+        lastRecordingURL = url
+        status = url.map { "Saved \($0.lastPathComponent)" } ?? "Recording stopped"
+    }
+
+    /// "<mix> 2026-09-20 00.41.12.m4a" in the recordings folder.
+    private static func recordingURL(named name: String, format: MixRecorder.FileFormat) -> URL {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let safe = (trimmed.isEmpty ? "Mix" : trimmed)
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+        let stamp = DateFormatter()
+        stamp.dateFormat = "yyyy-MM-dd HH.mm.ss"
+        return AppSettings.shared.recordingFolder
+            .appendingPathComponent("\(safe) \(stamp.string(from: Date()))")
+            .appendingPathExtension(format.fileExtension)
+    }
 
     // MARK: - AirPlay
 
@@ -551,6 +606,7 @@ final class MixSession: ObservableObject, Identifiable {
         level = max(outputs.first(where: \.isPrimary)?.level ?? 0, level * 0.72)
         let reading = normalizesLoudness ? engine.loudnessReading : nil
         if reading != loudnessReading { loudnessReading = reading }
+        if isRecordingFile { recordingElapsed = engine.recorder?.elapsed ?? recordingElapsed }
     }
 
     // MARK: - Building the display rows

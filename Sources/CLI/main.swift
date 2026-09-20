@@ -392,7 +392,16 @@ func runMix(seconds: Double, deviceName: String, placements: [String]) throws {
         mixer.volume = value
         print("Volume : \(value)")
     }
+    // "TAPDECK_RECORD_FILE=/path/out.wav" also records the mix to a file.
+    let recordPath = ProcessInfo.processInfo.environment["TAPDECK_RECORD_FILE"]
+
     try mixer.start()
+    if let recordPath {
+        let url = URL(fileURLWithPath: recordPath)
+        let format: MixRecorder.FileFormat = url.pathExtension == "wav" ? .wav : .aac
+        try mixer.startRecording(to: url, format: format)
+        print("Record : \(url.lastPathComponent)")
+    }
     for output in mixer.outputs {
         print("Output : \(output.deviceName) — \(output.channelCount)ch at \(Int(output.sampleRate)) Hz"
               + (output.isPrimary ? "  (primary)" : "")
@@ -422,6 +431,9 @@ func runMix(seconds: Double, deviceName: String, placements: [String]) throws {
                          second + 1, label, tap.format?.sampleRate ?? 0, tap.measuredSampleRate, clockRate,
                          tap.sampleRateChanges, entry.sampleRateChanges))
         }
+    }
+    if let recorder = mixer.recorder {
+        print(String(format: "Record : %.2f s written", Double(recorder.writtenFrames) / recorder.sampleRate))
     }
     mixer.stop()
     print("Stopped.")
