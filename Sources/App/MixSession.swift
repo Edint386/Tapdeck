@@ -365,12 +365,16 @@ final class MixSession: ObservableObject, Identifiable {
         })
     }
 
-    /// Whether the speakers are already delayed as suggested.
+    /// Whether the outputs arrive together, within a quarter of a second.
+    ///
+    /// Not the suggested delays exactly: those are typical values to start
+    /// from, and lining up by ear ends somewhere near them, not on them.
     var outputsAreLinedUp: Bool {
-        guard let suggested = suggestedOutputDelays else { return true }
-        return outputs.allSatisfy { row in
-            suggested[row.id].map { abs($0 - row.delayMilliseconds) < 1 } ?? true
-        }
+        let audible = outputs.filter { !MixerModel.isVirtual($0.deviceUID) && $0.transport != .virtual }
+        guard audible.count >= 2 else { return true }
+        let arrivals = audible.map { $0.transport.typicalLatencyMilliseconds + $0.delayMilliseconds }
+        guard let earliest = arrivals.min(), let latest = arrivals.max() else { return true }
+        return latest - earliest <= 250
     }
 
     func lineUpOutputs() {
