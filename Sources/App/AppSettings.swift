@@ -108,6 +108,16 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(mixRecordingFormat.rawValue, forKey: Keys.mixRecordingFormat) }
     }
 
+    /// Bits per second for AAC recordings.
+    @Published var mixRecordingBitrate: Int {
+        didSet { defaults.set(mixRecordingBitrate, forKey: Keys.mixRecordingBitrate) }
+    }
+
+    /// Bits per sample for uncompressed and lossless recordings.
+    @Published var mixRecordingBitDepth: Int {
+        didSet { defaults.set(mixRecordingBitDepth, forKey: Keys.mixRecordingBitDepth) }
+    }
+
     /// Where screen recordings are written.
     @Published var recordingFolder: URL {
         didSet { defaults.set(recordingFolder.path, forKey: Keys.recordingFolder) }
@@ -128,6 +138,8 @@ final class AppSettings: ObservableObject {
         static let showsMenuBarItem = "settings.showsMenuBarItem"
         static let recordingFolder = "settings.recordingFolder"
         static let mixRecordingFormat = "settings.mixRecordingFormat"
+        static let mixRecordingBitrate = "settings.mixRecordingBitrate"
+        static let mixRecordingBitDepth = "settings.mixRecordingBitDepth"
     }
 
     private init() {
@@ -135,6 +147,10 @@ final class AppSettings: ObservableObject {
         showsMenuBarItem = defaults.object(forKey: Keys.showsMenuBarItem) as? Bool ?? true
         mixRecordingFormat = defaults.string(forKey: Keys.mixRecordingFormat)
             .flatMap(MixRecorder.FileFormat.init(rawValue:)) ?? .aac
+        let storedBitrate = defaults.integer(forKey: Keys.mixRecordingBitrate)
+        mixRecordingBitrate = MixRecorder.bitrates.contains(storedBitrate) ? storedBitrate : 256_000
+        let storedDepth = defaults.integer(forKey: Keys.mixRecordingBitDepth)
+        mixRecordingBitDepth = MixRecorder.bitDepths.contains(storedDepth) ? storedDepth : 24
         recordingFolder = defaults.string(forKey: Keys.recordingFolder)
             .map { URL(fileURLWithPath: $0, isDirectory: true) } ?? Self.defaultRecordingFolder
 

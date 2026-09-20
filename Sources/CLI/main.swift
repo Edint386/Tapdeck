@@ -398,7 +398,12 @@ func runMix(seconds: Double, deviceName: String, placements: [String]) throws {
     try mixer.start()
     if let recordPath {
         let url = URL(fileURLWithPath: recordPath)
-        let format: MixRecorder.FileFormat = url.pathExtension == "wav" ? .wav : .aac
+        // "TAPDECK_RECORD_FORMAT=flac" picks the format; otherwise the
+        // extension decides, and .m4a means AAC.
+        let format = ProcessInfo.processInfo.environment["TAPDECK_RECORD_FORMAT"]
+            .flatMap(MixRecorder.FileFormat.init(rawValue:))
+            ?? MixRecorder.FileFormat.allCases.first { $0.fileExtension == url.pathExtension }
+            ?? .aac
         try mixer.startRecording(to: url, format: format)
         print("Record : \(url.lastPathComponent)")
     }

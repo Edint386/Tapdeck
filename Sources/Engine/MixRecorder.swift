@@ -12,21 +12,43 @@ import Foundation
 /// gathered.
 final class MixRecorder: @unchecked Sendable {
 
-    /// What the file holds. AAC keeps recordings small; WAV stays untouched,
-    /// which matters when the recording is edited afterwards or has more than
-    /// two channels.
+    /// What the file holds.
+    ///
+    /// These are the formats macOS itself can encode. MP3 is not among them:
+    /// the system has a decoder but no encoder, and AAC is better at the same
+    /// bitrate and plays everywhere, so it takes MP3's place here.
     enum FileFormat: String, Codable, CaseIterable, Identifiable {
-        case aac, wav
+        case aac, alac, flac, wav, aiff
 
         var id: String { rawValue }
-        var fileExtension: String { self == .aac ? "m4a" : "wav" }
-        var title: String {
+
+        var fileExtension: String {
             switch self {
-            case .aac: return "AAC (.m4a) — smaller files"
-            case .wav: return "WAV — uncompressed"
+            case .aac, .alac: return "m4a"
+            case .flac:       return "flac"
+            case .wav:        return "wav"
+            case .aiff:       return "aiff"
             }
         }
+
+        var title: String {
+            switch self {
+            case .aac:  return "AAC (.m4a) — small, plays everywhere"
+            case .alac: return "Apple Lossless (.m4a) — lossless, about half the size of WAV"
+            case .flac: return "FLAC — lossless, open"
+            case .wav:  return "WAV — uncompressed"
+            case .aiff: return "AIFF — uncompressed"
+            }
+        }
+
+        var isLossy: Bool { self == .aac }
+        /// Whether a bit depth applies.
+        var hasBitDepth: Bool { self == .wav || self == .aiff }
     }
+
+    /// Bitrates offered for AAC, in bits per second.
+    static let bitrates = [128_000, 192_000, 256_000, 320_000]
+    static let bitDepths = [16, 24]
 
     let url: URL
     let channelCount: Int
@@ -47,7 +69,13 @@ final class MixRecorder: @unchecked Sendable {
     /// Frames written so far, for showing progress and the file's length.
     private(set) var writtenFrames: Int64 = 0
 
-    init(url: URL, sampleRate: Double, channels: Int, format: FileFormat) throws {
+    /// How large the file has grown, in bytes.
+    var fileSize: Int64 {
+        (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) as? Int64 ?? 0
+    }
+
+    init(url: URL, sampleRate: Double, channels: Int, format: FileFormat,
+         bitrate: Int = 256_000, bitDepth: Int = 24) throws {
         self.url = url
         self.sampleRate = sampleRate
         channelCount = max(1, channels)
@@ -62,12 +90,18 @@ final class MixRecorder: @unchecked Sendable {
         switch format {
         case .aac:
             settings[AVFormatIDKey] = kAudioFormatMPEG4AAC
-            settings[AVEncoderBitRateKey] = channelCount > 2 ? 320_000 : 256_000
-        case .wav:
+            // More channels need more bits for the same quality.
+            settings[AVEncoderBitRateKey] = channelCount > 2 ? bitrate * 2 : bitrate
+        case .alac:
+            settings[AVFormatIDKey] = kAudioFormatAppleLossless
+            settings[AVEncoderBitDepthHintKey] = bitDepth
+        case .flac:
+            settings[AVFormatIDKey] = kAudioFormatFLAC
+        case .wav, .aiff:
             settings[AVFormatIDKey] = kAudioFormatLinearPCM
-            settings[AVLinearPCMBitDepthKey] = 24
+            settings[AVLinearPCMBitDepthKey] = bitDepth
             settings[AVLinearPCMIsFloatKey] = false
-            settings[AVLinearPCMIsBigEndianKey] = false
+            settings[AVLinearPCMIsBigEndianKey] = format == .aiff
             settings[AVLinearPCMIsNonInterleaved] = false
         }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),

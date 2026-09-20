@@ -66,6 +66,36 @@ struct RecorderPanelView: View {
                 .disabled(recording != nil)
             }
 
+            if settings.mixRecordingFormat.isLossy {
+                HStack {
+                    Text("Bitrate").frame(width: 64, alignment: .leading)
+                    Picker("", selection: $settings.mixRecordingBitrate) {
+                        ForEach(MixRecorder.bitrates, id: \.self) { rate in
+                            Text("\(rate / 1000) kbps").tag(rate)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 140)
+                    .disabled(recording != nil)
+                    Text("MP3 is not offered: macOS has no MP3 encoder, and AAC sounds better at the same bitrate.")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else if settings.mixRecordingFormat.hasBitDepth {
+                HStack {
+                    Text("Depth").frame(width: 64, alignment: .leading)
+                    Picker("", selection: $settings.mixRecordingBitDepth) {
+                        ForEach(MixRecorder.bitDepths, id: \.self) { depth in
+                            Text("\(depth)-bit").tag(depth)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 140)
+                    .disabled(recording != nil)
+                }
+            }
+
             Text(selected.map { $0.isRecordingFile
                  ? "Recording what this mix plays."
                  : "Starts the mix if it is not running, then keeps what it plays." }
@@ -73,6 +103,33 @@ struct RecorderPanelView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            // The monitor: what is going onto the file right now.
+            if let selected {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 10) {
+                        Text("Level").font(.caption).foregroundStyle(.secondary)
+                            .frame(width: 64, alignment: .leading)
+                        LevelBar(level: selected.level).frame(height: 6)
+                        Text(Self.decibels(selected.level))
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(selected.level >= 0.99 ? Color.red : .secondary)
+                            .frame(width: 58, alignment: .trailing)
+                    }
+                    HStack(spacing: 10) {
+                        Text("File").font(.caption).foregroundStyle(.secondary)
+                            .frame(width: 64, alignment: .leading)
+                        Text(selected.isRecordingFile
+                             ? "\(Self.size(selected.recordingSize)) so far"
+                             : (selected.isRunning ? "Ready" : "Mix stopped"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                }
+                .padding(10)
+                .background(Color.secondary.opacity(0.09), in: RoundedRectangle(cornerRadius: 9))
+            }
 
             HStack(spacing: 12) {
                 Button {
@@ -105,6 +162,17 @@ struct RecorderPanelView: View {
                 }
             }
         }
+    }
+
+    static func decibels(_ level: Float) -> String {
+        level > 0.0005 ? String(format: "%.1f dBFS", 20 * log10(Double(level))) : "−∞ dBFS"
+    }
+
+    static func size(_ bytes: Int64) -> String {
+        let units = ["bytes", "KB", "MB", "GB"]
+        var value = Double(bytes), unit = 0
+        while value >= 1024, unit < units.count - 1 { value /= 1024; unit += 1 }
+        return unit == 0 ? "\(Int(value)) bytes" : String(format: "%.1f %@", value, units[unit])
     }
 
     // MARK: Capture target
@@ -196,6 +264,8 @@ struct RecorderPanelView: View {
             }
 
             Toggle("Include the pointer", isOn: $rec.showsCursor)
+            Toggle("Include Tapdeck's own window", isOn: $rec.includesOwnWindows)
+                .help("Tapdeck leaves its own windows out of a screen recording, so the recording does not show the controls being used. Turn this on to record them too.")
         }
         .disabled(rec.isRecording)
     }

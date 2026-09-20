@@ -406,10 +406,12 @@ final class Mixer: @unchecked Sendable {
     /// output's gain and limiter, so the file holds the mix itself rather than
     /// one destination's version of it.
     @discardableResult
-    func startRecording(to url: URL, format: MixRecorder.FileFormat) throws -> MixRecorder {
+    func startRecording(to url: URL, format: MixRecorder.FileFormat,
+                        bitrate: Int = 256_000, bitDepth: Int = 24) throws -> MixRecorder {
         stopRecording()
         let recorder = try MixRecorder(url: url, sampleRate: renderSampleRate,
-                                       channels: outputChannelCount, format: format)
+                                       channels: outputChannelCount, format: format,
+                                       bitrate: bitrate, bitDepth: bitDepth)
         recorder.start()
         sourceLock.lock()
         fileRecorder = recorder
