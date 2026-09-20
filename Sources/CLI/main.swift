@@ -612,6 +612,97 @@ func runMuxTest(output: URL) throws {
 }
 
 
+/// The recorder's options, offline: codec, bitrate, and one audio track per
+/// ScreenCaptureKit source. No screen capture and no permissions needed.
+func runMuxOptionsTest(output: URL) throws {
+    try? FileManager.default.removeItem(at: output)
+    let sampleRate = 48_000.0
+    let size = CGSize(width: 640, height: 360)
+    let bitrate = 2_000_000
+    guard let trackFormat = AVAudioFormat.discrete(sampleRate: sampleRate, channels: 2) else {
+        throw CoreAudioError.missing("a stereo format")
+    }
+    let recorder = try MuxedRecorder(
+        outputURL: output,
+        videoSize: size,
+        video: MuxedRecorder.VideoSettings(codec: .hevc, bitrate: bitrate),
+        audioFormat: nil,
+        sampleAudioTracks: [MuxedRecorder.SampleAudioTrack(sampleRate: sampleRate, channels: 2),
+                            MuxedRecorder.SampleAudioTrack(sampleRate: sampleRate, channels: 2)])
+    recorder.start()
+
+    var pixelBuffer: CVPixelBuffer?
+    CVPixelBufferCreate(nil, Int(size.width), Int(size.height), kCVPixelFormatType_32BGRA, nil, &pixelBuffer)
+    guard let pixelBuffer else { throw CoreAudioError.missing("a pixel buffer") }
+    var videoFormat: CMVideoFormatDescription?
+    CMVideoFormatDescriptionCreateForImageBuffer(allocator: nil, imageBuffer: pixelBuffer,
+                                                 formatDescriptionOut: &videoFormat)
+    guard let videoFormat else { throw CoreAudioError.missing("a video format") }
+
+    /// Wrap PCM as a sample buffer, which is how ScreenCaptureKit delivers audio.
+    func sampleBuffer(_ pcm: AVAudioPCMBuffer, at time: CMTime) -> CMSampleBuffer? {
+        var timing = CMSampleTimingInfo(duration: CMTime(value: 1, timescale: CMTimeScale(sampleRate)),
+                                        presentationTimeStamp: time, decodeTimeStamp: .invalid)
+        var buffer: CMSampleBuffer?
+        guard CMSampleBufferCreate(allocator: kCFAllocatorDefault, dataBuffer: nil, dataReady: false,
+                                   makeDataReadyCallback: nil, refcon: nil,
+                                   formatDescription: pcm.format.formatDescription,
+                                   sampleCount: CMItemCount(pcm.frameLength),
+                                   sampleTimingEntryCount: 1, sampleTimingArray: &timing,
+                                   sampleSizeEntryCount: 0, sampleSizeArray: nil,
+                                   sampleBufferOut: &buffer) == noErr, let buffer else { return nil }
+        CMSampleBufferSetDataBufferFromAudioBufferList(buffer, blockBufferAllocator: kCFAllocatorDefault,
+                                                       blockBufferMemoryAllocator: kCFAllocatorDefault,
+                                                       flags: 0, bufferList: pcm.audioBufferList)
+        return buffer
+    }
+
+    let blockFrames = 1_024
+    let duration = 3.0
+    var phases = [0.0, 0.0]
+    var elapsed = 0.0, nextVideo = 0.0
+
+    while elapsed < duration {
+        if elapsed >= nextVideo {
+            var timing = CMSampleTimingInfo(duration: CMTime(value: 1, timescale: 30),
+                                            presentationTimeStamp: CMTime(seconds: nextVideo, preferredTimescale: 600),
+                                            decodeTimeStamp: .invalid)
+            var sample: CMSampleBuffer?
+            CMSampleBufferCreateReadyWithImageBuffer(allocator: nil, imageBuffer: pixelBuffer,
+                                                     formatDescription: videoFormat,
+                                                     sampleTiming: &timing, sampleBufferOut: &sample)
+            if let sample { recorder.appendVideo(sample) }
+            nextVideo += 1.0 / 30
+        }
+
+        // Track 0 carries 440 Hz, track 1 carries 3 kHz, so they can be told apart.
+        for track in 0..<2 {
+            guard let pcm = AVAudioPCMBuffer(pcmFormat: trackFormat,
+                                             frameCapacity: AVAudioFrameCount(blockFrames)),
+                  let data = pcm.floatChannelData else { continue }
+            pcm.frameLength = AVAudioFrameCount(blockFrames)
+            let frequency = track == 0 ? 440.0 : 3_000.0
+            for frame in 0..<blockFrames {
+                let value = Float(sin(phases[track]) * 0.25)
+                data[0][frame] = value
+                data[1][frame] = value
+                phases[track] += 2 * .pi * frequency / sampleRate
+            }
+            if let buffer = sampleBuffer(pcm, at: CMTime(seconds: elapsed, preferredTimescale: CMTimeScale(sampleRate))) {
+                recorder.appendAudio(buffer, track: track)
+            }
+        }
+
+        elapsed += Double(blockFrames) / sampleRate
+    }
+
+    let done = DispatchSemaphore(value: 0)
+    Task { await recorder.finish(); done.signal() }
+    done.wait()
+    if let failure = recorder.failure { print("Failed: \(failure)"); exit(1) }
+    print("Wrote \(output.path): HEVC \(Int(size.width))x\(Int(size.height)) at \(bitrate / 1_000_000) Mbps, 2 audio tracks")
+}
+
 /// Set a device's nominal sample rate. Used to give a virtual device a rate that
 /// differs from the rest of the chain, so sample rate conversion can be tested.
 func runRate(deviceName: String, rate: Double) throws {
@@ -1316,6 +1407,9 @@ do {
 
     case "graphtest":
         runGraphTest()
+
+    case "muxopts":
+        try runMuxOptionsTest(output: URL(fileURLWithPath: args.count >= 2 ? args[1] : "muxopts.mov"))
 
     case "muxtest":
         try runMuxTest(output: URL(fileURLWithPath: args.count >= 2 ? args[1] : "muxtest.mov"))
