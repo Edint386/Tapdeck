@@ -88,7 +88,7 @@ private struct MixListView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if !menuBar.isPlaced {
-                Label("No room in the menu bar for Tapdeck. A notched display leaves only a narrow strip for status items.",
+                Label("The menu bar has no free slot, so macOS is keeping Tapdeck's icon off screen. It is still there and appears as soon as room frees up — hold Command and drag another icon out of the menu bar, or turn some off in Control Center settings. Until then, right-click Tapdeck in the Dock to start and stop mixes.",
                       systemImage: "menubar.arrow.up.rectangle")
                     .font(.caption2)
                     .foregroundStyle(.orange)
