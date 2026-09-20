@@ -88,11 +88,12 @@ private struct MixListView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if !menuBar.isPlaced {
-                Label("The menu bar has no free slot, so macOS is keeping Tapdeck's icon off screen. It is still there and appears as soon as room frees up — hold Command and drag another icon out of the menu bar, or turn some off in Control Center settings. Until then, right-click Tapdeck in the Dock to start and stop mixes.",
+                Label("No free slot in the menu bar, so the icon waits off screen. Right-click Tapdeck in the Dock meanwhile.",
                       systemImage: "menubar.arrow.up.rectangle")
                     .font(.caption2)
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
+                    .help("macOS gives status items the strip right of the notch and keeps Tapdeck's icon off screen once other apps have filled it. It appears as soon as room frees up: hold Command and drag another icon out of the menu bar, or turn some off in Control Center settings.")
             }
         }
         .padding(14)
@@ -179,7 +180,9 @@ private struct MixEditorView: View {
 
             VStack(spacing: 2) {
                 Toggle(isOn: $mix.normalizesLoudness) {
-                    Label("Even Out", systemImage: "waveform")
+                    // Icon only: the header is tight, and the tooltip explains it.
+                    Image(systemName: "waveform")
+                        .frame(width: 18)
                 }
                 .toggleStyle(.button)
                 .controlSize(.small)
