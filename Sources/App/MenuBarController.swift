@@ -97,6 +97,40 @@ final class MenuBarController: NSObject, ObservableObject, NSPopoverDelegate {
         }
     }
 
+    // MARK: - Floating panel
+
+    /// The same controls in a small window that floats above other apps.
+    ///
+    /// When the menu bar has no free slot, macOS never places the item:
+    /// measured, it sits at x = -1116 and a press on it opens nothing. Tools
+    /// that tidy the menu bar cannot show what was never placed, so this is
+    /// the way to reach the mixes without the main window.
+    private var panel: NSPanel?
+
+    func toggleMiniPanel() {
+        if let panel, panel.isVisible {
+            panel.orderOut(nil)
+            return
+        }
+        if panel == nil {
+            let hosting = NSHostingController(
+                rootView: MenuBarPanelView()
+                    .environmentObject(AppModels.shared.mixer)
+                    .environmentObject(AppModels.shared.settings))
+            let panel = NSPanel(contentViewController: hosting)
+            panel.styleMask = [.titled, .closable, .utilityWindow, .nonactivatingPanel]
+            panel.title = "Tapdeck"
+            panel.level = .floating
+            panel.isFloatingPanel = true
+            panel.hidesOnDeactivate = false
+            panel.isReleasedWhenClosed = false
+            panel.center()
+            self.panel = panel
+        }
+        AppModels.shared.mixer.refresh()
+        panel?.orderFrontRegardless()
+    }
+
     private func hideItem() {
         guard let item = statusItem else { return }
         popover.performClose(nil)
