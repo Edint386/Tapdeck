@@ -88,12 +88,14 @@ private struct MixListView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if !menuBar.isPlaced {
-                Label("No free slot in the menu bar, so the icon waits off screen. Right-click Tapdeck in the Dock meanwhile.",
-                      systemImage: "menubar.arrow.up.rectangle")
-                    .font(.caption2)
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .help("macOS gives status items the strip right of the notch and keeps Tapdeck's icon off screen once other apps have filled it. It appears as soon as room frees up: hold Command and drag another icon out of the menu bar, or turn some off in Control Center settings.")
+                HStack(spacing: 6) {
+                    Label("No free space in the menu bar", systemImage: "menubar.arrow.up.rectangle")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                    Button("Panel") { menuBar.toggleMiniPanel() }
+                        .controlSize(.mini)
+                }
+                .help("macOS places status items in the strip right of the notch and keeps Tapdeck's icon off screen once other apps have filled it, so it cannot be clicked — not even by tools that tidy the menu bar, since it was never placed. It appears as soon as room frees up: hold Command and drag another icon out of the menu bar. Meanwhile, use this floating panel or the Dock menu.")
             }
         }
         .padding(14)
