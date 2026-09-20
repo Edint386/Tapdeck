@@ -13,9 +13,11 @@ final class MenuBarController: NSObject, ObservableObject, NSPopoverDelegate {
     /// Whether the menu bar found room for the item.
     ///
     /// A notched display leaves only a narrow strip for status items, and once
-    /// other apps have filled it macOS allocates no slot and pushes the item's
-    /// window off screen. Nothing reports an error, so detect it here and tell
-    /// the user.
+    /// other apps have filled it macOS allocates no slot and parks the item's
+    /// window off screen — measured at x = -1116. The item is never removed by
+    /// Tapdeck; macOS decides, and an app cannot claim a slot. So the item is
+    /// kept, the placement is rechecked whenever that could change, and the UI
+    /// explains how to free room.
     @Published private(set) var isPlaced = true
 
     private var statusItem: NSStatusItem?
@@ -50,11 +52,31 @@ final class MenuBarController: NSObject, ObservableObject, NSPopoverDelegate {
                 shows ? self?.showItem() : self?.hideItem()
             }
             .store(in: &cancellables)
+
+        // Room can appear when another app's item goes away or the screen
+        // arrangement changes. Both moments are notifications, so no polling.
+        for name in [NSApplication.didBecomeActiveNotification,
+                     NSApplication.didChangeScreenParametersNotification] {
+            NotificationCenter.default.publisher(for: name)
+                .sink { [weak self] _ in self?.retryPlacement() }
+                .store(in: &cancellables)
+        }
+    }
+
+    /// Ask for a slot again when one may have appeared. Re-creating the item is
+    /// the only way to ask; while it is placed, nothing is touched.
+    private func retryPlacement() {
+        guard AppSettings.shared.showsMenuBarItem, statusItem != nil, !isPlaced else { return }
+        hideItem()
+        showItem()
     }
 
     private func showItem() {
         guard statusItem == nil else { return }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        // Lets macOS remember the position across launches.
+        item.autosaveName = "dev.kosuke.Tapdeck.menuBarItem"
+        item.isVisible = true
         item.button?.image = Self.symbol(isRunning: false)
         item.button?.image?.isTemplate = true
         item.button?.target = self
