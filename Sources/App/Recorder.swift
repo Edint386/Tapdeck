@@ -97,6 +97,9 @@ final class Recorder: NSObject, ObservableObject {
     @Published var systemAudio = true
     @Published var microphone = false
     @Published var showsCursor = true
+    /// Tapdeck's own windows are left out by default, so a recording does not
+    /// show the controls being used while recording.
+    @Published var includesOwnWindows = false
 
     // MARK: - Internals
 
@@ -246,9 +249,9 @@ final class Recorder: NSObject, ObservableObject {
         switch opt.target {
         case .display(let id):
             guard let d = content.displays.first(where: { $0.displayID == id }) else { throw Failure.noTarget }
-            // Leave our own window out so the recording UI does not appear in
-            // the capture.
-            let own = content.applications.filter { $0.processID == ownPID }
+            // Leave our own windows out so the recording UI does not appear in
+            // the capture, unless asked for.
+            let own = includesOwnWindows ? [] : content.applications.filter { $0.processID == ownPID }
             return SCContentFilter(display: d, excludingApplications: own, exceptingWindows: [])
 
         case .window(let id):

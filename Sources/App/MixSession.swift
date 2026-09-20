@@ -506,6 +506,8 @@ final class MixSession: ObservableObject, Identifiable {
 
     @Published private(set) var isRecordingFile = false
     @Published private(set) var recordingElapsed: TimeInterval = 0
+    /// How large the recording has grown, in bytes.
+    @Published private(set) var recordingSize: Int64 = 0
     /// The file written by the last recording, for opening it in the Finder.
     @Published private(set) var lastRecordingURL: URL?
 
@@ -519,10 +521,14 @@ final class MixSession: ObservableObject, Identifiable {
             return
         }
         do {
-            let url = Self.recordingURL(named: name, format: AppSettings.shared.mixRecordingFormat)
-            try engine.startRecording(to: url, format: AppSettings.shared.mixRecordingFormat)
+            let settings = AppSettings.shared
+            let url = Self.recordingURL(named: name, format: settings.mixRecordingFormat)
+            try engine.startRecording(to: url, format: settings.mixRecordingFormat,
+                                      bitrate: settings.mixRecordingBitrate,
+                                      bitDepth: settings.mixRecordingBitDepth)
             isRecordingFile = true
             recordingElapsed = 0
+            recordingSize = 0
             status = "Recording to \(url.lastPathComponent)"
         } catch {
             status = "Could not record: \(error.localizedDescription)"
@@ -610,7 +616,10 @@ final class MixSession: ObservableObject, Identifiable {
         level = max(outputs.first(where: \.isPrimary)?.level ?? 0, level * 0.72)
         let reading = normalizesLoudness ? engine.loudnessReading : nil
         if reading != loudnessReading { loudnessReading = reading }
-        if isRecordingFile { recordingElapsed = engine.recorder?.elapsed ?? recordingElapsed }
+        if isRecordingFile, let recorder = engine.recorder {
+            recordingElapsed = recorder.elapsed
+            recordingSize = recorder.fileSize
+        }
     }
 
     // MARK: - Building the display rows
