@@ -34,15 +34,38 @@ final class MuxedRecorder: NSObject, @unchecked Sendable {
 
     private(set) var outputURL: URL
 
-    init(outputURL: URL, videoSize: CGSize, audioFormat: AVAudioFormat?) throws {
+    /// How the picture is encoded. Bitrate is what decides quality at a given
+    /// size; the codec decides how far that bitrate goes.
+    struct VideoSettings {
+        var codec: AVVideoCodecType = .h264
+        /// Bits per second, or nil to let the encoder choose.
+        var bitrate: Int?
+    }
+
+    /// An audio track fed with sample buffers rather than PCM — what
+    /// ScreenCaptureKit delivers for system audio and the microphone.
+    struct SampleAudioTrack {
+        var sampleRate: Double = 48_000
+        var channels: Int = 2
+    }
+
+    /// Tracks written from sample buffers, in the order they were declared.
+    private let sampleAudioInputs: [AVAssetWriterInput]
+
+    init(outputURL: URL, videoSize: CGSize, video: VideoSettings = VideoSettings(),
+         audioFormat: AVAudioFormat?, sampleAudioTracks: [SampleAudioTrack] = []) throws {
         self.outputURL = outputURL
         writer = try AVAssetWriter(outputURL: outputURL, fileType: .mov)
 
-        videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: [
-            AVVideoCodecKey: AVVideoCodecType.h264,
+        var videoSettings: [String: Any] = [
+            AVVideoCodecKey: video.codec,
             AVVideoWidthKey: Int(videoSize.width),
             AVVideoHeightKey: Int(videoSize.height),
-        ])
+        ]
+        if let bitrate = video.bitrate {
+            videoSettings[AVVideoCompressionPropertiesKey] = [AVVideoAverageBitRateKey: bitrate]
+        }
+        videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
         videoInput.expectsMediaDataInRealTime = true
         guard writer.canAdd(videoInput) else {
             throw CoreAudioError.missing("the video track")
@@ -76,6 +99,34 @@ final class MuxedRecorder: NSObject, @unchecked Sendable {
             trackFormat = nil
             audioInputs = []
         }
+
+        var sampleInputs: [AVAssetWriterInput] = []
+        for track in sampleAudioTracks {
+            let input = AVAssetWriterInput(mediaType: .audio, outputSettings: [
+                AVFormatIDKey: kAudioFormatMPEG4AAC,
+                AVSampleRateKey: track.sampleRate,
+                AVNumberOfChannelsKey: track.channels,
+                AVEncoderBitRateKey: track.channels == 1 ? 96_000 : 192_000,
+            ])
+            input.expectsMediaDataInRealTime = true
+            guard writer.canAdd(input) else { break }
+            writer.add(input)
+            sampleInputs.append(input)
+        }
+        sampleAudioInputs = sampleInputs
+    }
+
+    /// Append one of ScreenCaptureKit's audio buffers to the track declared at
+    /// that index. Buffers arriving before the first video frame are dropped,
+    /// as video sets the timeline's origin.
+    func appendAudio(_ sampleBuffer: CMSampleBuffer, track index: Int) {
+        guard CMSampleBufferDataIsReady(sampleBuffer) else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        guard hasStartedSession, index < sampleAudioInputs.count else { return }
+        let input = sampleAudioInputs[index]
+        guard input.isReadyForMoreMediaData else { return }
+        input.append(sampleBuffer)
     }
 
     func start() {
@@ -93,6 +144,7 @@ final class MuxedRecorder: NSObject, @unchecked Sendable {
         defer { lock.unlock() }
         videoInput.markAsFinished()
         audioInputs.forEach { $0.markAsFinished() }
+        sampleAudioInputs.forEach { $0.markAsFinished() }
     }
 
     var failure: Error? { writer.error }

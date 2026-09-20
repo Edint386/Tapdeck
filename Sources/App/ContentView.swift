@@ -2,21 +2,109 @@ import SwiftUI
 
 struct RecorderPanelView: View {
     @EnvironmentObject private var rec: Recorder
+    @EnvironmentObject private var mixer: MixerModel
+    @EnvironmentObject private var settings: AppSettings
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            targetSection
-            Divider()
-            videoSection
-            Divider()
-            audioSection
-            Divider()
-            controlSection
+            Picker("", selection: $rec.mode) {
+                ForEach(Recorder.Mode.allCases) { mode in Text(mode.title).tag(mode) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .disabled(rec.isRecording)
+
+            if rec.mode == .audio {
+                audioOnlySection
+            } else {
+                targetSection
+                Divider()
+                videoSection
+                Divider()
+                audioSection
+                Divider()
+                controlSection
+            }
         }
         .padding(18)
         .frame(maxWidth: 520)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await rec.refreshContent() }
+    }
+
+    // MARK: Audio only
+
+    /// Recording a mix as an audio file. The same thing the record button in
+    /// the mixer does, with the mix and the format in one place.
+    private var audioOnlySection: some View {
+        let recording = mixer.mixes.first { $0.isRecordingFile }
+        let selected = recording ?? mixer.mixes.first { $0.id == rec.audioMixID } ?? mixer.mixes.first
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Audio").font(.headline)
+
+            HStack {
+                Text("Mix").frame(width: 64, alignment: .leading)
+                Picker("", selection: Binding(get: { selected?.id ?? UUID() },
+                                              set: { rec.audioMixID = $0 })) {
+                    ForEach(mixer.mixes) { mix in
+                        Text(mix.name.trimmingCharacters(in: .whitespaces).isEmpty
+                             ? "Unnamed mix" : mix.name).tag(mix.id)
+                    }
+                }
+                .labelsHidden()
+                .disabled(recording != nil)
+            }
+
+            HStack {
+                Text("Format").frame(width: 64, alignment: .leading)
+                Picker("", selection: $settings.mixRecordingFormat) {
+                    ForEach(MixRecorder.FileFormat.allCases) { format in
+                        Text(format.title).tag(format)
+                    }
+                }
+                .labelsHidden()
+                .disabled(recording != nil)
+            }
+
+            Text(selected.map { $0.isRecordingFile
+                 ? "Recording what this mix plays."
+                 : "Starts the mix if it is not running, then keeps what it plays." }
+                 ?? "Make a mix first.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 12) {
+                Button {
+                    guard let selected else { return }
+                    if !selected.isRunning && !selected.isRecordingFile { selected.start() }
+                    selected.toggleFileRecording()
+                } label: {
+                    Label(selected?.isRecordingFile == true ? "Stop" : "Start Recording",
+                          systemImage: selected?.isRecordingFile == true ? "stop.fill" : "record.circle")
+                        .frame(maxWidth: .infinity)
+                }
+                .controlSize(.large)
+                .disabled(selected == nil)
+
+                Text(RecordButton.timecode(selected?.recordingElapsed ?? 0))
+                    .font(.system(.title3, design: .monospaced))
+                    .foregroundStyle(selected?.isRecordingFile == true ? .red : .secondary)
+                    .frame(width: 90, alignment: .trailing)
+            }
+
+            if let url = selected?.lastRecordingURL {
+                HStack(spacing: 6) {
+                    Text("Saved \(url.lastPathComponent)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Button("Show") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                        .controlSize(.small)
+                }
+            }
+        }
     }
 
     // MARK: Capture target
@@ -61,14 +149,13 @@ struct RecorderPanelView: View {
 
             HStack {
                 Text("Size").frame(width: 64, alignment: .leading)
-                Picker("", selection: $rec.scalePercent) {
-                    Text("100% (native)").tag(100)
-                    Text("75%").tag(75)
-                    Text("50%").tag(50)
-                    Text("25%").tag(25)
+                Picker("", selection: $rec.videoSize) {
+                    ForEach(Recorder.VideoSize.allCases) { size in
+                        Text(size.title).tag(size)
+                    }
                 }
                 .labelsHidden()
-                .onChange(of: rec.scalePercent) { rec.updateOutputSize() }
+                .onChange(of: rec.videoSize) { rec.updateOutputSize() }
                 Text(rec.outputSize == .zero
                      ? "—"
                      : "\(Int(rec.outputSize.width))×\(Int(rec.outputSize.height)) px")
@@ -77,8 +164,29 @@ struct RecorderPanelView: View {
             }
 
             HStack {
+                Text("Codec").frame(width: 64, alignment: .leading)
+                Picker("", selection: $rec.codec) {
+                    ForEach(Recorder.Codec.allCases) { codec in Text(codec.title).tag(codec) }
+                }
+                .labelsHidden()
+            }
+
+            HStack {
+                Text("Quality").frame(width: 64, alignment: .leading)
+                Picker("", selection: $rec.quality) {
+                    ForEach(Recorder.Quality.allCases) { quality in Text(quality.title).tag(quality) }
+                }
+                .labelsHidden()
+                Text(rec.outputSize == .zero ? "—"
+                     : String(format: "%.1f Mbps", Double(rec.bitrate(for: rec.outputSize)) / 1_000_000))
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
                 Text("Rate").frame(width: 64, alignment: .leading)
                 Picker("", selection: $rec.fps) {
+                    Text("120 fps").tag(120)
                     Text("60 fps").tag(60)
                     Text("30 fps").tag(30)
                     Text("24 fps").tag(24)
@@ -101,12 +209,22 @@ struct RecorderPanelView: View {
             HStack {
                 Text("Source").frame(width: 64, alignment: .leading)
                 Picker("", selection: $rec.audioSourceID) {
-                    Text("ScreenCaptureKit (system audio and microphone)")
-                        .tag(Recorder.screenCaptureKitSourceID)
-                    if !rec.audioDeviceOptions.isEmpty {
-                        Divider()
-                        ForEach(rec.audioDeviceOptions) { device in
-                            Text(device.name).tag(device.uid)
+                    Section("This Mac") {
+                        Text("System audio and microphone")
+                            .tag(Recorder.screenCaptureKitSourceID)
+                    }
+                    if !rec.tapdeckSources.isEmpty {
+                        Section("Tapdeck devices — what a mix sends") {
+                            ForEach(rec.tapdeckSources) { device in
+                                Text(device.name).tag(device.uid)
+                            }
+                        }
+                    }
+                    if !rec.microphoneSources.isEmpty {
+                        Section("Microphones and interfaces") {
+                            ForEach(rec.microphoneSources) { device in
+                                Text(device.name).tag(device.uid)
+                            }
                         }
                     }
                 }

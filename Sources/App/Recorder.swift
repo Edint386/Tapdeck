@@ -66,10 +66,33 @@ final class Recorder: NSObject, ObservableObject {
 
     var usesMixerOutput: Bool { audioSourceID != Self.screenCaptureKitSourceID }
 
+    /// Tapdeck's own devices, which carry whatever a mix is sending.
+    var tapdeckSources: [AudioDevice] {
+        audioDeviceOptions.filter { MixerModel.isVirtual($0.uid) }
+    }
+
+    /// Everything else that can be recorded from: real microphones,
+    /// interfaces, and other apps' virtual devices.
+    var microphoneSources: [AudioDevice] {
+        audioDeviceOptions.filter { !MixerModel.isVirtual($0.uid) }
+    }
+
     // MARK: - Settings
 
+    /// Screen recording, or just the audio of a mix.
+    enum Mode: String, CaseIterable, Identifiable {
+        case screen, audio
+        var id: String { rawValue }
+        var title: String { self == .screen ? "Screen and audio" : "Audio only" }
+    }
+
+    @Published var mode = Mode.screen
+    /// Which mix the audio-only mode records.
+    @Published var audioMixID = UUID()
     @Published var selectedID = ""
-    @Published var scalePercent = 100
+    @Published var videoSize = VideoSize.native
+    @Published var codec = Codec.h264
+    @Published var quality = Quality.balanced
     @Published var fps = 60
     @Published var systemAudio = true
     @Published var microphone = false
@@ -83,6 +106,8 @@ final class Recorder: NSObject, ObservableObject {
     private var deviceInput: DeviceInput?
     private let muxerBox = MuxerBox()
     private let videoQueue = DispatchQueue(label: "dev.kosuke.Tapdeck.recorder.video",
+                                           qos: .userInitiated)
+    private let audioQueue = DispatchQueue(label: "dev.kosuke.Tapdeck.recorder.audio",
                                            qos: .userInitiated)
     private var ticker: Timer?
     private var startedAt: Date?
@@ -139,6 +164,78 @@ final class Recorder: NSObject, ObservableObject {
         }
     }
 
+    /// What the picture is scaled to. Heights are the familiar ones; the
+    /// width follows the source's shape. A source smaller than the chosen
+    /// height is left alone rather than blown up.
+    enum VideoSize: Hashable, Identifiable, CaseIterable {
+        case native
+        case height(Int)
+        case percent(Int)
+
+        static var allCases: [VideoSize] {
+            [.native, .height(2160), .height(1440), .height(1080), .height(720), .height(480),
+             .percent(75), .percent(50), .percent(25)]
+        }
+
+        var id: String {
+            switch self {
+            case .native: return "native"
+            case .height(let h): return "h\(h)"
+            case .percent(let p): return "p\(p)"
+            }
+        }
+
+        var title: String {
+            switch self {
+            case .native: return "Native (full size)"
+            case .height(2160): return "2160p (4K UHD)"
+            case .height(1440): return "1440p (QHD)"
+            case .height(1080): return "1080p (Full HD)"
+            case .height(720): return "720p (HD)"
+            case .height(let h): return "\(h)p"
+            case .percent(let p): return "\(p)% of the source"
+            }
+        }
+    }
+
+    enum Codec: String, CaseIterable, Identifiable {
+        case h264, hevc
+        var id: String { rawValue }
+        var title: String {
+            self == .h264 ? "H.264 — plays anywhere" : "HEVC (H.265) — same quality, smaller"
+        }
+        var videoCodec: AVVideoCodecType { self == .h264 ? .h264 : .hevc }
+    }
+
+    /// Quality as bits per pixel per frame, which is what actually decides how
+    /// a screen recording looks. HEVC reaches the same quality at about 60%
+    /// of the bitrate.
+    enum Quality: String, CaseIterable, Identifiable {
+        case high, balanced, small
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .high:     return "High — for editing afterwards"
+            case .balanced: return "Balanced"
+            case .small:    return "Small files"
+            }
+        }
+        var bitsPerPixel: Double {
+            switch self {
+            case .high:     return 0.15
+            case .balanced: return 0.08
+            case .small:    return 0.04
+            }
+        }
+    }
+
+    /// Bits per second for the chosen size, rate, codec and quality.
+    func bitrate(for size: CGSize) -> Int {
+        let pixels = Double(size.width * size.height)
+        let factor = codec == .hevc ? 0.6 : 1
+        return max(500_000, Int(pixels * Double(fps) * quality.bitsPerPixel * factor))
+    }
+
     // MARK: - Filter and output size
 
     private func makeFilter() throws -> SCContentFilter {
@@ -172,9 +269,20 @@ final class Recorder: NSObject, ObservableObject {
     private func pixelSize(for filter: SCContentFilter) -> (Int, Int) {
         let rect = filter.contentRect
         let scale = CGFloat(filter.pointPixelScale)
-        let factor = CGFloat(scalePercent) / 100
+        let nativeHeight = rect.height * scale
+        let factor: CGFloat
+        switch videoSize {
+        case .native:
+            factor = 1
+        case .percent(let percent):
+            factor = CGFloat(percent) / 100
+        case .height(let height):
+            // Never upscale: a window shorter than the chosen height keeps its
+            // own size rather than being blown up.
+            factor = nativeHeight > 0 ? min(1, CGFloat(height) / nativeHeight) : 1
+        }
         let w = max(2, Int((rect.width * scale * factor).rounded()) / 2 * 2)
-        let h = max(2, Int((rect.height * scale * factor).rounded()) / 2 * 2)
+        let h = max(2, Int((nativeHeight * factor).rounded()) / 2 * 2)
         return (w, h)
     }
 
@@ -213,9 +321,14 @@ final class Recorder: NSObject, ObservableObject {
             let url = Self.makeOutputURL()
             let s = SCStream(filter: filter, configuration: cfg, delegate: self)
 
+            // One writing path for every case, so the codec, quality and size
+            // settings always apply. ScreenCaptureKit's own recording output
+            // offers none of them.
+            let videoSettings = MuxedRecorder.VideoSettings(
+                codec: codec.videoCodec,
+                bitrate: bitrate(for: CGSize(width: w, height: h)))
+
             if usesMixerOutput {
-                // Take video from the SCStream and audio from the chosen
-                // device, then mux them with AVAssetWriter.
                 guard let device = audioDeviceOptions.first(where: { $0.uid == audioSourceID })
                 else { throw Failure.noTarget }
 
@@ -225,6 +338,7 @@ final class Recorder: NSObject, ObservableObject {
                 let input = try DeviceInput(device: device)
                 let muxer = try MuxedRecorder(outputURL: url,
                                               videoSize: CGSize(width: w, height: h),
+                                              video: videoSettings,
                                               audioFormat: input.format)
                 muxer.start()
                 muxerBox.value = muxer
@@ -233,21 +347,30 @@ final class Recorder: NSObject, ObservableObject {
                     muxerBox.value?.appendAudio(buffer, at: timeStamp)
                 }
                 deviceInput = input
-
-                try s.addStreamOutput(self, type: .screen,
-                                      sampleHandlerQueue: videoQueue)
-                try await s.startCapture()
+                try s.addStreamOutput(self, type: .screen, sampleHandlerQueue: videoQueue)
             } else {
-                let rcfg = SCRecordingOutputConfiguration()
-                rcfg.outputURL = url
-                rcfg.outputFileType = .mov
-                rcfg.videoCodecType = .h264
+                // System audio and the microphone arrive as sample buffers and
+                // become one track each, so they can be edited apart.
+                var tracks: [MuxedRecorder.SampleAudioTrack] = []
+                let systemTrack = systemAudio ? tracks.count : nil
+                if systemAudio { tracks.append(MuxedRecorder.SampleAudioTrack()) }
+                let microphoneTrack = microphone ? tracks.count : nil
+                if microphone { tracks.append(MuxedRecorder.SampleAudioTrack()) }
+                muxerBox.setTracks(system: systemTrack, microphone: microphoneTrack)
 
-                let out = SCRecordingOutput(configuration: rcfg, delegate: self)
-                try s.addRecordingOutput(out)
-                try await s.startCapture()
-                output = out
+                let muxer = try MuxedRecorder(outputURL: url,
+                                              videoSize: CGSize(width: w, height: h),
+                                              video: videoSettings,
+                                              audioFormat: nil,
+                                              sampleAudioTracks: tracks)
+                muxer.start()
+                muxerBox.value = muxer
+
+                try s.addStreamOutput(self, type: .screen, sampleHandlerQueue: videoQueue)
+                if systemAudio { try s.addStreamOutput(self, type: .audio, sampleHandlerQueue: audioQueue) }
+                if microphone { try s.addStreamOutput(self, type: .microphone, sampleHandlerQueue: audioQueue) }
             }
+            try await s.startCapture()
 
             stream = s
             lastOutput = url
@@ -255,9 +378,10 @@ final class Recorder: NSObject, ObservableObject {
             startedAt = Date()
             elapsed = 0
             isRecording = true
-            status = usesMixerOutput
-                ? "Recording \(w)×\(h) at \(fps) fps — audio from \(audioSourceName)"
-                : "Recording \(w)×\(h) at \(fps) fps — audio from ScreenCaptureKit"
+            let megabits = Double(bitrate(for: CGSize(width: w, height: h))) / 1_000_000
+            status = String(format: "Recording %d×%d at %d fps, %@ %.1f Mbps — audio from %@",
+                            w, h, fps, codec == .hevc ? "HEVC" : "H.264", megabits,
+                            usesMixerOutput ? audioSourceName : "system audio and microphone")
             startTicker()
         } catch {
             status = "Could not start: \(error.localizedDescription)"
@@ -373,10 +497,22 @@ extension Recorder: SCRecordingOutputDelegate {
 final class MuxerBox: @unchecked Sendable {
     private let lock = NSLock()
     private var storage: MuxedRecorder?
+    private var systemTrack: Int?
+    private var microphoneTrack: Int?
 
     var value: MuxedRecorder? {
         get { lock.lock(); defer { lock.unlock() }; return storage }
         set { lock.lock(); storage = newValue; lock.unlock() }
+    }
+
+    /// Which track each kind of ScreenCaptureKit audio is written to.
+    func setTracks(system: Int?, microphone: Int?) {
+        lock.lock(); systemTrack = system; microphoneTrack = microphone; lock.unlock()
+    }
+
+    func track(for type: SCStreamOutputType) -> Int? {
+        lock.lock(); defer { lock.unlock() }
+        return type == .microphone ? microphoneTrack : systemTrack
     }
 }
 
@@ -384,6 +520,12 @@ extension Recorder: SCStreamOutput {
     nonisolated func stream(_ stream: SCStream,
                             didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
                             of type: SCStreamOutputType) {
+        if type == .audio || type == .microphone {
+            if let track = muxerBox.track(for: type) {
+                muxerBox.value?.appendAudio(sampleBuffer, track: track)
+            }
+            return
+        }
         guard type == .screen else { return }
 
         // This fires even on cycles where the screen did not change. Anything
