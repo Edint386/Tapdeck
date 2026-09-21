@@ -56,10 +56,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// this is the way in that always works.
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
         let menu = NSMenu()
-        let panelItem = NSMenuItem(title: "Mixes Panel", action: #selector(showMiniPanel(_:)), keyEquivalent: "")
-        panelItem.target = self
-        menu.addItem(panelItem)
-        menu.addItem(.separator())
         for mix in AppModels.shared.mixer.mixes {
             let name = mix.name.trimmingCharacters(in: .whitespaces)
             let item = NSMenuItem(title: mix.isRunning ? "Stop \(name.isEmpty ? "the unnamed mix" : name)"
@@ -71,10 +67,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(item)
         }
         return menu.items.isEmpty ? nil : menu
-    }
-
-    @objc private func showMiniPanel(_ sender: Any?) {
-        AppModels.shared.menuBar.toggleMiniPanel()
     }
 
     @objc private func toggleMix(_ sender: NSMenuItem) {

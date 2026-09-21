@@ -22,7 +22,7 @@ final class MenuBarController: NSObject, ObservableObject, NSPopoverDelegate {
 
     private var statusItem: NSStatusItem?
     /// Draws the icon ourselves when macOS gives the item no slot.
-    private lazy var overlay = MenuBarOverlay { [weak self] in self?.toggleMiniPanel() }
+    private lazy var overlay = MenuBarOverlay()
     private let popover = NSPopover()
     private var cancellables = Set<AnyCancellable>()
 
@@ -32,10 +32,15 @@ final class MenuBarController: NSObject, ObservableObject, NSPopoverDelegate {
         popover.behavior = .transient
         popover.animates = true
         popover.delegate = self
-        popover.contentViewController = NSHostingController(
+        let content = NSHostingController(
             rootView: MenuBarPanelView()
                 .environmentObject(AppModels.shared.mixer)
                 .environmentObject(AppModels.shared.settings))
+        // Without this the popover opens at 2x1 points: it takes no size from
+        // the SwiftUI view on its own.
+        content.sizingOptions = [.preferredContentSize]
+        popover.contentViewController = content
+        popover.contentSize = NSSize(width: 300, height: 340)
 
         // Fill the icon while any mix is running so the state is obvious at a
         // glance.
@@ -102,40 +107,6 @@ final class MenuBarController: NSObject, ObservableObject, NSPopoverDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
             self?.checkPlacement()
         }
-    }
-
-    // MARK: - Floating panel
-
-    /// The same controls in a small window that floats above other apps.
-    ///
-    /// When the menu bar has no free slot, macOS never places the item:
-    /// measured, it sits at x = -1116 and a press on it opens nothing. Tools
-    /// that tidy the menu bar cannot show what was never placed, so this is
-    /// the way to reach the mixes without the main window.
-    private var panel: NSPanel?
-
-    func toggleMiniPanel() {
-        if let panel, panel.isVisible {
-            panel.orderOut(nil)
-            return
-        }
-        if panel == nil {
-            let hosting = NSHostingController(
-                rootView: MenuBarPanelView()
-                    .environmentObject(AppModels.shared.mixer)
-                    .environmentObject(AppModels.shared.settings))
-            let panel = NSPanel(contentViewController: hosting)
-            panel.styleMask = [.titled, .closable, .utilityWindow, .nonactivatingPanel]
-            panel.title = "Tapdeck"
-            panel.level = .floating
-            panel.isFloatingPanel = true
-            panel.hidesOnDeactivate = false
-            panel.isReleasedWhenClosed = false
-            panel.center()
-            self.panel = panel
-        }
-        AppModels.shared.mixer.refresh()
-        panel?.orderFrontRegardless()
     }
 
     private func hideItem() {
