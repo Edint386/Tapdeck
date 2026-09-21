@@ -106,11 +106,15 @@ final class MenuBarController: NSObject, ObservableObject, NSPopoverDelegate {
         isPlaced = true
     }
 
-    /// With no room, the window is pushed outside the menu bar to a negative
-    /// coordinate.
+    /// With no room, macOS pushes the item's window off the screen. Measured
+    /// here: accessibility reports such an item at x = -1116, while a placed
+    /// one sits inside the menu bar. Checking only the vertical position
+    /// missed that, so the item never asked for a slot again.
     private func checkPlacement() {
-        guard let frame = statusItem?.button?.window?.frame else { return }
-        isPlaced = frame.origin.y >= 0
+        guard let frame = statusItem?.button?.window?.frame,
+              let screen = NSScreen.main else { return }
+        isPlaced = frame.origin.x >= 0 && frame.maxX <= screen.frame.maxX + 1
+            && frame.origin.y >= 0
     }
 
     private static func symbol(isRunning: Bool) -> NSImage? {
