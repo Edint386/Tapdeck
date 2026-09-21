@@ -88,14 +88,10 @@ private struct MixListView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if !menuBar.isPlaced {
-                HStack(spacing: 6) {
-                    Label("No free space in the menu bar — drawing our own icon",
-                          systemImage: "menubar.arrow.up.rectangle")
-                        .font(.caption2)
-                        .foregroundStyle(.orange)
-                    Button("Panel") { menuBar.toggleMiniPanel() }
-                        .controlSize(.mini)
-                }
+                Label("No free space in the menu bar — drawing our own icon",
+                      systemImage: "menubar.arrow.up.rectangle")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
                 .help("macOS gives a status item no slot once the menu bar is full and parks it off screen, where nothing can show it. Tapdeck therefore draws its own icon just left of the other icons; it moves back into the menu bar proper as soon as a slot frees up. The same controls are in this floating panel and in the Dock menu.")
             }
         }
