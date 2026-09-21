@@ -21,8 +21,6 @@ final class MenuBarController: NSObject, ObservableObject, NSPopoverDelegate {
     @Published private(set) var isPlaced = true
 
     private var statusItem: NSStatusItem?
-    /// Draws the icon ourselves when macOS gives the item no slot.
-    private lazy var overlay = MenuBarOverlay()
     private let popover = NSPopover()
     private var cancellables = Set<AnyCancellable>()
 
@@ -32,15 +30,10 @@ final class MenuBarController: NSObject, ObservableObject, NSPopoverDelegate {
         popover.behavior = .transient
         popover.animates = true
         popover.delegate = self
-        let content = NSHostingController(
+        popover.contentViewController = NSHostingController(
             rootView: MenuBarPanelView()
                 .environmentObject(AppModels.shared.mixer)
                 .environmentObject(AppModels.shared.settings))
-        // Without this the popover opens at 2x1 points: it takes no size from
-        // the SwiftUI view on its own.
-        content.sizingOptions = [.preferredContentSize]
-        popover.contentViewController = content
-        popover.contentSize = NSSize(width: 300, height: 340)
 
         // Fill the icon while any mix is running so the state is obvious at a
         // glance.
@@ -65,10 +58,7 @@ final class MenuBarController: NSObject, ObservableObject, NSPopoverDelegate {
         for name in [NSApplication.didBecomeActiveNotification,
                      NSApplication.didChangeScreenParametersNotification] {
             NotificationCenter.default.publisher(for: name)
-                .sink { [weak self] _ in
-                    self?.overlay.reposition()
-                    self?.retryPlacement()
-                }
+                .sink { [weak self] _ in self?.retryPlacement() }
                 .store(in: &cancellables)
         }
     }
@@ -77,9 +67,7 @@ final class MenuBarController: NSObject, ObservableObject, NSPopoverDelegate {
     /// the only way to ask; while it is placed, nothing is touched.
     private func retryPlacement() {
         guard AppSettings.shared.showsMenuBarItem, statusItem != nil, !isPlaced else { return }
-        popover.performClose(nil)
-        if let item = statusItem { NSStatusBar.system.removeStatusItem(item) }
-        statusItem = nil
+        hideItem()
         showItem()
     }
 
@@ -114,7 +102,6 @@ final class MenuBarController: NSObject, ObservableObject, NSPopoverDelegate {
         popover.performClose(nil)
         NSStatusBar.system.removeStatusItem(item)
         statusItem = nil
-        overlay.hide()
         // Hidden on purpose, so there is nothing to warn about.
         isPlaced = true
     }
@@ -123,9 +110,7 @@ final class MenuBarController: NSObject, ObservableObject, NSPopoverDelegate {
     /// coordinate.
     private func checkPlacement() {
         guard let frame = statusItem?.button?.window?.frame else { return }
-        isPlaced = frame.origin.y >= 0 && frame.origin.x >= 0
-        // With no slot the item is invisible and unclickable, so draw our own.
-        if isPlaced { overlay.hide() } else { overlay.show() }
+        isPlaced = frame.origin.y >= 0
     }
 
     private static func symbol(isRunning: Bool) -> NSImage? {
