@@ -50,30 +50,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
-
-    /// The same start and stop controls in the Dock menu. macOS decides whether
-    /// a menu bar item gets a slot, and on a full menu bar it gets none, so
-    /// this is the way in that always works.
-    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
-        let menu = NSMenu()
-        for mix in AppModels.shared.mixer.mixes {
-            let name = mix.name.trimmingCharacters(in: .whitespaces)
-            let item = NSMenuItem(title: mix.isRunning ? "Stop \(name.isEmpty ? "the unnamed mix" : name)"
-                                                       : "Start \(name.isEmpty ? "the unnamed mix" : name)",
-                                  action: #selector(toggleMix(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = mix.id
-            item.state = mix.isRunning ? .on : .off
-            menu.addItem(item)
-        }
-        return menu.items.isEmpty ? nil : menu
-    }
-
-    @objc private func toggleMix(_ sender: NSMenuItem) {
-        guard let id = sender.representedObject as? UUID,
-              let mix = AppModels.shared.mixer.mixes.first(where: { $0.id == id }) else { return }
-        mix.toggleRunning()
-    }
 }
 
 /// The mixes (the engine itself) and screen recording (one of its consumers).

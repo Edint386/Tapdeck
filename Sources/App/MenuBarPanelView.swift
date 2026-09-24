@@ -40,12 +40,7 @@ struct MenuBarPanelView: View {
                     openWindow(id: "main")
                     NSApp.activate(ignoringOtherApps: true)
                 }
-                Button("Settings…") {
-                    // The popover is hosted by AppKit, outside any SwiftUI scene,
-                    // so ask the responder chain rather than openSettings.
-                    NSApp.activate(ignoringOtherApps: true)
-                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-                }
+                Button("Settings…") { Self.openSettings() }
                 Spacer()
                 Button("Quit") { NSApp.terminate(nil) }
             }
@@ -55,6 +50,21 @@ struct MenuBarPanelView: View {
         .padding(14)
         .frame(width: 300)
         .task { model.refresh() }
+    }
+}
+
+extension MenuBarPanelView {
+    /// Opens Settings the way ⌘, does: by performing the app menu's own
+    /// Settings item. Sending `showSettingsWindow:` did nothing — current
+    /// macOS no longer opens a SwiftUI Settings window that way — and the panel
+    /// lives in an AppKit popover, outside the scenes where openSettings works.
+    static func openSettings() {
+        NSApp.activate(ignoringOtherApps: true)
+        guard let appMenu = NSApp.mainMenu?.items.first?.submenu,
+              let index = appMenu.items.firstIndex(where: {
+                  $0.keyEquivalent == "," && $0.keyEquivalentModifierMask == .command
+              }) else { return }
+        appMenu.performActionForItem(at: index)
     }
 }
 
