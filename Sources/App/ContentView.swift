@@ -5,188 +5,139 @@ struct RecorderPanelView: View {
     @EnvironmentObject private var mixer: MixerModel
     @EnvironmentObject private var settings: AppSettings
 
+    /// Three fixed bands, the same in both modes, so switching modes changes
+    /// only what is inside the middle: the mode switch at the top, the options
+    /// in full-width cards that scroll, and the record bar pinned at the bottom.
+    /// The column used to be only as wide as its content, so every switch slid
+    /// the whole panel sideways and moved the record button.
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(spacing: 0) {
             Picker("", selection: $rec.mode) {
                 ForEach(Recorder.Mode.allCases) { mode in Text(mode.title).tag(mode) }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .disabled(rec.isRecording)
+            .frame(width: 300)
+            .disabled(isRecordingAnything)
+            .padding(.vertical, 12)
 
-            if rec.mode == .audio {
-                audioOnlySection
-            } else {
-                targetSection
-                Divider()
-                videoSection
-                Divider()
-                audioSection
-                Divider()
-                controlSection
+            Divider()
+
+            Form {
+                if rec.mode == .audio {
+                    mixSourceSection
+                    fileSection
+                    monitorSection
+                } else {
+                    captureSection
+                    videoSection
+                    screenAudioSection
+                }
             }
+            .formStyle(.grouped)
+            .frame(maxWidth: 640)
+            .frame(maxWidth: .infinity)
+
+            Divider()
+
+            recordBar
         }
-        .padding(18)
-        .frame(maxWidth: 520)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task { await rec.refreshContent() }
     }
 
-    // MARK: Audio only
+    private var isRecordingAnything: Bool {
+        rec.isRecording || mixer.mixes.contains { $0.isRecordingFile }
+    }
 
-    /// Recording a mix as an audio file. The same thing the record button in
-    /// the mixer does, with the mix and the format in one place.
-    private var audioOnlySection: some View {
-        let recording = mixer.mixes.first { $0.isRecordingFile }
-        let selected = recording ?? mixer.mixes.first { $0.id == rec.audioMixID } ?? mixer.mixes.first
-        return VStack(alignment: .leading, spacing: 10) {
-            Text("Audio").font(.headline)
+    // MARK: - Audio only
 
-            HStack {
-                Text("Mix").frame(width: 64, alignment: .leading)
-                Picker("", selection: Binding(get: { selected?.id ?? UUID() },
-                                              set: { rec.audioMixID = $0 })) {
-                    ForEach(mixer.mixes) { mix in
-                        Text(mix.name.trimmingCharacters(in: .whitespaces).isEmpty
-                             ? "Unnamed mix" : mix.name).tag(mix.id)
-                    }
+    /// The mix being recorded, else the one chosen, else the first.
+    private var selectedMix: MixSession? {
+        mixer.mixes.first { $0.isRecordingFile }
+            ?? mixer.mixes.first { $0.id == rec.audioMixID }
+            ?? mixer.mixes.first
+    }
+
+    private var mixSourceSection: some View {
+        Section {
+            Picker(selection: Binding(get: { selectedMix?.id ?? UUID() },
+                                      set: { rec.audioMixID = $0 })) {
+                ForEach(mixer.mixes) { mix in
+                    Text(mix.name.trimmingCharacters(in: .whitespaces).isEmpty
+                         ? "Unnamed mix" : mix.name).tag(mix.id)
                 }
-                .labelsHidden()
-                .disabled(recording != nil)
+            } label: {
+                Text("Mix")
+                Text(selectedMix == nil ? "Make a mix first"
+                     : "What it plays, after its effects and volume. A stopped mix is started for you.")
             }
-
-            HStack {
-                Text("Format").frame(width: 64, alignment: .leading)
-                Picker("", selection: $settings.mixRecordingFormat) {
-                    ForEach(MixRecorder.FileFormat.allCases) { format in
-                        Text(format.title).tag(format)
-                    }
-                }
-                .labelsHidden()
-                .disabled(recording != nil)
-            }
-
-            if settings.mixRecordingFormat.isLossy {
-                HStack {
-                    Text("Bitrate").frame(width: 64, alignment: .leading)
-                    Picker("", selection: $settings.mixRecordingBitrate) {
-                        ForEach(MixRecorder.bitrates, id: \.self) { rate in
-                            Text("\(rate / 1000) kbps").tag(rate)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(width: 140)
-                    .disabled(recording != nil)
-                    Text("MP3 is not offered: macOS has no MP3 encoder, and AAC sounds better at the same bitrate.")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            } else if settings.mixRecordingFormat.hasBitDepth {
-                HStack {
-                    Text("Depth").frame(width: 64, alignment: .leading)
-                    Picker("", selection: $settings.mixRecordingBitDepth) {
-                        ForEach(MixRecorder.bitDepths, id: \.self) { depth in
-                            Text("\(depth)-bit").tag(depth)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(width: 140)
-                    .disabled(recording != nil)
-                }
-            }
-
-            Text(selected.map { $0.isRecordingFile
-                 ? "Recording what this mix plays."
-                 : "Starts the mix if it is not running, then keeps what it plays." }
-                 ?? "Make a mix first.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            // The monitor: what is going onto the file right now.
-            if let selected {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 10) {
-                        Text("Level").font(.caption).foregroundStyle(.secondary)
-                            .frame(width: 64, alignment: .leading)
-                        LevelBar(level: selected.level).frame(height: 6)
-                        Text(Self.decibels(selected.level))
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundStyle(selected.level >= 0.99 ? Color.red : .secondary)
-                            .frame(width: 58, alignment: .trailing)
-                    }
-                    HStack(spacing: 10) {
-                        Text("File").font(.caption).foregroundStyle(.secondary)
-                            .frame(width: 64, alignment: .leading)
-                        Text(selected.isRecordingFile
-                             ? "\(Self.size(selected.recordingSize)) so far"
-                             : (selected.isRunning ? "Ready" : "Mix stopped"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                    }
-                }
-                .padding(10)
-                .background(Color.secondary.opacity(0.09), in: RoundedRectangle(cornerRadius: 9))
-            }
-
-            HStack(spacing: 12) {
-                Button {
-                    guard let selected else { return }
-                    if !selected.isRunning && !selected.isRecordingFile { selected.start() }
-                    selected.toggleFileRecording()
-                } label: {
-                    Label(selected?.isRecordingFile == true ? "Stop" : "Start Recording",
-                          systemImage: selected?.isRecordingFile == true ? "stop.fill" : "record.circle")
-                        .frame(maxWidth: .infinity)
-                }
-                .controlSize(.large)
-                .disabled(selected == nil)
-
-                Text(RecordButton.timecode(selected?.recordingElapsed ?? 0))
-                    .font(.system(.title3, design: .monospaced))
-                    .foregroundStyle(selected?.isRecordingFile == true ? .red : .secondary)
-                    .frame(width: 90, alignment: .trailing)
-            }
-
-            if let url = selected?.lastRecordingURL {
-                HStack(spacing: 6) {
-                    Text("Saved \(url.lastPathComponent)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Button("Show") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-                        .controlSize(.small)
-                }
-            }
+            .disabled(isRecordingAnything)
+        } header: {
+            Text("Source")
         }
     }
 
-    static func decibels(_ level: Float) -> String {
-        level > 0.0005 ? String(format: "%.1f dBFS", 20 * log10(Double(level))) : "−∞ dBFS"
-    }
-
-    static func size(_ bytes: Int64) -> String {
-        let units = ["bytes", "KB", "MB", "GB"]
-        var value = Double(bytes), unit = 0
-        while value >= 1024, unit < units.count - 1 { value /= 1024; unit += 1 }
-        return unit == 0 ? "\(Int(value)) bytes" : String(format: "%.1f %@", value, units[unit])
-    }
-
-    // MARK: Capture target
-
-    private var targetSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("Capture").font(.headline)
-                Spacer()
-                Button("Refresh") { Task { await rec.refreshContent() } }
-                    .controlSize(.small)
-                    .disabled(rec.isRecording)
+    private var fileSection: some View {
+        let format = settings.mixRecordingFormat
+        return Section {
+            Picker(selection: $settings.mixRecordingFormat) {
+                ForEach(MixRecorder.FileFormat.allCases) { format in Text(format.title).tag(format) }
+            } label: {
+                Text("Format")
+                Text("No MP3: macOS cannot encode it")
             }
-            Picker("", selection: $rec.selectedID) {
+            // Always one quality row, whatever the format, so choosing a
+            // format never changes the height.
+            if format.isLossy {
+                Picker("Quality", selection: $settings.mixRecordingBitrate) {
+                    ForEach(MixRecorder.bitrates, id: \.self) { rate in Text("\(rate / 1000) kbps").tag(rate) }
+                }
+            } else if format.hasBitDepth {
+                Picker("Quality", selection: $settings.mixRecordingBitDepth) {
+                    ForEach(MixRecorder.bitDepths, id: \.self) { depth in Text("\(depth)-bit").tag(depth) }
+                }
+            } else {
+                LabeledContent("Quality", value: "Lossless")
+            }
+            LabeledContent("Save to") {
+                Text(Self.shortPath(settings.recordingFolder))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        } header: {
+            Text("File")
+        }
+        .disabled(isRecordingAnything)
+    }
+
+    private var monitorSection: some View {
+        let mix = selectedMix
+        let level = mix?.level ?? 0
+        return Section {
+            LabeledContent("Level") {
+                HStack(spacing: 10) {
+                    LevelBar(level: level).frame(width: 220, height: 6)
+                    Text(Self.decibels(level))
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundStyle(level >= 0.99 ? Color.red : .secondary)
+                        .frame(width: 90, alignment: .trailing)
+                }
+            }
+            LabeledContent("Mix", value: mix.map { $0.isRunning ? "Playing" : "Stopped" } ?? "—")
+            LabeledContent("File", value: mix.map {
+                $0.isRecordingFile ? "\(Self.size($0.recordingSize)) so far" : "Not recording"
+            } ?? "—")
+        } header: {
+            Text("Monitor")
+        }
+    }
+
+    // MARK: - Screen and audio
+
+    private var captureSection: some View {
+        Section {
+            Picker("Record", selection: $rec.selectedID) {
                 if !rec.displayOptions.isEmpty {
                     Section("Displays") {
                         ForEach(rec.displayOptions) { Text($0.label).tag($0.id) }
@@ -203,172 +154,157 @@ struct RecorderPanelView: View {
                     }
                 }
             }
-            .labelsHidden()
-            .disabled(rec.isRecording)
             .onChange(of: rec.selectedID) { rec.updateOutputSize() }
+            Toggle("Include the pointer", isOn: $rec.showsCursor)
+            Toggle(isOn: $rec.includesOwnWindows) {
+                Text("Include Tapdeck's own window")
+                Text("Left out by default, so the recording does not show the controls being used")
+            }
+        } header: {
+            HStack {
+                Text("Capture")
+                Spacer()
+                Button("Refresh") { Task { await rec.refreshContent() } }
+                    .controlSize(.small)
+            }
         }
+        .disabled(rec.isRecording)
     }
-
-    // MARK: Video
 
     private var videoSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Video").font(.headline)
-
-            HStack {
-                Text("Size").frame(width: 64, alignment: .leading)
-                Picker("", selection: $rec.videoSize) {
-                    ForEach(Recorder.VideoSize.allCases) { size in
-                        Text(size.title).tag(size)
-                    }
-                }
-                .labelsHidden()
-                .onChange(of: rec.videoSize) { rec.updateOutputSize() }
-                Text(rec.outputSize == .zero
-                     ? "—"
-                     : "\(Int(rec.outputSize.width))×\(Int(rec.outputSize.height)) px")
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
+        Section {
+            Picker(selection: $rec.videoSize) {
+                ForEach(Recorder.VideoSize.allCases) { size in Text(size.title).tag(size) }
+            } label: {
+                Text("Size")
+                Text(rec.outputSize == .zero ? "—"
+                     : "\(Int(rec.outputSize.width)) × \(Int(rec.outputSize.height)) pixels")
             }
-
-            HStack {
-                Text("Codec").frame(width: 64, alignment: .leading)
-                Picker("", selection: $rec.codec) {
-                    ForEach(Recorder.Codec.allCases) { codec in Text(codec.title).tag(codec) }
-                }
-                .labelsHidden()
+            .onChange(of: rec.videoSize) { rec.updateOutputSize() }
+            Picker("Codec", selection: $rec.codec) {
+                ForEach(Recorder.Codec.allCases) { codec in Text(codec.title).tag(codec) }
             }
-
-            HStack {
-                Text("Quality").frame(width: 64, alignment: .leading)
-                Picker("", selection: $rec.quality) {
-                    ForEach(Recorder.Quality.allCases) { quality in Text(quality.title).tag(quality) }
-                }
-                .labelsHidden()
+            Picker(selection: $rec.quality) {
+                ForEach(Recorder.Quality.allCases) { quality in Text(quality.title).tag(quality) }
+            } label: {
+                Text("Quality")
                 Text(rec.outputSize == .zero ? "—"
                      : String(format: "%.1f Mbps", Double(rec.bitrate(for: rec.outputSize)) / 1_000_000))
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
             }
-
-            HStack {
-                Text("Rate").frame(width: 64, alignment: .leading)
-                Picker("", selection: $rec.fps) {
-                    Text("120 fps").tag(120)
-                    Text("60 fps").tag(60)
-                    Text("30 fps").tag(30)
-                    Text("24 fps").tag(24)
-                    Text("15 fps").tag(15)
-                }
-                .labelsHidden()
+            Picker("Frame rate", selection: $rec.fps) {
+                Text("120 fps").tag(120)
+                Text("60 fps").tag(60)
+                Text("30 fps").tag(30)
+                Text("24 fps").tag(24)
+                Text("15 fps").tag(15)
             }
-
-            Toggle("Include the pointer", isOn: $rec.showsCursor)
-            Toggle("Include Tapdeck's own window", isOn: $rec.includesOwnWindows)
-                .help("Tapdeck leaves its own windows out of a screen recording, so the recording does not show the controls being used. Turn this on to record them too.")
+        } header: {
+            Text("Video")
         }
         .disabled(rec.isRecording)
     }
 
-    // MARK: Audio
-
-    private var audioSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Audio").font(.headline)
-
-            HStack {
-                Text("Source").frame(width: 64, alignment: .leading)
-                Picker("", selection: $rec.audioSourceID) {
-                    Section("This Mac") {
-                        Text("System audio and microphone")
-                            .tag(Recorder.screenCaptureKitSourceID)
-                    }
-                    if !rec.tapdeckSources.isEmpty {
-                        Section("Tapdeck devices — what a mix sends") {
-                            ForEach(rec.tapdeckSources) { device in
-                                Text(device.name).tag(device.uid)
-                            }
-                        }
-                    }
-                    if !rec.microphoneSources.isEmpty {
-                        Section("Microphones and interfaces") {
-                            ForEach(rec.microphoneSources) { device in
-                                Text(device.name).tag(device.uid)
-                            }
-                        }
+    private var screenAudioSection: some View {
+        Section {
+            Picker("Source", selection: $rec.audioSourceID) {
+                Section("This Mac") {
+                    Text("System audio and microphone").tag(Recorder.screenCaptureKitSourceID)
+                }
+                if !rec.tapdeckSources.isEmpty {
+                    Section("Tapdeck devices — what a mix sends") {
+                        ForEach(rec.tapdeckSources) { device in Text(device.name).tag(device.uid) }
                     }
                 }
-                .labelsHidden()
+                if !rec.microphoneSources.isEmpty {
+                    Section("Microphones and interfaces") {
+                        ForEach(rec.microphoneSources) { device in Text(device.name).tag(device.uid) }
+                    }
+                }
             }
-
             if rec.usesMixerOutput {
-                Label("Pick Tapdeck and the recording carries whatever the mixer is sending.",
-                      systemImage: "slider.vertical.3")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let channels = rec.audioDeviceOptions.first(where: { $0.uid == rec.audioSourceID })?
-                    .inputChannels, channels > 2 {
-                    Label("\(channels) channels — the file gets \((channels + 1) / 2) separate audio tracks, one per channel pair, so each can be edited on its own.",
-                          systemImage: "square.split.2x1")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                let channels = rec.audioDeviceOptions.first(where: { $0.uid == rec.audioSourceID })?.inputChannels ?? 2
+                LabeledContent("Tracks", value: channels > 2
+                               ? "\((channels + 1) / 2), one per channel pair" : "1, what the mix sends")
             } else {
-                Toggle("System audio (anything playing on this Mac)", isOn: $rec.systemAudio)
-                Toggle("Microphone", isOn: $rec.microphone)
-                Text("No virtual audio device needed — ScreenCaptureKit captures this directly.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Toggle("System audio", isOn: $rec.systemAudio)
+                Toggle(isOn: $rec.microphone) {
+                    Text("Microphone")
+                    Text("Written as its own track, so it can be edited apart")
+                }
             }
+        } header: {
+            Text("Audio")
         }
         .disabled(rec.isRecording)
     }
 
-    // MARK: Transport
+    // MARK: - Record bar
 
-    private var controlSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
-                if rec.isRecording {
-                    Button {
-                        Task { await rec.stop() }
-                    } label: {
-                        Label("Stop", systemImage: "stop.fill")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .keyboardShortcut(".", modifiers: .command)
+    /// One bar for both modes, always in the same place.
+    private var recordBar: some View {
+        let audio = rec.mode == .audio
+        let mix = selectedMix
+        let recording = audio ? (mix?.isRecordingFile ?? false) : rec.isRecording
+        let elapsed = audio ? (mix?.recordingElapsed ?? 0) : rec.elapsed
+        let canStart = audio ? mix != nil : !rec.selectedID.isEmpty
+        let status = audio ? (mix?.status ?? "") : rec.status
+        let lastFile = audio ? mix?.lastRecordingURL : rec.lastOutput
+
+        return HStack(spacing: 16) {
+            Button {
+                if audio {
+                    guard let mix else { return }
+                    if !mix.isRunning && !mix.isRecordingFile { mix.start() }
+                    mix.toggleFileRecording()
                 } else {
-                    Button {
-                        Task { await rec.start() }
-                    } label: {
-                        Label("Start Recording", systemImage: "record.circle")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .keyboardShortcut("r", modifiers: .command)
-                    .disabled(rec.selectedID.isEmpty)
+                    Task { recording ? await rec.stop() : await rec.start() }
                 }
-
-                Text(Self.timecode(rec.elapsed))
-                    .font(.system(.title3, design: .monospaced))
-                    .foregroundStyle(rec.isRecording ? .red : .secondary)
-                    .frame(width: 90, alignment: .trailing)
+            } label: {
+                Label(recording ? "Stop" : "Record", systemImage: recording ? "stop.fill" : "record.circle")
+                    .frame(width: 110)
             }
+            .buttonStyle(.borderedProminent)
+            .tint(recording ? .red : .accentColor)
             .controlSize(.large)
+            .disabled(!recording && !canStart)
+            .keyboardShortcut(recording ? "." : "r", modifiers: .command)
 
-            HStack {
-                Text(rec.status)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                Spacer()
-                if rec.lastOutput != nil && !rec.isRecording {
-                    Button("Show in Finder") { rec.revealLastOutput() }
-                        .controlSize(.small)
-                }
+            Text(Self.timecode(elapsed))
+                .font(.system(.title2, design: .monospaced))
+                .foregroundStyle(recording ? .red : .secondary)
+
+            Text(status.isEmpty ? " " : status)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button("Show in Finder") {
+                if let lastFile { NSWorkspace.shared.activateFileViewerSelecting([lastFile]) }
             }
+            .disabled(lastFile == nil || recording)
         }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+    }
+
+    // MARK: - Pieces
+
+    static func shortPath(_ url: URL) -> String {
+        url.path(percentEncoded: false)
+            .replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
+    }
+
+    static func decibels(_ level: Float) -> String {
+        level > 0.0005 ? String(format: "%.1f dBFS", 20 * log10(Double(level))) : "−∞ dBFS"
+    }
+
+    static func size(_ bytes: Int64) -> String {
+        let units = ["bytes", "KB", "MB", "GB"]
+        var value = Double(bytes), unit = 0
+        while value >= 1024, unit < units.count - 1 { value /= 1024; unit += 1 }
+        return unit == 0 ? "\(Int(value)) bytes" : String(format: "%.1f %@", value, units[unit])
     }
 
     static func timecode(_ t: TimeInterval) -> String {
@@ -376,3 +312,4 @@ struct RecorderPanelView: View {
         return String(format: "%02d:%02d:%02d", total / 3600, (total % 3600) / 60, total % 60)
     }
 }
+
