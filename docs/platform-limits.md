@@ -75,11 +75,14 @@ it off at 0 dBFS, and only then did the speakers' own volume turn it down.
 | Show Tapdeck's own status item when the menu bar is full | Not possible from inside the app | macOS swallows items that do not fit and never draws them. NotchShelf's own source puts it exactly: "The target itself cannot be grabbed — macOS never draws it." The owning app has no API to claim a slot or to un-swallow itself. |
 | Bring a swallowed item back | Possible, but only from outside | The one mechanism macOS accepts is a synthetic Command-drag that moves a *different*, visible item out of the way, which needs accessibility permission. NotchShelf does this (`MoveCoordinator.bringOut`). |
 | Tell whether the item was placed | Verified | Its window sits off screen — measured at x = -1116 through accessibility, alongside other swallowed items at x = -294 and -170. Checking the vertical position alone missed it. |
-| Make placement depend on how the item is built | Not a factor | Measured: a menu-style item (as SpellBar builds it), a click-action item, an agent app and a regular app were all swallowed alike. Items that are visible today (SpellBar, Control Center) claimed their slots earlier. |
+| Make placement depend on how the item is built | Not a factor | Measured: a menu-style item (as SpellBar builds it), a click-action item, an agent app and a regular app were all treated alike. |
+| Get a new item into a full bar | Not possible directly | A brand-new item is not adopted into the layout at all while the bar is full: its window stays at (0, -22), below the screen, so no menu bar tool can see it either. Verified with Tapdeck and two throwaway apps. |
+| Keep an item once it has been adopted | Verified | With Stats quit, macOS adopted Tapdeck's item at x = 1203. With Stats back it was pushed to x = 984 — behind the notch strip, where NotchShelf shows swallowed items — and it stayed there across relaunches. An adopted item behaves like any other: drawn when there is room, swallowed when not. |
 
-Tapdeck therefore keeps a plain status item, says one line in the window when
-macOS has swallowed it, and asks again whenever the app becomes active, so it
-appears by itself once room exists.
+Tapdeck therefore keeps a plain status item and does nothing clever. If it has
+never been adopted on a crowded Mac, freeing room once (quitting one menu bar
+app for a moment) is enough; from then on it keeps its place like every other
+item.
 
 ## Tests still to run (AirPlay receiver switched on)
 
