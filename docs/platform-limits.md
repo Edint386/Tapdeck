@@ -68,6 +68,19 @@ it off at 0 dBFS, and only then did the speakers' own volume turn it down.
 | Bring an external source in by wire | Possible with hardware | A USB audio interface with a line input appears as an ordinary input device and can be a source. |
 | Bring a phone's or tablet's audio in without a cable | Possible in principle, Unknown here | The Mac can be an AirPlay receiver (System Settings › General › AirDrop & Handoff › AirPlay Receiver). What it receives plays on the Mac, where All system audio should capture it. Not tested. |
 
+## The menu bar
+
+| Want | Status | Why |
+|---|---|---|
+| Show Tapdeck's own status item when the menu bar is full | Not possible from inside the app | macOS swallows items that do not fit and never draws them. NotchShelf's own source puts it exactly: "The target itself cannot be grabbed — macOS never draws it." The owning app has no API to claim a slot or to un-swallow itself. |
+| Bring a swallowed item back | Possible, but only from outside | The one mechanism macOS accepts is a synthetic Command-drag that moves a *different*, visible item out of the way, which needs accessibility permission. NotchShelf does this (`MoveCoordinator.bringOut`). |
+| Tell whether the item was placed | Verified | Its window sits off screen — measured at x = -1116 through accessibility, alongside other swallowed items at x = -294 and -170. Checking the vertical position alone missed it. |
+| Make placement depend on how the item is built | Not a factor | Measured: a menu-style item (as SpellBar builds it), a click-action item, an agent app and a regular app were all swallowed alike. Items that are visible today (SpellBar, Control Center) claimed their slots earlier. |
+
+Tapdeck therefore keeps a plain status item, says one line in the window when
+macOS has swallowed it, and asks again whenever the app becomes active, so it
+appears by itself once room exists.
+
 ## Tests still to run (AirPlay receiver switched on)
 
 - **T1** With the AirPlay device present but not the Mac's output, open it as a Tapdeck output and record the error.
