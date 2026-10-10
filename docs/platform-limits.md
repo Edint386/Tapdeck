@@ -42,7 +42,7 @@ design routes around them instead of trying its luck.
 | Volume keys control a Tapdeck mix | Only indirectly | The keys change the volume of the Mac's current output device and nothing else. |
 
 This is why earlier versions distorted without being loud: Tapdeck boosted the
-signal digitally (+7.1 dB on the way to the speakers in the saved Main mix), cut
+signal digitally (+7.1 dB on the way to the speakers in one saved mix), cut
 it off at 0 dBFS, and only then did the speakers' own volume turn it down.
 
 ## AirPlay

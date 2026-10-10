@@ -146,10 +146,20 @@ Screen recording sits on top of this rather than beside it.
 
 ## Install
 
+Requires macOS 15 or later on Apple Silicon.
+
+From the source folder:
+
 ```
 ./install.sh                 # builds and installs into /Applications
-sudo ./install-driver.sh     # once, to register the virtual devices
+sudo ./install-driver.sh     # once, installs the virtual device driver (asks for your password)
 ```
+
+From a release zip: unzip it and move `Tapdeck.app` to Applications. The app is signed
+but not notarized, so macOS blocks the first launch. Open System Settings › Privacy &
+Security and click **Open Anyway** next to the message about Tapdeck. The virtual
+devices need the driver, installed once with `sudo ./install-driver.sh` from the source
+folder.
 
 ### About signing
 
@@ -382,7 +392,22 @@ blocks. The app has a monitor recorder now so measurements do not depend on it.
 
 ## Permissions
 
-- **Audio capture** — for process taps, on first use.
-- **Microphone** — for reading any input device, including Tapdeck's own.
-- **Screen recording** — for the recording tab. macOS quits the app once after
-  this is granted; launch it again.
+- **Audio capture** — to take the sound of individual apps, or of the whole
+  system, into a mix. Asked on first use.
+- **Microphone** — to read input devices: microphones, audio interfaces, and the
+  input side of Tapdeck's own virtual devices.
+- **Screen recording** — only for screen recordings in the Recording tab. macOS
+  quits the app once after this is granted; launch it again.
+
+## Privacy and third-party material
+
+Tapdeck has no network code and sends nothing anywhere; [PRIVACY.md](PRIVACY.md) lists
+what it stores and where. It contains no third-party code and uses only frameworks that
+ship with macOS; [THIRD_PARTY.md](THIRD_PARTY.md) says so in detail, including where the
+virtual device driver comes from.
+
+## License
+
+MIT — see [LICENSE](LICENSE). Copyright (c) 2026 Kosuke Satake.
+
+This app was built with the help of Claude (Anthropic) through Claude Code; design, review and testing are by Kosuke Satake. Anthropic does not endorse this app.
