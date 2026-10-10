@@ -4,6 +4,8 @@
 <dict>
     <key>CFBundleName</key>              <string>Tapproof</string>
     <key>CFBundleExecutable</key>        <string>tapproof</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2026 Kosuke Satake. MIT License.</string>
     <key>CFBundleIdentifier</key>        <string>dev.kosuke.Tapdeck.tapproof</string>
     <key>CFBundlePackageType</key>       <string>APPL</string>
     <key>CFBundleShortVersionString</key><string>0.1.0</string>
