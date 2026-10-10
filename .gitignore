@@ -11,3 +11,6 @@ build/
 
 # macOS
 .DS_Store
+
+# Folder label for the local labels tool: private notes, never published
+.label.toml
