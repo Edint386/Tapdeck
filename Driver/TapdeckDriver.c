@@ -3,6 +3,10 @@
 //  Tapdeck's virtual audio devices (an AudioServerPlugIn).
 //  Not a kernel extension: this is a user-space plug-in loaded by Core Audio.
 //
+//  Origin: written for Tapdeck against Apple's documented AudioServerPlugIn
+//  interface (CoreAudio/AudioServerPlugIn.h). Not derived from Apple's NullAudio
+//  sample or from BlackHole; see THIRD_PARTY.md for how that was checked.
+//
 //  Its job is loopback. Audio written to a device's output side can be read
 //  straight back from its input side.
 //
