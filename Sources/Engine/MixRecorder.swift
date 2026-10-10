@@ -71,7 +71,7 @@ final class MixRecorder: @unchecked Sendable {
 
     /// How large the file has grown, in bytes.
     var fileSize: Int64 {
-        (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) as? Int64 ?? 0
+        ((try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int64) ?? 0
     }
 
     init(url: URL, sampleRate: Double, channels: Int, format: FileFormat,
