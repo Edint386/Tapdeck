@@ -155,11 +155,22 @@ From the source folder:
 sudo ./install-driver.sh     # once, installs the virtual device driver (asks for your password)
 ```
 
-From a release zip: unzip it and move `Tapdeck.app` to Applications. The app is signed
-but not notarized, so macOS blocks the first launch. Open System Settings › Privacy &
-Security and click **Open Anyway** next to the message about Tapdeck. The virtual
-devices need the driver, installed once with `sudo ./install-driver.sh` from the source
-folder.
+From a release: download `Tapdeck-<version>.dmg` from the
+[Releases page](https://github.com/kosuke-apps/Tapdeck/releases), open it, and drag
+`Tapdeck.app` onto the Applications folder beside it. The app is signed but not
+notarized, so macOS blocks the first launch: open System Settings › Privacy & Security
+and click **Open Anyway** next to the message about Tapdeck.
+
+To check the download, compare its checksum with the `.sha256` file published next to it:
+
+```
+shasum -a 256 Tapdeck-<version>.dmg
+```
+
+The dmg holds the app only. Capturing apps, mixing, playing to several outputs and
+recording all work without anything else; the virtual devices (for sending a mix into
+Zoom, OBS and the like) need the driver, built and installed once from the source folder
+with `sudo ./install-driver.sh`.
 
 ### About signing
 
