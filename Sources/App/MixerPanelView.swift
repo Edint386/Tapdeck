@@ -165,7 +165,7 @@ private struct MixEditorView: View {
 
     /// What mix-level normalisation is doing, in one short line. Kept as a
     /// space when there is nothing to say, so the header does not jump.
-    private var loudnessCaption: String {
+    private var loudnessCaption: LocalizedStringResource {
         guard mix.normalizesLoudness, mix.isRunning else { return " " }
         return LoudnessReading.caption(mix.loudnessReading)
     }
@@ -307,7 +307,7 @@ private struct MixEditorView: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 6) {
-                    Text(row.label).font(.callout.weight(.medium)).lineLimit(1)
+                    Text(row.title).font(.callout.weight(.medium)).lineLimit(1)
                     if row.replacesOriginal {
                         Text("REPLACES")
                             .font(.system(size: 8, weight: .bold))
@@ -699,22 +699,22 @@ private struct MixEditorView: View {
         .padding(.top, 2)
     }
 
-    private func delayHint(_ row: MixSession.OutputRow) -> String {
-        var hint = "Delay the faster outputs until the echo between them disappears."
-        if let reported = row.reportedLatencyMilliseconds {
-            hint += String(format: " This device reports %.0f ms of its own; wireless devices often report less than they add.",
-                           reported)
+    private func delayHint(_ row: MixSession.OutputRow) -> LocalizedStringResource {
+        guard let reported = row.reportedLatencyMilliseconds else {
+            return "Delay the faster outputs until the echo between them disappears."
         }
-        return hint
+        let milliseconds = String(format: "%.0f", reported)
+        // One sentence per case: a fragment cannot be appended in every language.
+        return "Delay the faster outputs until the echo between them disappears. This device reports \(milliseconds) ms of its own; wireless devices often report less than they add."
     }
 
     // MARK: Footer
 
     private var footer: some View {
         HStack {
-            Text(mix.status.isEmpty ? " " : mix.status)
+            Text(mix.status ?? " ")
                 .font(.caption)
-                .foregroundStyle(mix.status.hasPrefix("This would feed back") ? Color.orange : .secondary)
+                .foregroundStyle(mix.statusIsWarning ? Color.orange : .secondary)
                 .lineLimit(2)
             Spacer()
             Button {

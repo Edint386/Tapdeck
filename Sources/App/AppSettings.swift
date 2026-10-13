@@ -23,12 +23,13 @@ final class AppSettings: ObservableObject {
 
         var id: Int { rawValue }
 
-        var title: String {
+        /// With the numbers inside the sentence, so each language can place them.
+        var title: LocalizedStringResource {
             switch self {
-            case .low:      return "Low latency"
-            case .balanced: return "Balanced"
-            case .stable:   return "Stable"
-            case .safest:   return "Most stable"
+            case .low:      return "Low latency — \(rawValue) frames, about \(milliseconds) ms"
+            case .balanced: return "Balanced — \(rawValue) frames, about \(milliseconds) ms"
+            case .stable:   return "Stable — \(rawValue) frames, about \(milliseconds) ms"
+            case .safest:   return "Most stable — \(rawValue) frames, about \(milliseconds) ms"
             }
         }
 
@@ -84,7 +85,7 @@ final class AppSettings: ObservableObject {
     }
 
     /// Common delivery targets, loudest last.
-    static let loudnessTargets: [(value: Double, title: String)] = [
+    static let loudnessTargets: [(value: Double, title: LocalizedStringResource)] = [
         (-23, "−23 LUFS — broadcast, most headroom"),
         (-18, "−18 LUFS — quiet listening"),
         (-16, "−16 LUFS — Apple Music, podcasts"),

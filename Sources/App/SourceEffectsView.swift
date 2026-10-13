@@ -40,7 +40,7 @@ struct SourceEffectsView: View {
     private func header(_ row: MixSession.SourceRow) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.label).font(.headline).lineLimit(1)
+                Text(row.title).font(.headline).lineLimit(1)
                 Text("Effects").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
@@ -268,8 +268,9 @@ struct SourceEffectsView: View {
                       : String(format: "%.0f Hz", hertz)
     }
 
-    static func balanceLabel(_ balance: Double) -> String {
+    static func balanceLabel(_ balance: Double) -> LocalizedStringResource {
         if abs(balance) < 0.005 { return "centre" }
-        return String(format: "%@ %.0f%%", balance < 0 ? "L" : "R", abs(balance) * 100)
+        let percent = Int((abs(balance) * 100).rounded())
+        return balance < 0 ? "L \(percent)%" : "R \(percent)%"
     }
 }

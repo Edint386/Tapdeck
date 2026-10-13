@@ -5,11 +5,16 @@ import Foundation
 // The minimum needed to drive Core Audio's C API from Swift.
 // Calls to AudioObjectGetPropertyData are verbose, so they are gathered here.
 
-enum CoreAudioError: LocalizedError {
+enum CoreAudioError: LocalizedError, MessageError {
     case status(String, OSStatus)
     case missing(String)
 
-    var errorDescription: String? {
+    var errorDescription: String? { String(localized: message) }
+
+    /// The label says what was being attempted ("creating the process tap"):
+    /// a technical detail that stays in English. The sentence around it is
+    /// translated.
+    var message: LocalizedStringResource {
         switch self {
         case .status(let label, let st):
             var code = st.bigEndian
@@ -19,7 +24,7 @@ enum CoreAudioError: LocalizedError {
                     return s.isLetter || s.isNumber || s.isPunctuation ? s : "?"
                 }
             }
-            return "\(label) failed (OSStatus \(st) '\(String(chars))')"
+            return "\(label) failed (OSStatus \(Int(st)) '\(String(chars))')"
         case .missing(let what):
             return "\(what) was not found"
         }

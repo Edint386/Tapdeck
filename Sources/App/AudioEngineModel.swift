@@ -13,20 +13,20 @@ final class AudioEngineModel: ObservableObject {
     @Published private(set) var processes: [AudioProcess] = []
 
     @Published private(set) var isTesting = false
-    @Published private(set) var status = "Ready"
+    @Published private(set) var status: LocalizedStringResource = "Ready"
     @Published private(set) var peakDB: Double = -120
     @Published private(set) var rmsDB: Double = -120
     @Published private(set) var receivedSamples = 0
     @Published private(set) var verdict: Verdict = .unknown
     @Published private(set) var capturedFile: URL?
     @Published private(set) var isMonitoring = false
-    @Published private(set) var monitorStatus = ""
+    @Published private(set) var monitorStatus: LocalizedStringResource?
     @Published private(set) var monitorPeakDB: Double = -120
 
     // MARK: - Managing virtual devices
 
     @Published private(set) var virtualDevices: [VirtualDeviceConfiguration.Device] = []
-    @Published private(set) var virtualDeviceStatus = ""
+    @Published private(set) var virtualDeviceStatus: LocalizedStringResource?
 
     enum Verdict {
         case unknown, passed, failed
@@ -91,10 +91,10 @@ final class AudioEngineModel: ObservableObject {
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 700_000_000)
                 refresh()
-                virtualDeviceStatus = ""
+                virtualDeviceStatus = nil
             }
         } catch {
-            virtualDeviceStatus = error.localizedDescription
+            virtualDeviceStatus = "\(L10n.describe(error))"
         }
     }
 
@@ -115,7 +115,7 @@ final class AudioEngineModel: ObservableObject {
                 status = "Ready"
             }
         } catch {
-            status = "Could not read the device list: \(error.localizedDescription)"
+            status = "Could not read the device list: \(L10n.describe(error))"
         }
     }
 
@@ -188,7 +188,7 @@ final class AudioEngineModel: ObservableObject {
         } catch {
             input?.stop(); input = nil
             output?.stop(); output = nil
-            status = "Check failed: \(error.localizedDescription)"
+            status = "Check failed: \(L10n.describe(error))"
             verdict = .failed
         }
     }
@@ -246,7 +246,7 @@ final class AudioEngineModel: ObservableObject {
                 : "Nothing arrived"
         } catch {
             monitorMeter.finishWriting()
-            monitorStatus = "Recording failed: \(error.localizedDescription)"
+            monitorStatus = "Recording failed: \(L10n.describe(error))"
         }
     }
 

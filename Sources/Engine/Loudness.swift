@@ -64,11 +64,13 @@ struct LoudnessReading: Equatable {
     /// Gain being applied, in dB.
     var gain: Double
 
-    /// "−21 LUFS → +5.0 dB", or a note that nothing has been heard yet.
-    static func caption(_ reading: LoudnessReading?) -> String {
+    /// "−21 LUFS → +5.0 dB", or a note that nothing has been heard yet. The
+    /// numbers are the same in every language; the note is translated.
+    static func caption(_ reading: LoudnessReading?) -> LocalizedStringResource {
         guard let reading, let loudness = reading.loudness else { return "waiting for sound" }
-        return String(format: "%.0f LUFS → %+.1f dB", loudness, reading.gain)
+        let numbers = String(format: "%.0f LUFS → %+.1f dB", loudness, reading.gain)
             .replacingOccurrences(of: "-", with: "−")
+        return "\(numbers)"
     }
 }
 

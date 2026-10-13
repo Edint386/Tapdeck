@@ -86,8 +86,7 @@ struct AudioSettingsView: View {
             Section {
                 Picker("Buffer", selection: $settings.bufferSize) {
                     ForEach(AppSettings.BufferSize.allCases) { size in
-                        Text("\(size.title) — \(size.rawValue) frames, about \(size.milliseconds) ms")
-                            .tag(size)
+                        Text(size.title).tag(size)
                     }
                 }
                 Text("Each source and extra output holds this much audio before it plays. Larger buffers add delay but ride out clock drift and busy moments without dropouts. Applies to mixes started after the change.")

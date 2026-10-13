@@ -32,4 +32,18 @@ enum L10n {
         resource.locale = AppSettings.shared.locale
         return String(localized: resource)
     }
+
+    /// What went wrong, in the chosen language: an error's own message when it
+    /// has one, with the reasons added when a mix could open no output.
+    ///
+    /// The result is plain text, so it keeps the language it was made in; a
+    /// status line that embeds it changes language the next time it is set.
+    @MainActor
+    static func describe(_ error: Error) -> String {
+        var text = string(userMessage(for: error))
+        if let start = error as? Mixer.StartError, case .noUsableOutput(let reasons) = start {
+            text += ": " + reasons.map { string($0) }.joined(separator: "; ")
+        }
+        return text
+    }
 }

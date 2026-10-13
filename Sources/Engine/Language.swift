@@ -54,3 +54,20 @@ enum Localization {
         return (stored as? [String]) ?? Locale.preferredLanguages
     }
 }
+
+/// An error that can describe itself in the app's language.
+///
+/// The engine produces the wording; the app decides the language it is shown
+/// in. `errorDescription` stays available for the command line harness, which
+/// shows the system's default language.
+protocol MessageError: Error {
+    var message: LocalizedStringResource { get }
+}
+
+/// What to tell the user about an error: the error's own message when it has
+/// one, otherwise the system's text for it, which keeps the language it was
+/// produced in.
+func userMessage(for error: Error) -> LocalizedStringResource {
+    if let known = error as? MessageError { return known.message }
+    return "\(error.localizedDescription)"
+}

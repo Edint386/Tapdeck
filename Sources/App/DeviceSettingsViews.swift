@@ -58,8 +58,8 @@ struct VirtualDevicesSettingsView: View {
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if !model.virtualDeviceStatus.isEmpty {
-                Text(model.virtualDeviceStatus).font(.caption).foregroundStyle(.secondary)
+            if let status = model.virtualDeviceStatus {
+                Text(status).font(.caption).foregroundStyle(.secondary)
             }
         }
         .popover(isPresented: $isAddingDevice, arrowEdge: .bottom) {
@@ -210,8 +210,8 @@ struct DiagnosticsSettingsView: View {
                 .disabled(model.isMonitoring || model.isTesting || model.tapdeck == nil)
                 if model.isMonitoring { ProgressView().controlSize(.small) }
             }
-            if !model.monitorStatus.isEmpty {
-                Text(model.monitorStatus).font(.caption).foregroundStyle(.secondary)
+            if let status = model.monitorStatus {
+                Text(status).font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
