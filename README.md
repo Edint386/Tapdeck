@@ -161,11 +161,14 @@ From a release: download `Tapdeck-<version>.dmg` from the
 notarized, so macOS blocks the first launch: open System Settings › Privacy & Security
 and click **Open Anyway** next to the message about Tapdeck.
 
-To check the download, compare its checksum with the `.sha256` file published next to it:
+To check the download, save the `.sha256` file published next to it in the same folder as
+the dmg and run:
 
 ```
-shasum -a 256 Tapdeck-<version>.dmg
+shasum -a 256 -c Tapdeck-<version>.dmg.sha256
 ```
+
+It prints `Tapdeck-<version>.dmg: OK` when the file is intact.
 
 The dmg holds the app only. Capturing apps, mixing, playing to several outputs and
 recording all work without anything else; the virtual devices (for sending a mix into
@@ -201,8 +204,11 @@ Moving an app from one signature to another means granting its permissions once
 more. Re-enabling the old switch is not enough: remove the app from the list in
 System Settings and add it again, so macOS records the new signature.
 
-Distribution would need a Developer ID and notarisation. This is for running on
-your own machine.
+Releases are signed with this shared self-signed certificate, not notarized, and
+distributed as a dmg. macOS therefore blocks the first launch of a downloaded copy:
+open System Settings › Privacy & Security and click **Open Anyway** (see Install).
+A Developer ID signature with notarization, or an App Store release, would remove that
+step; both need a paid Apple Developer Program membership and are not planned.
 
 ## Development
 
