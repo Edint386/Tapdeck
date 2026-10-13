@@ -97,6 +97,37 @@ final class AppSettings: ObservableObject {
                                                              speed: loudnessSpeed)
     }
 
+    // MARK: - Language
+
+    /// What the user chose. Applies to everything Tapdeck draws as soon as it
+    /// changes; the system's own pieces (the app menu, file dialogs, permission
+    /// prompts) follow the next launch, which is what `AppleLanguages` below is
+    /// for.
+    @Published var language: LanguageChoice {
+        didSet {
+            guard language != oldValue else { return }
+            defaults.set(language.rawValue, forKey: Keys.language)
+            applyLanguageToNextLaunch()
+            languageCode = Localization.resolve(language, systemPreferred: Localization.currentSystemPreferred())
+        }
+    }
+
+    /// The language the app is shown in right now: `en` or `ja`.
+    @Published private(set) var languageCode: String
+
+    var locale: Locale { Locale(identifier: languageCode) }
+
+    /// Make the next launch use the same language for what the system draws.
+    /// `AppleLanguages` in Tapdeck's own preferences is where macOS looks; for
+    /// the system default the key is removed, so the system order applies again.
+    private func applyLanguageToNextLaunch() {
+        switch language {
+        case .system: defaults.removeObject(forKey: "AppleLanguages")
+        case .en:     defaults.set(["en"], forKey: "AppleLanguages")
+        case .ja:     defaults.set(["ja"], forKey: "AppleLanguages")
+        }
+    }
+
     // MARK: - General
 
     @Published var showsMenuBarItem: Bool {
@@ -135,6 +166,7 @@ final class AppSettings: ObservableObject {
         static let loudnessTarget = "settings.loudnessTarget"
         static let loudnessMaximumBoost = "settings.loudnessMaximumBoost"
         static let loudnessSpeed = "settings.loudnessSpeed"
+        static let language = "settings.language"
         static let showsMenuBarItem = "settings.showsMenuBarItem"
         static let recordingFolder = "settings.recordingFolder"
         static let mixRecordingFormat = "settings.mixRecordingFormat"
@@ -143,6 +175,12 @@ final class AppSettings: ObservableObject {
     }
 
     private init() {
+        // Not written back to AppleLanguages here: a per-app language set in
+        // System Settings must survive launching the app.
+        let chosen = defaults.string(forKey: Keys.language).flatMap(LanguageChoice.init(rawValue:)) ?? .system
+        language = chosen
+        languageCode = Localization.resolve(chosen, systemPreferred: Localization.currentSystemPreferred())
+
         bufferSize = BufferSize(rawValue: defaults.integer(forKey: Keys.bufferSize)) ?? .balanced
         showsMenuBarItem = defaults.object(forKey: Keys.showsMenuBarItem) as? Bool ?? true
         mixRecordingFormat = defaults.string(forKey: Keys.mixRecordingFormat)
@@ -180,7 +218,7 @@ final class AppSettings: ObservableObject {
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
         panel.directoryURL = recordingFolder
-        panel.prompt = "Choose"
+        panel.prompt = L10n.string("Choose")
         if panel.runModal() == .OK, let url = panel.url {
             recordingFolder = url
         }

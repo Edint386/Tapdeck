@@ -19,6 +19,7 @@ struct TapdeckApp: App {
                 .environmentObject(mixer)
                 .environmentObject(menuBar)
                 .environmentObject(settings)
+                .appLanguage()
         }
         // Resizable in both directions, down to a size where nothing clips.
         .windowResizability(.contentMinSize)
@@ -28,6 +29,7 @@ struct TapdeckApp: App {
             SettingsView()
                 .environmentObject(audio)
                 .environmentObject(settings)
+                .appLanguage()
         }
     }
 }

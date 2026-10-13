@@ -25,6 +25,18 @@ struct GeneralSettingsView: View {
     var body: some View {
         Form {
             Section {
+                Picker(selection: $settings.language) {
+                    Text("System default").tag(LanguageChoice.system)
+                    // Each language is named in itself, whatever the app is shown in.
+                    Text(verbatim: "English").tag(LanguageChoice.en)
+                    Text(verbatim: "日本語").tag(LanguageChoice.ja)
+                } label: {
+                    Text("Language")
+                    Text("The app menu and file dialogs change the next time Tapdeck starts.")
+                }
+            }
+
+            Section {
                 Toggle("Show Tapdeck in the menu bar", isOn: $settings.showsMenuBarItem)
                 Text("The menu bar item starts and stops mixes without opening the window. On a notched display a full menu bar may leave no room for it.")
                     .font(.caption)
