@@ -273,7 +273,8 @@ struct RecorderPanelView: View {
                     Task { recording ? await rec.stop() : await rec.start() }
                 }
             } label: {
-                Label(recording ? "Stop" : "Record", systemImage: recording ? "stop.fill" : "record.circle")
+                let title: LocalizedStringKey = recording ? "Stop" : "Record"
+                Label(title, systemImage: recording ? "stop.fill" : "record.circle")
                     .frame(width: 110)
             }
             .buttonStyle(.borderedProminent)

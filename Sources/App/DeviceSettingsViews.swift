@@ -160,8 +160,8 @@ struct DiagnosticsSettingsView: View {
                 Button {
                     Task { await model.runLoopbackTest() }
                 } label: {
-                    Label(model.isTesting ? "Checking…" : "Run Check",
-                          systemImage: "waveform.path.ecg")
+                    let title: LocalizedStringKey = model.isTesting ? "Checking…" : "Run Check"
+                    Label(title, systemImage: "waveform.path.ecg")
                         .frame(maxWidth: .infinity)
                 }
                 .disabled(model.isTesting || model.tapdeck == nil)
@@ -204,8 +204,8 @@ struct DiagnosticsSettingsView: View {
                 Button {
                     Task { await model.recordInput() }
                 } label: {
-                    Label(model.isMonitoring ? "Recording…" : "Record the Input",
-                          systemImage: "waveform.badge.mic")
+                    let title: LocalizedStringKey = model.isMonitoring ? "Recording…" : "Record the Input"
+                    Label(title, systemImage: "waveform.badge.mic")
                 }
                 .disabled(model.isMonitoring || model.isTesting || model.tapdeck == nil)
                 if model.isMonitoring { ProgressView().controlSize(.small) }

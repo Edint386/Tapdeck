@@ -135,7 +135,8 @@ struct SourceEffectsView: View {
                 .onTapGesture(count: 2) { effects.wrappedValue.bands[index].gain = 0 }
             Text(Self.frequencyLabel(band.frequency))
                 .font(.system(size: 9, weight: .medium))
-            Text(band.shape == .peak ? "peak" : "shelf")
+            let shape: LocalizedStringKey = band.shape == .peak ? "peak" : "shelf"
+            Text(shape)
                 .font(.system(size: 8))
                 .foregroundStyle(.tertiary)
         }

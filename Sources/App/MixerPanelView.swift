@@ -68,7 +68,11 @@ private struct MixListView: View {
                         MixListRow(mix: mix, isSelected: mix.id == model.selectedMix?.id)
                             .onTapGesture { model.selectedMixID = mix.id }
                             .contextMenu {
-                                Button(mix.isRunning ? "Stop" : "Start") { mix.toggleRunning() }
+                                if mix.isRunning {
+                                    Button("Stop") { mix.toggleRunning() }
+                                } else {
+                                    Button("Start") { mix.toggleRunning() }
+                                }
                                 Button("Duplicate") { model.duplicate(mix.id) }
                                 Divider()
                                 Button("Delete", role: .destructive) { model.delete(mix.id) }
@@ -91,7 +95,7 @@ private struct MixListView: View {
                 Label("No free space in the menu bar", systemImage: "menubar.arrow.up.rectangle")
                     .font(.caption2)
                     .foregroundStyle(.orange)
-                .help("macOS places status items in the strip right of the notch and keeps Tapdeck's icon off screen once other apps have filled it, so it cannot be clicked — not even by tools that tidy the menu bar, since it was never placed. It appears as soon as room frees up: hold Command and drag another icon out of the menu bar. Meanwhile, use this floating panel or the Dock menu.")
+                .help("macOS does not place a new menu bar icon once other apps have filled the bar, so Tapdeck's icon is not drawn. Free some room — hold Command and drag another icon out of the menu bar — and relaunch Tapdeck; after that the icon keeps its place like any other.")
             }
         }
         .padding(14)
@@ -215,8 +219,8 @@ private struct MixEditorView: View {
             Button {
                 mix.toggleRunning()
             } label: {
-                Label(mix.isRunning ? "Stop" : "Start",
-                      systemImage: mix.isRunning ? "stop.fill" : "play.fill")
+                let title: LocalizedStringKey = mix.isRunning ? "Stop" : "Start"
+                Label(title, systemImage: mix.isRunning ? "stop.fill" : "play.fill")
                     .frame(width: 70)
             }
             .buttonStyle(.borderedProminent)
@@ -572,7 +576,8 @@ private struct MixEditorView: View {
                                in: 0...1)
                             .controlSize(.mini)
                             .help("The device's own volume, the one the volume keys change when it is the Mac's output. Every app playing to it hears the change.")
-                        Text(row.isDeviceMuted ? "muted" : "\(Int((deviceVolume * 100).rounded()))%")
+                        let level: LocalizedStringKey = row.isDeviceMuted ? "muted" : "\(Int((deviceVolume * 100).rounded()))%"
+                        Text(level)
                             .font(.system(size: 9, design: .monospaced))
                             .foregroundStyle(row.isDeviceMuted ? Color.orange : .secondary)
                             .frame(width: 38, alignment: .trailing)
