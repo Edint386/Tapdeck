@@ -380,6 +380,7 @@ private struct MixEditorView: View {
                                           set: { if !$0 { effectsSourceID = nil } }),
                      arrowEdge: .trailing) {
                 SourceEffectsView(mix: mix, sourceID: row.id)
+                    .appLanguage()
             }
 
             muteButton(isMuted: row.isMuted) { mix.toggleSourceMute(row.id) }
@@ -650,7 +651,8 @@ private struct MixEditorView: View {
                     Text("Level")
                         .font(.system(size: 9, weight: .medium))
                         .foregroundStyle(.secondary)
-                        .frame(width: 30, alignment: .leading)
+                        .lineLimit(1)
+                        .frame(width: 38, alignment: .leading)
                     Slider(value: Binding(get: { Double(row.gain) },
                                           set: { mix.setOutputGain(Float($0), for: row.id) }),
                            in: 0...1)
@@ -666,7 +668,8 @@ private struct MixEditorView: View {
                 Text("Delay")
                     .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(.secondary)
-                    .frame(width: 30, alignment: .leading)
+                    .lineLimit(1)
+                    .frame(width: 38, alignment: .leading)
                 Slider(value: Binding(get: { row.delayMilliseconds },
                                       set: { mix.setOutputDelay($0, for: row.id) }),
                        in: 0...Mixer.Output.maximumDelayMilliseconds)

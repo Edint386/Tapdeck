@@ -86,6 +86,7 @@ struct VirtualDevicesSettingsView: View {
                 }
             }
             .padding(14)
+            .appLanguage()
         }
     }
 
