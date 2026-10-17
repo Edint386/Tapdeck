@@ -207,8 +207,6 @@ System Settings and add it again, so macOS records the new signature.
 Releases are signed with this shared self-signed certificate, not notarized, and
 distributed as a dmg. macOS therefore blocks the first launch of a downloaded copy:
 open System Settings › Privacy & Security and click **Open Anyway** (see Install).
-A Developer ID signature with notarization, or an App Store release, would remove that
-step; both need a paid Apple Developer Program membership and are not planned.
 
 ## Development
 
