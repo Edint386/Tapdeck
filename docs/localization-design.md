@@ -125,3 +125,28 @@ languages; release notes. A new feature, so the next version would be 0.5.0.
 - Japanese style: です／ます (recommended) and who reviews the translation.
 - Whether to localize the permission usage descriptions in this change (recommended: yes, three
   strings).
+
+## Measured while implementing
+
+Installed build on macOS 26.6, Swift 6.4, system language English with Japanese second.
+
+- **Live switch.** Choosing 日本語 in the picker changed the main window and the Settings window
+  while the app kept running. The Settings window's title followed (General → 一般); it comes from
+  the tab's label. The main window's title is "Tapdeck" in both languages.
+- **App menu.** Unchanged until the next launch; after relaunching it was Japanese (Tapdeckについて,
+  設定…). `AppleLanguages` in the app's defaults held `(ja)`.
+- **File dialog.** After the relaunch the folder chooser was Japanese (title 開く, buttons キャンセル
+  and 選択).
+- **Tooltips.** With a pseudo-locale that brackets every catalog string, the accessibility help of
+  every view was bracketed, so the `.help` strings follow the language.
+- **Popovers do not inherit the locale.** The add-device form and the effects panel showed English
+  while the window around them was Japanese; applying the language inside the popover content fixed it.
+- **Ternaries.** A ternary of string literals inside `Text` is extracted and translated by this
+  compiler. What leaked were view helpers taking their title as a `String`.
+- **Widths.** Every view was rendered in both languages. Four Japanese strings wrapped and were
+  shortened or given room (the muted label, the MP3 note, しきい値, the Delay label). The language
+  subtitle in Settings › General takes two lines in Japanese.
+- **Permission descriptions.** The bundle resolves `InfoPlist.strings` to Japanese for `ja` and to
+  English for an unsupported language. The prompt itself was not shown, so its language is not measured.
+- **Not measured:** context menus (a synthetic right-click did not open the menu), and the per-app
+  language in System Settings (access to System Settings was declined).
