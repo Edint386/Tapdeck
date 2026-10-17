@@ -850,6 +850,22 @@
         }
       }
     },
+    "App: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリ：%@"
+          }
+        }
+      }
+    },
     "Apple Lossless (.m4a) — lossless, about half the size of WAV": {
       "localizations": {
         "en": {
@@ -994,6 +1010,38 @@
         }
       }
     },
+    "Brings loud passages down toward quiet ones. Makeup gain raises the result again.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Brings loud passages down toward quiet ones. Makeup gain raises the result again."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "大きな部分を小さな部分に近づけます．メイクアップゲインで全体をもう一度持ち上げます．"
+          }
+        }
+      }
+    },
+    "Brings this source to the loudness set in Settings › Audio, however loud or quiet it plays on its own. With the original sound replaced, it evens out what you hear too.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Brings this source to the loudness set in Settings › Audio, however loud or quiet it plays on its own. With the original sound replaced, it evens out what you hear too."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このソースを，もとの音が大きくても小さくても，設定 › オーディオで決めた音量に近づけます．元の音を置き換えている場合は，聞こえる音も揃います．"
+          }
+        }
+      }
+    },
     "Buffer": {
       "localizations": {
         "en": {
@@ -1038,6 +1086,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "キャプチャ"
+          }
+        }
+      }
+    },
+    "Ceiling": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ceiling"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シーリング"
           }
         }
       }
@@ -1506,6 +1570,22 @@
         }
       }
     },
+    "Dynamics": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dynamics"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ダイナミクス"
+          }
+        }
+      }
+    },
     "Each source and extra output holds this much audio before it plays. Larger buffers add delay but ride out clock drift and busy moments without dropouts. Applies to mixes started after the change.": {
       "localizations": {
         "en": {
@@ -1534,6 +1614,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "エフェクト"
+          }
+        }
+      }
+    },
+    "Entire screen — %lld×%lld": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entire screen — %lld×%lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画面全体 — %1$lld×%2$lld"
+          }
+        }
+      }
+    },
+    "Equaliser": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Equaliser"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "イコライザー"
           }
         }
       }
@@ -1663,6 +1775,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "ファイル"
+          }
+        }
+      }
+    },
+    "Filters": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filters"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フィルター"
           }
         }
       }
@@ -1887,6 +2015,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "高 — あとで編集する場合"
+          }
+        }
+      }
+    },
+    "Holds this source back, for instance to line a microphone up with a video that arrives late.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Holds this source back, for instance to line a microphone up with a video that arrives late."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このソースを遅らせます．たとえば，遅れて届く映像にマイクを合わせたいときに使います．"
           }
         }
       }
@@ -2293,6 +2437,38 @@
         }
       }
     },
+    "Makeup": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Makeup"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メイクアップ"
+          }
+        }
+      }
+    },
+    "Master": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Master"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マスター"
+          }
+        }
+      }
+    },
     "Maximum boost": {
       "localizations": {
         "en": {
@@ -2501,6 +2677,22 @@
         }
       }
     },
+    "Mono folds both channels together — for a source that only plays on one side.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mono folds both channels together — for a source that only plays on one side."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "左右のチャンネルを1つにまとめます — 片側からしか聞こえないソース向けです．"
+          }
+        }
+      }
+    },
     "Most stable — %lld frames, about %lld ms": {
       "localizations": {
         "en": {
@@ -2592,7 +2784,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "MP3 は選べません．macOS にエンコーダがないためです．"
+            "value": "MP3 は macOS では書き出せません．"
           }
         }
       }
@@ -2737,6 +2929,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "出力がありません．ほかのアプリがこのミックスを受け取れるよう Tapdeck のデバイスを追加し，「聞く」で自分でも聞いてみましょう．"
+          }
+        }
+      }
+    },
+    "No peak ever goes above the ceiling.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No peak ever goes above the ceiling."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ピークがシーリングを超えることはありません．"
           }
         }
       }
@@ -2913,6 +3121,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "入力側を開いています…"
+          }
+        }
+      }
+    },
+    "Original Sound": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original Sound"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "元の音"
           }
         }
       }
@@ -3127,6 +3351,22 @@
         }
       },
       "comment": "Same in every language"
+    },
+    "Ratio": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ratio"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシオ"
+          }
+        }
+      }
     },
     "Read back the audio sent to the output side.": {
       "localizations": {
@@ -3460,6 +3700,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "すべてのソースを削除"
+          }
+        }
+      }
+    },
+    "Remove this output": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove this output"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この出力を削除"
+          }
+        }
+      }
+    },
+    "Remove this source": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove this source"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このソースを削除"
+          }
+        }
+      }
+    },
+    "Removes hiss and harshness above the frequency.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Removes hiss and harshness above the frequency."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この周波数より上の，シャーというノイズやきつい高音を取り除きます．"
+          }
+        }
+      }
+    },
+    "Removes rumble, desk bumps and hum below the frequency.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Removes rumble, desk bumps and hum below the frequency."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この周波数より下の，ゴロゴロ音や机の振動，ハム音を取り除きます．"
           }
         }
       }
@@ -3816,6 +4120,22 @@
         }
       }
     },
+    "Silences the source while it stays below the threshold — background noise between words.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Silences the source while it stays below the threshold — background noise between words."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音がしきい値を下回っている間は，そのソースを無音にします — 話の合間の背景ノイズ向けです．"
+          }
+        }
+      }
+    },
     "Size": {
       "localizations": {
         "en": {
@@ -4020,6 +4340,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "目安です．耳を頼りに微調整してください"
+          }
+        }
+      }
+    },
+    "Stereo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stereo"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ステレオ"
           }
         }
       }
@@ -4229,6 +4565,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tapdeck のデバイス — ミックスの出力"
+          }
+        }
+      }
+    },
+    "Tapdeck is turning peaks down by %.1f dB here so they do not distort. To avoid it, turn a source or the mix down, or turn the device volume up.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tapdeck is turning peaks down by %.1f dB here so they do not distort. To avoid it, turn a source or the mix down, or turn the device volume up."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "歪まないよう，Tapdeck がここでピークを %.1f dB 下げています．避けるには，ソースかミックスの音量を下げるか，デバイスの音量を上げてください．"
           }
         }
       }
@@ -4505,6 +4857,22 @@
         }
       }
     },
+    "Threshold": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Threshold"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "しきい値"
+          }
+        }
+      }
+    },
     "Tracks": {
       "localizations": {
         "en": {
@@ -4533,6 +4901,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "ミュート解除"
+          }
+        }
+      }
+    },
+    "Unnamed mix": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unnamed mix"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前のないミックス"
           }
         }
       }
@@ -4697,6 +5081,22 @@
         }
       }
     },
+    "Window: %@ — %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Window: %@ — %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ウインドウ：%1$@ — %2$@"
+          }
+        }
+      }
+    },
     "Windows": {
       "localizations": {
         "en": {
@@ -4837,7 +5237,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ミュート中"
+            "value": "ミュート"
           }
         }
       }

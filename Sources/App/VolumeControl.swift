@@ -8,7 +8,7 @@ import SwiftUI
 /// decibels because that is how loudness is perceived and how the rest of the
 /// app reports levels.
 struct VolumeControl: View {
-    let title: String?
+    let title: LocalizedStringKey?
     @Binding var volume: Float
     @Binding var isMuted: Bool
     var maximum: Float = 1

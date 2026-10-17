@@ -580,6 +580,8 @@ private struct MixEditorView: View {
                         Text(level)
                             .font(.system(size: 9, design: .monospaced))
                             .foregroundStyle(row.isDeviceMuted ? Color.orange : .secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                             .frame(width: 38, alignment: .trailing)
                     } else {
                         Slider(value: Binding(get: { Double(row.gain) },
@@ -744,7 +746,7 @@ private struct MixEditorView: View {
         .help(isMuted ? "Unmute" : "Mute")
     }
 
-    private func removeButton(_ help: String, action: @escaping () -> Void) -> some View {
+    private func removeButton(_ help: LocalizedStringKey, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: "xmark").font(.caption2).foregroundStyle(.tertiary)
         }
@@ -774,8 +776,10 @@ struct LimitBadge: View {
             .padding(.horizontal, 4).padding(.vertical, 1)
             .background(Color.orange, in: Capsule())
             .opacity(decibels > 0.3 ? 1 : 0)
-            .help(String(format: "Tapdeck is turning peaks down by %.1f dB here so they do not distort. "
-                         + "To avoid it, turn a source or the mix down, or turn the device volume up.", decibels))
+            .help("""
+                Tapdeck is turning peaks down by \(decibels, specifier: "%.1f") dB here so they do not distort. \
+                To avoid it, turn a source or the mix down, or turn the device volume up.
+                """)
             .accessibilityHidden(decibels <= 0.3)
     }
 }

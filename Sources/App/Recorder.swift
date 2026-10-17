@@ -18,9 +18,9 @@ final class Recorder: NSObject, ObservableObject {
         case app(pid_t)
     }
 
-    struct Option: Identifiable, Hashable {
+    struct Option: Identifiable {
         let id: String
-        let label: String
+        let label: LocalizedStringResource
         let target: Target
     }
 

@@ -64,8 +64,11 @@ struct RecorderPanelView: View {
             Picker(selection: Binding(get: { selectedMix?.id ?? UUID() },
                                       set: { rec.audioMixID = $0 })) {
                 ForEach(mixer.mixes) { mix in
-                    Text(mix.name.trimmingCharacters(in: .whitespaces).isEmpty
-                         ? "Unnamed mix" : mix.name).tag(mix.id)
+                    if mix.name.trimmingCharacters(in: .whitespaces).isEmpty {
+                        Text("Unnamed mix").tag(mix.id)
+                    } else {
+                        Text(mix.name).tag(mix.id)
+                    }
                 }
             } label: {
                 Text("Mix")

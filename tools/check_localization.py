@@ -15,8 +15,8 @@ that list with Resources/Localizable.xcstrings and fails the build on:
   * placeholders (%@, %lld, ...) that differ between the two languages
   * Japanese written with 、 or 。 instead of the full-width ， and ．
   * the ways of getting a string that would ignore the language chosen in the app:
-    String(localized:) or NSLocalizedString in the app layer, and a ternary of
-    string literals inside Text, which silently picks the verbatim initializer
+    String(localized:) or NSLocalizedString in the app layer, and a view helper that
+    takes its title as a String, which reaches Text or .help verbatim
 
 and checks that Info.plist's permission descriptions are translated too.
 """
@@ -91,8 +91,11 @@ def used_keys(directory):
 
 
 def check_sources():
-    # Only the first argument is the title; a later one such as systemImage: is not translated.
-    ternary = re.compile(r'\b(?:Text|Label|Button|Toggle)\([^(),\n]*\?\s*"[^"\n]*"\s*:\s*"')
+    # A helper like section(_ title: String) passes the text on to Text(title), the verbatim
+    # initializer, so it is shown in English whatever language is chosen. Its parameter has to be
+    # a LocalizedStringKey (or a LocalizedStringResource) for the literal at the call site to
+    # be extracted and translated.
+    helper = re.compile(r'\bfunc \w+(?:<[^>]*>)?\(_ (?:title|text|label|help|caption|hint|message): String\b')
     for path in sorted(glob.glob("Sources/App/*.swift")):
         for number, line in enumerate(open(path, encoding="utf-8"), 1):
             code = line.split("//")[0]
@@ -100,9 +103,9 @@ def check_sources():
             if not path.endswith("LanguageEnvironment.swift") and re.search(r"String\(localized:|NSLocalizedString", code):
                 fail(f"{where}: String(localized:) follows the process language, not the choice made in the "
                      "app; use a LocalizedStringResource with L10n.string, or Text")
-            if "verbatim" not in code and ternary.search(code):
-                fail(f"{where}: a ternary of string literals inside Text/Label/Button is never translated; "
-                     "write one Text per branch")
+            if helper.search(code):
+                fail(f"{where}: a String parameter reaches Text or .help as is and is never translated; "
+                     "take a LocalizedStringKey")
 
 
 def check_info_plist(strings):
