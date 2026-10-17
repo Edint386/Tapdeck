@@ -18,6 +18,9 @@ work.
   `Mac Utilities Code Signing` certificate (`tools/signing.sh`), never as a
   build-directory prototype. Without the certificate builds are ad-hoc and
   privacy permissions reset on every build.
+- UI text is English in the code and translated in `Resources/Localizable.xcstrings` (English and
+  Japanese, polite style, full-width ，．). `build.sh` fails on a missing or mismatched translation
+  (`tools/check_localization.py`); `docs/localization-design.md` has the design and measurements.
 - Verify audio behaviour by measurement, not by ear: `tapproof` captures through
   the app's own AUHAL path and the analyses read samples directly. ffmpeg's
   avfoundation capture drops blocks and is not trustworthy for this.
@@ -52,6 +55,7 @@ work.
 | `DelayLine.swift` | Multichannel delay with crossfaded changes |
 | `DeviceVolume.swift` | A device's own volume and mute, and a listener-based change observer |
 | `RoutingGraph.swift` | Feedback-loop detection across running mixes |
+| `Language.swift` | The language choice (system, English, 日本語) and how it resolves; `MessageError`, so engine messages are `LocalizedStringResource` values |
 | `MuxedRecorder.swift` | Screen video plus device audio into a .mov, one AAC track per channel pair |
 | `VirtualDeviceConfiguration.swift` | The virtual device list, pushed to the driver through a custom property |
 
@@ -68,6 +72,7 @@ work.
 | `MixerPanelView.swift` | Sidebar of mixes and the mix editor |
 | `SourceEffectsView.swift` | Effects popover for one source |
 | `VolumeControl.swift` | Volume fader with mute and dB readout; master volume control |
+| `LanguageEnvironment.swift` | `.appLanguage()` puts the chosen language into a view's environment; `L10n` for code that needs a plain String |
 | `AppSettings.swift`, `SettingsView.swift` | Preferences pushed into the engine, and the Settings window |
 | `MenuBarController.swift`, `MenuBarPanelView.swift` | NSStatusItem and its popover |
 | `AudioEngineModel.swift`, `DeviceSettingsViews.swift` | Virtual device management and diagnostics, shown in Settings |
@@ -130,6 +135,11 @@ most likely to recur:
   a mix plays to AirPlay and restores the previous output (also after a crash).
 - Tapdeck's own faders stop at 0 dB; loudness belongs to the device volume and
   Even Out. Outputs end in a limiter, never a hard clip.
+- `String(localized:)` follows the process language and a `String` given to `Text` or `.help` is
+  shown as is; neither follows the language chosen in the app. Use `Text("literal")`, a
+  `LocalizedStringKey` parameter, or a `LocalizedStringResource` with `L10n.string`.
+- A popover is hosted in its own window and does not inherit the locale; apply `.appLanguage()`
+  inside its content.
 - UI checks: render views offscreen in a scratch binary and capture only that
   window (`screencapture -l <windowNumber>`). Never capture screen regions, which
   pick up other apps' windows.

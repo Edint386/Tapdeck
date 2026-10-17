@@ -1,6 +1,7 @@
 # In-app language choice — design proposal
 
-Status: proposal only. Nothing in the app has been changed. Measurements below were made on
+Status: implemented in 0.5.0; the proposal below is kept as written, and what was measured during the
+implementation is at the end. Measurements in the proposal were made on
 macOS 26.6 (25G72) with Xcode's toolchain, using a throwaway app built the way Tapdeck is built (swiftc, a
 SwiftUI window, a hand-made `.app` bundle, a String Catalog compiled by `xcstringstool`).
 
