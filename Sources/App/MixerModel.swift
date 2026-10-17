@@ -178,20 +178,18 @@ final class MixerModel: ObservableObject {
     /// undone at the next launch.
     private static let restoreOutputKey = "airPlay.restoreOutputUID"
 
-    /// Make AirPlay the Mac's output on behalf of a mix. Returns a problem to
-    /// report, or nil.
-    func claimAirPlay(for session: MixSession, device: AudioDevice) -> String? {
+    /// Make AirPlay the Mac's output on behalf of a mix. Returns whether it
+    /// worked.
+    func claimAirPlay(for session: MixSession, device: AudioDevice) -> Bool {
         let current = try? defaultOutputDeviceUID()
         if current != device.uid {
             if airPlayClaims.isEmpty, let current {
                 UserDefaults.standard.set(current, forKey: Self.restoreOutputKey)
             }
-            guard setDefaultOutputDevice(device.deviceID) else {
-                return "Could not make AirPlay the Mac's output"
-            }
+            guard setDefaultOutputDevice(device.deviceID) else { return false }
         }
         airPlayClaims.insert(session.id)
-        return nil
+        return true
     }
 
     func releaseAirPlay(for session: MixSession) {
@@ -222,7 +220,7 @@ final class MixerModel: ObservableObject {
     /// another captures Meetings and plays to Streaming will howl.
     func feedbackProblem(for session: MixSession,
                          addingOutput: String? = nil,
-                         addingInput: String? = nil) -> String? {
+                         addingInput: String? = nil) -> LocalizedStringResource? {
         var graph = RoutingGraph()
         for mix in mixes where mix.isRunning || mix === session {
             var inputs = mix.inputDeviceUIDs
@@ -234,7 +232,7 @@ final class MixerModel: ObservableObject {
             graph.connect(from: inputs, to: outputs)
         }
         if let loop = graph.firstCycle() {
-            return "This would feed back on itself: " + loop.map(deviceName).joined(separator: " → ")
+            return "This would feed back on itself: \(loop.map(deviceName).joined(separator: " → "))"
         }
         return nil
     }

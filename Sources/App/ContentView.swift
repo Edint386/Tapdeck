@@ -64,8 +64,11 @@ struct RecorderPanelView: View {
             Picker(selection: Binding(get: { selectedMix?.id ?? UUID() },
                                       set: { rec.audioMixID = $0 })) {
                 ForEach(mixer.mixes) { mix in
-                    Text(mix.name.trimmingCharacters(in: .whitespaces).isEmpty
-                         ? "Unnamed mix" : mix.name).tag(mix.id)
+                    if mix.name.trimmingCharacters(in: .whitespaces).isEmpty {
+                        Text("Unnamed mix").tag(mix.id)
+                    } else {
+                        Text(mix.name).tag(mix.id)
+                    }
                 }
             } label: {
                 Text("Mix")
@@ -98,7 +101,7 @@ struct RecorderPanelView: View {
                     ForEach(MixRecorder.bitDepths, id: \.self) { depth in Text("\(depth)-bit").tag(depth) }
                 }
             } else {
-                LabeledContent("Quality", value: "Lossless")
+                LabeledContent("Quality") { Text("Lossless") }
             }
             LabeledContent("Save to") {
                 Text(Self.shortPath(settings.recordingFolder))
@@ -124,10 +127,22 @@ struct RecorderPanelView: View {
                         .frame(width: 90, alignment: .trailing)
                 }
             }
-            LabeledContent("Mix", value: mix.map { $0.isRunning ? "Playing" : "Stopped" } ?? "—")
-            LabeledContent("File", value: mix.map {
-                $0.isRecordingFile ? "\(Self.size($0.recordingSize)) so far" : "Not recording"
-            } ?? "—")
+            // A separate Text in each branch, not a ternary of string literals:
+            // that would pick the verbatim initializer and never be translated.
+            LabeledContent("Mix") {
+                if let mix {
+                    if mix.isRunning { Text("Playing") } else { Text("Stopped") }
+                } else {
+                    Text(verbatim: "—")
+                }
+            }
+            LabeledContent("File") {
+                if let mix {
+                    if mix.isRecordingFile { Text("\(Self.size(mix.recordingSize)) so far") } else { Text("Not recording") }
+                } else {
+                    Text(verbatim: "—")
+                }
+            }
         } header: {
             Text("Monitor")
         }
@@ -223,8 +238,9 @@ struct RecorderPanelView: View {
             }
             if rec.usesMixerOutput {
                 let channels = rec.audioDeviceOptions.first(where: { $0.uid == rec.audioSourceID })?.inputChannels ?? 2
-                LabeledContent("Tracks", value: channels > 2
-                               ? "\((channels + 1) / 2), one per channel pair" : "1, what the mix sends")
+                LabeledContent("Tracks") {
+                    if channels > 2 { Text("\((channels + 1) / 2), one per channel pair") } else { Text("1, what the mix sends") }
+                }
             } else {
                 Toggle("System audio", isOn: $rec.systemAudio)
                 Toggle(isOn: $rec.microphone) {
@@ -247,7 +263,7 @@ struct RecorderPanelView: View {
         let recording = audio ? (mix?.isRecordingFile ?? false) : rec.isRecording
         let elapsed = audio ? (mix?.recordingElapsed ?? 0) : rec.elapsed
         let canStart = audio ? mix != nil : !rec.selectedID.isEmpty
-        let status = audio ? (mix?.status ?? "") : rec.status
+        let status: LocalizedStringResource? = audio ? mix?.status : rec.status
         let lastFile = audio ? mix?.lastRecordingURL : rec.lastOutput
 
         return HStack(spacing: 16) {
@@ -260,7 +276,8 @@ struct RecorderPanelView: View {
                     Task { recording ? await rec.stop() : await rec.start() }
                 }
             } label: {
-                Label(recording ? "Stop" : "Record", systemImage: recording ? "stop.fill" : "record.circle")
+                let title: LocalizedStringKey = recording ? "Stop" : "Record"
+                Label(title, systemImage: recording ? "stop.fill" : "record.circle")
                     .frame(width: 110)
             }
             .buttonStyle(.borderedProminent)
@@ -273,7 +290,7 @@ struct RecorderPanelView: View {
                 .font(.system(.title2, design: .monospaced))
                 .foregroundStyle(recording ? .red : .secondary)
 
-            Text(status.isEmpty ? " " : status)
+            Text(status ?? " ")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)

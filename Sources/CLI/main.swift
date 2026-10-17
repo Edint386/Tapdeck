@@ -728,6 +728,39 @@ func runRate(deviceName: String, rate: Double) throws {
 }
 
 
+/// How a language choice becomes a language: no devices and no app needed.
+func runLanguageTest() {
+    var passed = 0, total = 0
+    func check(_ label: String, _ choice: LanguageChoice, _ preferred: [String], expect: String) {
+        let got = Localization.resolve(choice, systemPreferred: preferred)
+        total += 1; if got == expect { passed += 1 }
+        let shown = preferred.isEmpty ? "[]" : "[" + preferred.joined(separator: ", ") + "]"
+        print("\(got == expect ? "PASS" : "FAIL")  \(label.padding(toLength: 46, withPad: " ", startingAt: 0)) \(choice.rawValue) \(shown) -> \(got)")
+    }
+    // A chosen language wins over whatever the system says.
+    check("English chosen on a Japanese system", .en, ["ja-JP"], expect: "en")
+    check("Japanese chosen on an English system", .ja, ["en-US"], expect: "ja")
+    // System default follows the first language Tapdeck has.
+    check("this Mac's own order (English first)", .system, ["en-JP", "ja-JP"], expect: "en")
+    check("Japanese first", .system, ["ja-JP", "en-US"], expect: "ja")
+    check("skips languages without strings", .system, ["fr-FR", "de-DE", "ja-JP"], expect: "ja")
+    check("nothing available falls back to English", .system, ["fr-FR", "zh-Hans-CN"], expect: "en")
+    check("empty list falls back to English", .system, [], expect: "en")
+    // The language part decides, however the tag is written.
+    check("underscore form", .system, ["ja_JP"], expect: "ja")
+    check("capital letters", .system, ["JA"], expect: "ja")
+    check("script and region", .system, ["ja-Jpan-JP"], expect: "ja")
+    check("only the language part counts", .system, ["jam-JM", "en-GB"], expect: "en")
+    // Every choice can be listed, and the raw values are what is stored.
+    total += 1
+    let stored = LanguageChoice.allCases.map(\.rawValue)
+    let ok = stored == ["system", "en", "ja"] && LanguageChoice(rawValue: "ja") == .ja && LanguageChoice(rawValue: "xx") == nil
+    if ok { passed += 1 }
+    print("\(ok ? "PASS" : "FAIL")  \("stored values are system, en, ja".padding(toLength: 46, withPad: " ", startingAt: 0)) \(stored)")
+    print("\(passed)/\(total) passed")
+    if passed != total { exit(1) }
+}
+
 /// The output limiter: transparent below the ceiling, never above it, and far
 /// cleaner than the hard clipping it replaced.
 func runLimiterTest() {
@@ -1408,6 +1441,9 @@ do {
 
     case "limittest":
         runLimiterTest()
+
+    case "l10ntest":
+        runLanguageTest()
 
 
     case "graphtest":

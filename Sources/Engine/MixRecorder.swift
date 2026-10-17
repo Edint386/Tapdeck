@@ -31,7 +31,7 @@ final class MixRecorder: @unchecked Sendable {
             }
         }
 
-        var title: String {
+        var title: LocalizedStringResource {
             switch self {
             case .aac:  return "AAC (.m4a) — small, plays everywhere"
             case .alac: return "Apple Lossless (.m4a) — lossless, about half the size of WAV"

@@ -18,9 +18,9 @@ final class Recorder: NSObject, ObservableObject {
         case app(pid_t)
     }
 
-    struct Option: Identifiable, Hashable {
+    struct Option: Identifiable {
         let id: String
-        let label: String
+        let label: LocalizedStringResource
         let target: Target
     }
 
@@ -49,7 +49,7 @@ final class Recorder: NSObject, ObservableObject {
     @Published private(set) var isRecording = false
     @Published private(set) var elapsed: TimeInterval = 0
     @Published private(set) var lastOutput: URL?
-    @Published private(set) var status = "Ready"
+    @Published private(set) var status: LocalizedStringResource = "Ready"
     @Published private(set) var outputSize: CGSize = .zero
 
     // MARK: - Choosing the audio source
@@ -83,7 +83,7 @@ final class Recorder: NSObject, ObservableObject {
     enum Mode: String, CaseIterable, Identifiable {
         case screen, audio
         var id: String { rawValue }
-        var title: String { self == .screen ? "Screen and audio" : "Audio only" }
+        var title: LocalizedStringResource { self == .screen ? "Screen and audio" : "Audio only" }
     }
 
     @Published var mode = Mode.screen
@@ -163,7 +163,7 @@ final class Recorder: NSObject, ObservableObject {
             updateOutputSize()
             status = "Ready"
         } catch {
-            status = "Screen recording permission is required: \(error.localizedDescription)"
+            status = "Screen recording permission is required: \(L10n.describe(error))"
         }
     }
 
@@ -188,7 +188,7 @@ final class Recorder: NSObject, ObservableObject {
             }
         }
 
-        var title: String {
+        var title: LocalizedStringResource {
             switch self {
             case .native: return "Native (full size)"
             case .height(2160): return "2160p (4K UHD)"
@@ -204,7 +204,7 @@ final class Recorder: NSObject, ObservableObject {
     enum Codec: String, CaseIterable, Identifiable {
         case h264, hevc
         var id: String { rawValue }
-        var title: String {
+        var title: LocalizedStringResource {
             self == .h264 ? "H.264 — plays anywhere" : "HEVC (H.265) — same quality, smaller"
         }
         var videoCodec: AVVideoCodecType { self == .h264 ? .h264 : .hevc }
@@ -216,7 +216,7 @@ final class Recorder: NSObject, ObservableObject {
     enum Quality: String, CaseIterable, Identifiable {
         case high, balanced, small
         var id: String { rawValue }
-        var title: String {
+        var title: LocalizedStringResource {
             switch self {
             case .high:     return "High — for editing afterwards"
             case .balanced: return "Balanced"
@@ -381,13 +381,16 @@ final class Recorder: NSObject, ObservableObject {
             startedAt = Date()
             elapsed = 0
             isRecording = true
-            let megabits = Double(bitrate(for: CGSize(width: w, height: h))) / 1_000_000
-            status = String(format: "Recording %d×%d at %d fps, %@ %.1f Mbps — audio from %@",
-                            w, h, fps, codec == .hevc ? "HEVC" : "H.264", megabits,
-                            usesMixerOutput ? audioSourceName : "system audio and microphone")
+            let megabits = String(format: "%.1f", Double(bitrate(for: CGSize(width: w, height: h))) / 1_000_000)
+            let codecName = codec == .hevc ? "HEVC" : "H.264"
+            // Two full sentences rather than one with a translated fragment
+            // inside: a fragment cannot be put in the right place in every language.
+            status = usesMixerOutput
+                ? "Recording \(w)×\(h) at \(fps) fps, \(codecName) \(megabits) Mbps — audio from \(audioSourceName)"
+                : "Recording \(w)×\(h) at \(fps) fps, \(codecName) \(megabits) Mbps — audio from system audio and microphone"
             startTicker()
         } catch {
-            status = "Could not start: \(error.localizedDescription)"
+            status = "Could not start: \(L10n.describe(error))"
         }
     }
 
@@ -400,7 +403,7 @@ final class Recorder: NSObject, ObservableObject {
         do {
             try await s.stopCapture()
         } catch {
-            status = "Error while stopping: \(error.localizedDescription)"
+            status = "Error while stopping: \(L10n.describe(error))"
         }
 
         deviceInput?.stop()
@@ -410,7 +413,7 @@ final class Recorder: NSObject, ObservableObject {
             await muxer.finish()
             muxerBox.value = nil
             if let failure = muxer.failure {
-                status = "Writing failed: \(failure.localizedDescription)"
+                status = "Writing failed: \(L10n.describe(failure))"
             } else {
                 status = "Saved \(lastOutput?.lastPathComponent ?? "")"
             }
@@ -469,7 +472,7 @@ final class Recorder: NSObject, ObservableObject {
 extension Recorder: SCStreamDelegate {
     nonisolated func stream(_ stream: SCStream, didStopWithError error: Error) {
         Task { @MainActor in
-            self.status = "The stream stopped: \(error.localizedDescription)"
+            self.status = "The stream stopped: \(L10n.describe(error))"
             self.isRecording = false
             self.ticker?.invalidate()
         }
@@ -483,7 +486,7 @@ extension Recorder: SCRecordingOutputDelegate {
 
     nonisolated func recordingOutput(_ recordingOutput: SCRecordingOutput, didFailWithError error: Error) {
         Task { @MainActor in
-            self.status = "Writing failed: \(error.localizedDescription)"
+            self.status = "Writing failed: \(L10n.describe(error))"
             self.isRecording = false
             self.ticker?.invalidate()
         }

@@ -68,7 +68,11 @@ private struct MixListView: View {
                         MixListRow(mix: mix, isSelected: mix.id == model.selectedMix?.id)
                             .onTapGesture { model.selectedMixID = mix.id }
                             .contextMenu {
-                                Button(mix.isRunning ? "Stop" : "Start") { mix.toggleRunning() }
+                                if mix.isRunning {
+                                    Button("Stop") { mix.toggleRunning() }
+                                } else {
+                                    Button("Start") { mix.toggleRunning() }
+                                }
                                 Button("Duplicate") { model.duplicate(mix.id) }
                                 Divider()
                                 Button("Delete", role: .destructive) { model.delete(mix.id) }
@@ -91,7 +95,7 @@ private struct MixListView: View {
                 Label("No free space in the menu bar", systemImage: "menubar.arrow.up.rectangle")
                     .font(.caption2)
                     .foregroundStyle(.orange)
-                .help("macOS places status items in the strip right of the notch and keeps Tapdeck's icon off screen once other apps have filled it, so it cannot be clicked — not even by tools that tidy the menu bar, since it was never placed. It appears as soon as room frees up: hold Command and drag another icon out of the menu bar. Meanwhile, use this floating panel or the Dock menu.")
+                .help("macOS does not place a new menu bar icon once other apps have filled the bar, so Tapdeck's icon is not drawn. Free some room — hold Command and drag another icon out of the menu bar — and relaunch Tapdeck; after that the icon keeps its place like any other.")
             }
         }
         .padding(14)
@@ -165,7 +169,7 @@ private struct MixEditorView: View {
 
     /// What mix-level normalisation is doing, in one short line. Kept as a
     /// space when there is nothing to say, so the header does not jump.
-    private var loudnessCaption: String {
+    private var loudnessCaption: LocalizedStringResource {
         guard mix.normalizesLoudness, mix.isRunning else { return " " }
         return LoudnessReading.caption(mix.loudnessReading)
     }
@@ -215,8 +219,8 @@ private struct MixEditorView: View {
             Button {
                 mix.toggleRunning()
             } label: {
-                Label(mix.isRunning ? "Stop" : "Start",
-                      systemImage: mix.isRunning ? "stop.fill" : "play.fill")
+                let title: LocalizedStringKey = mix.isRunning ? "Stop" : "Start"
+                Label(title, systemImage: mix.isRunning ? "stop.fill" : "play.fill")
                     .frame(width: 70)
             }
             .buttonStyle(.borderedProminent)
@@ -307,7 +311,7 @@ private struct MixEditorView: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 6) {
-                    Text(row.label).font(.callout.weight(.medium)).lineLimit(1)
+                    Text(row.title).font(.callout.weight(.medium)).lineLimit(1)
                     if row.replacesOriginal {
                         Text("REPLACES")
                             .font(.system(size: 8, weight: .bold))
@@ -376,6 +380,7 @@ private struct MixEditorView: View {
                                           set: { if !$0 { effectsSourceID = nil } }),
                      arrowEdge: .trailing) {
                 SourceEffectsView(mix: mix, sourceID: row.id)
+                    .appLanguage()
             }
 
             muteButton(isMuted: row.isMuted) { mix.toggleSourceMute(row.id) }
@@ -572,9 +577,12 @@ private struct MixEditorView: View {
                                in: 0...1)
                             .controlSize(.mini)
                             .help("The device's own volume, the one the volume keys change when it is the Mac's output. Every app playing to it hears the change.")
-                        Text(row.isDeviceMuted ? "muted" : "\(Int((deviceVolume * 100).rounded()))%")
+                        let level: LocalizedStringKey = row.isDeviceMuted ? "muted" : "\(Int((deviceVolume * 100).rounded()))%"
+                        Text(level)
                             .font(.system(size: 9, design: .monospaced))
                             .foregroundStyle(row.isDeviceMuted ? Color.orange : .secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                             .frame(width: 38, alignment: .trailing)
                     } else {
                         Slider(value: Binding(get: { Double(row.gain) },
@@ -643,7 +651,8 @@ private struct MixEditorView: View {
                     Text("Level")
                         .font(.system(size: 9, weight: .medium))
                         .foregroundStyle(.secondary)
-                        .frame(width: 30, alignment: .leading)
+                        .lineLimit(1)
+                        .frame(width: 38, alignment: .leading)
                     Slider(value: Binding(get: { Double(row.gain) },
                                           set: { mix.setOutputGain(Float($0), for: row.id) }),
                            in: 0...1)
@@ -659,7 +668,8 @@ private struct MixEditorView: View {
                 Text("Delay")
                     .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(.secondary)
-                    .frame(width: 30, alignment: .leading)
+                    .lineLimit(1)
+                    .frame(width: 38, alignment: .leading)
                 Slider(value: Binding(get: { row.delayMilliseconds },
                                       set: { mix.setOutputDelay($0, for: row.id) }),
                        in: 0...Mixer.Output.maximumDelayMilliseconds)
@@ -699,22 +709,22 @@ private struct MixEditorView: View {
         .padding(.top, 2)
     }
 
-    private func delayHint(_ row: MixSession.OutputRow) -> String {
-        var hint = "Delay the faster outputs until the echo between them disappears."
-        if let reported = row.reportedLatencyMilliseconds {
-            hint += String(format: " This device reports %.0f ms of its own; wireless devices often report less than they add.",
-                           reported)
+    private func delayHint(_ row: MixSession.OutputRow) -> LocalizedStringResource {
+        guard let reported = row.reportedLatencyMilliseconds else {
+            return "Delay the faster outputs until the echo between them disappears."
         }
-        return hint
+        let milliseconds = String(format: "%.0f", reported)
+        // One sentence per case: a fragment cannot be appended in every language.
+        return "Delay the faster outputs until the echo between them disappears. This device reports \(milliseconds) ms of its own; wireless devices often report less than they add."
     }
 
     // MARK: Footer
 
     private var footer: some View {
         HStack {
-            Text(mix.status.isEmpty ? " " : mix.status)
+            Text(mix.status ?? " ")
                 .font(.caption)
-                .foregroundStyle(mix.status.hasPrefix("This would feed back") ? Color.orange : .secondary)
+                .foregroundStyle(mix.statusIsWarning ? Color.orange : .secondary)
                 .lineLimit(2)
             Spacer()
             Button {
@@ -739,7 +749,7 @@ private struct MixEditorView: View {
         .help(isMuted ? "Unmute" : "Mute")
     }
 
-    private func removeButton(_ help: String, action: @escaping () -> Void) -> some View {
+    private func removeButton(_ help: LocalizedStringKey, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: "xmark").font(.caption2).foregroundStyle(.tertiary)
         }
@@ -769,8 +779,10 @@ struct LimitBadge: View {
             .padding(.horizontal, 4).padding(.vertical, 1)
             .background(Color.orange, in: Capsule())
             .opacity(decibels > 0.3 ? 1 : 0)
-            .help(String(format: "Tapdeck is turning peaks down by %.1f dB here so they do not distort. "
-                         + "To avoid it, turn a source or the mix down, or turn the device volume up.", decibels))
+            .help("""
+                Tapdeck is turning peaks down by \(decibels, specifier: "%.1f") dB here so they do not distort. \
+                To avoid it, turn a source or the mix down, or turn the device volume up.
+                """)
             .accessibilityHidden(decibels <= 0.3)
     }
 }

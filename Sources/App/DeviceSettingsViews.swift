@@ -58,8 +58,8 @@ struct VirtualDevicesSettingsView: View {
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if !model.virtualDeviceStatus.isEmpty {
-                Text(model.virtualDeviceStatus).font(.caption).foregroundStyle(.secondary)
+            if let status = model.virtualDeviceStatus {
+                Text(status).font(.caption).foregroundStyle(.secondary)
             }
         }
         .popover(isPresented: $isAddingDevice, arrowEdge: .bottom) {
@@ -86,6 +86,7 @@ struct VirtualDevicesSettingsView: View {
                 }
             }
             .padding(14)
+            .appLanguage()
         }
     }
 
@@ -160,8 +161,8 @@ struct DiagnosticsSettingsView: View {
                 Button {
                     Task { await model.runLoopbackTest() }
                 } label: {
-                    Label(model.isTesting ? "Checking…" : "Run Check",
-                          systemImage: "waveform.path.ecg")
+                    let title: LocalizedStringKey = model.isTesting ? "Checking…" : "Run Check"
+                    Label(title, systemImage: "waveform.path.ecg")
                         .frame(maxWidth: .infinity)
                 }
                 .disabled(model.isTesting || model.tapdeck == nil)
@@ -204,14 +205,14 @@ struct DiagnosticsSettingsView: View {
                 Button {
                     Task { await model.recordInput() }
                 } label: {
-                    Label(model.isMonitoring ? "Recording…" : "Record the Input",
-                          systemImage: "waveform.badge.mic")
+                    let title: LocalizedStringKey = model.isMonitoring ? "Recording…" : "Record the Input"
+                    Label(title, systemImage: "waveform.badge.mic")
                 }
                 .disabled(model.isMonitoring || model.isTesting || model.tapdeck == nil)
                 if model.isMonitoring { ProgressView().controlSize(.small) }
             }
-            if !model.monitorStatus.isEmpty {
-                Text(model.monitorStatus).font(.caption).foregroundStyle(.secondary)
+            if let status = model.monitorStatus {
+                Text(status).font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 

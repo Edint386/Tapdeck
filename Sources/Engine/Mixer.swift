@@ -36,6 +36,7 @@ final class Mixer: @unchecked Sendable {
         case systemAudio
         case inputDevice(uid: String, name: String)
 
+        /// Plain text, for logs and the command line.
         var label: String {
             switch self {
             case .application(_, let name, _): return name
@@ -44,11 +45,13 @@ final class Mixer: @unchecked Sendable {
             }
         }
 
-        var kindLabel: String {
+        /// What to show in the app: names stay as they are, the system source
+        /// is translated.
+        var title: LocalizedStringResource {
             switch self {
-            case .application: return "App"
-            case .systemAudio: return "System"
-            case .inputDevice: return "Input"
+            case .application(_, let name, _): return "\(name)"
+            case .systemAudio:              return "All system audio"
+            case .inputDevice(_, let name): return "\(name)"
             }
         }
 
@@ -111,7 +114,7 @@ final class Mixer: @unchecked Sendable {
         /// The target could not be found, so nothing is connected. The row
         /// stays even while the app is closed, and attaches once it starts.
         private(set) var isAttached = false
-        private(set) var detachReason: String?
+        private(set) var detachReason: LocalizedStringResource?
 
         fileprivate var tap: ProcessTap?
 
@@ -123,6 +126,7 @@ final class Mixer: @unchecked Sendable {
         private(set) var formatDescription = "—"
 
         var label: String { target.label }
+        var title: LocalizedStringResource { target.title }
 
         fileprivate init(target: Target, channels: Int) {
             self.target = target
@@ -152,7 +156,7 @@ final class Mixer: @unchecked Sendable {
                 + (converter != nil ? " → \(Int(targetFormat.sampleRate)) Hz" : "")
         }
 
-        fileprivate func markDetached(_ reason: String) {
+        fileprivate func markDetached(_ reason: LocalizedStringResource) {
             isAttached = false
             detachReason = reason
             formatDescription = "—"
@@ -213,7 +217,7 @@ final class Mixer: @unchecked Sendable {
 
         private(set) var isAttached = false
         private(set) var isPrimary = false
-        private(set) var detachReason: String?
+        private(set) var detachReason: LocalizedStringResource?
         private(set) var channelCount = 0
         private(set) var sampleRate: Double = 0
 
@@ -331,7 +335,7 @@ final class Mixer: @unchecked Sendable {
             reportedLatencyMilliseconds = sampleRate > 0 ? Double(total) / sampleRate * 1000 : 0
         }
 
-        fileprivate func markDetached(_ reason: String) {
+        fileprivate func markDetached(_ reason: LocalizedStringResource) {
             isAttached = false
             isPrimary = false
             detachReason = reason
@@ -349,17 +353,21 @@ final class Mixer: @unchecked Sendable {
         }
     }
 
-    enum StartError: LocalizedError {
+    enum StartError: LocalizedError, MessageError {
         case noOutputs
-        case noUsableOutput([String])
+        case noUsableOutput([LocalizedStringResource])
         case feedback(String)
 
-        var errorDescription: String? {
+        var errorDescription: String? { String(localized: message) }
+
+        /// Without the reasons: they are separate messages, which the app puts
+        /// after this one in the chosen language.
+        var message: LocalizedStringResource {
             switch self {
             case .noOutputs:
                 return "Add at least one output."
-            case .noUsableOutput(let reasons):
-                return "None of the outputs could be opened: " + reasons.joined(separator: "; ")
+            case .noUsableOutput:
+                return "None of the outputs could be opened"
             case .feedback(let device):
                 return "\(device) is both a source and an output of this mix, which would feed back."
             }
@@ -597,14 +605,14 @@ final class Mixer: @unchecked Sendable {
         }
 
         // Open outputs in order. The first that opens is the primary.
-        var reasons: [String] = []
+        var reasons: [LocalizedStringResource] = []
         var primary: Output?
         var secondaries: [Output] = []
         let devices = (try? AudioDevice.all()) ?? []
         for output in outputs {
             do {
                 guard let device = AudioDevice.find(uid: output.deviceUID, name: output.deviceName, in: devices) else {
-                    let reason = output.transport == .airPlay
+                    let reason: LocalizedStringResource = output.transport == .airPlay
                         ? "\(output.deviceName) is not available — turn the receiver on, or choose it in Control Center › Sound"
                         : "\(output.deviceName) was not found"
                     output.markDetached(reason)
@@ -618,7 +626,7 @@ final class Mixer: @unchecked Sendable {
                 output.readReportedLatency(of: device.deviceID)
                 if primary == nil { primary = output } else { secondaries.append(output) }
             } catch {
-                output.markDetached(error.localizedDescription)
+                output.markDetached(userMessage(for: error))
                 reasons.append("\(output.deviceName): \(error.localizedDescription)")
             }
         }

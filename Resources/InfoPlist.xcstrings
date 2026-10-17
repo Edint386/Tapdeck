@@ -1,0 +1,38 @@
+{
+  "sourceLanguage": "en",
+  "version": "1.0",
+  "strings": {
+    "NSAudioCaptureUsageDescription": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tapdeck captures audio from individual apps so it can mix them."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tapdeck は，アプリごとの音を取り込んでミックスするために，オーディオの取り込みを使います．"
+          }
+        }
+      }
+    },
+    "NSMicrophoneUsageDescription": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tapdeck uses the microphone to include it in recordings and mixes."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tapdeck は，マイクの音を録音やミックスに含めるために，マイクを使います．"
+          }
+        }
+      }
+    }
+  }
+}

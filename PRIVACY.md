@@ -7,7 +7,7 @@ no crash reporting, no update checks. Everything it captures and writes stays on
 
 | What | Where |
 |---|---|
-| Mixes and settings | Tapdeck's preferences (`~/Library/Preferences/dev.kosuke.Tapdeck.plist`) |
+| Mixes and settings, including the language you choose | Tapdeck's preferences (`~/Library/Preferences/dev.kosuke.Tapdeck.plist`) |
 | Audio and screen recordings | `~/Movies/Tapdeck`, or the folder chosen in Settings |
 | The list of virtual devices | `/Library/Preferences/Audio/Tapdeck/Devices.plist` |
 | The short test recording made by Settings › Diagnostics | `~/Library/Caches/dev.kosuke.Tapdeck/` |

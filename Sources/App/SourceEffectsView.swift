@@ -40,7 +40,7 @@ struct SourceEffectsView: View {
     private func header(_ row: MixSession.SourceRow) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.label).font(.headline).lineLimit(1)
+                Text(row.title).font(.headline).lineLimit(1)
                 Text("Effects").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
@@ -135,7 +135,8 @@ struct SourceEffectsView: View {
                 .onTapGesture(count: 2) { effects.wrappedValue.bands[index].gain = 0 }
             Text(Self.frequencyLabel(band.frequency))
                 .font(.system(size: 9, weight: .medium))
-            Text(band.shape == .peak ? "peak" : "shelf")
+            let shape: LocalizedStringKey = band.shape == .peak ? "peak" : "shelf"
+            Text(shape)
                 .font(.system(size: 8))
                 .foregroundStyle(.tertiary)
         }
@@ -218,7 +219,7 @@ struct SourceEffectsView: View {
 
     // MARK: Pieces
 
-    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+    private func section<Content: View>(_ title: LocalizedStringKey, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title).font(.subheadline.weight(.semibold))
             VStack(alignment: .leading, spacing: 6) { content() }
@@ -228,14 +229,14 @@ struct SourceEffectsView: View {
         }
     }
 
-    private func hint(_ text: String) -> some View {
+    private func hint(_ text: LocalizedStringKey) -> some View {
         Text(text)
             .font(.system(size: 10))
             .foregroundStyle(.tertiary)
             .fixedSize(horizontal: false, vertical: true)
     }
 
-    private func labeledSlider(_ label: String, value: Binding<Double>, range: ClosedRange<Double>,
+    private func labeledSlider(_ label: LocalizedStringKey, value: Binding<Double>, range: ClosedRange<Double>,
                                unit: String, decimals: Int = 1) -> some View {
         HStack(spacing: 8) {
             Text(label).font(.caption).foregroundStyle(.secondary).frame(width: 64, alignment: .leading)
@@ -268,8 +269,9 @@ struct SourceEffectsView: View {
                       : String(format: "%.0f Hz", hertz)
     }
 
-    static func balanceLabel(_ balance: Double) -> String {
+    static func balanceLabel(_ balance: Double) -> LocalizedStringResource {
         if abs(balance) < 0.005 { return "centre" }
-        return String(format: "%@ %.0f%%", balance < 0 ? "L" : "R", abs(balance) * 100)
+        let percent = Int((abs(balance) * 100).rounded())
+        return balance < 0 ? "L \(percent)%" : "R \(percent)%"
     }
 }

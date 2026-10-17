@@ -12,15 +12,16 @@ final class MixSession: ObservableObject, Identifiable {
     /// One source row, as displayed.
     struct SourceRow: Identifiable {
         let id: UUID
-        let label: String
-        let kindLabel: String
+        /// An app or device name as it is, or the translated name of the
+        /// system source.
+        let title: LocalizedStringResource
         let symbolName: String
         let appIcon: NSImage?
         var gain: Float
         var isMuted: Bool
         var level: Float
         var isAttached: Bool
-        var detail: String
+        var detail: LocalizedStringResource
         var channelOffset: Int
         var effects: EffectSettings
         var replacesOriginal: Bool
@@ -40,7 +41,7 @@ final class MixSession: ObservableObject, Identifiable {
         /// First in the list: its clock drives the mix.
         var isPrimary: Bool
         var isAttached: Bool
-        var detail: String
+        var detail: LocalizedStringResource
         var delayMilliseconds: Double
         /// What the device says its own latency is, once the mix has started.
         var reportedLatencyMilliseconds: Double?
@@ -62,7 +63,13 @@ final class MixSession: ObservableObject, Identifiable {
     @Published private(set) var sources: [SourceRow] = []
     @Published private(set) var outputs: [OutputRow] = []
     @Published private(set) var isRunning = false
-    @Published private(set) var status = ""
+    /// What the mix last had to say, or nil. Held as a message rather than
+    /// text, so it is shown in the language chosen at the time it is drawn.
+    @Published private(set) var status: LocalizedStringResource? {
+        didSet { statusIsWarning = false }
+    }
+    /// Whether the status is a warning, shown in orange.
+    @Published private(set) var statusIsWarning = false
     @Published private(set) var level: Float = 0
 
     /// This mix's volume: one fader for everything it sends.
@@ -162,9 +169,9 @@ final class MixSession: ObservableObject, Identifiable {
     var outputDeviceUIDs: [String] { engine.outputs.map(\.deviceUID) }
 
     /// A short line describing where this mix goes.
-    var outputSummary: String {
+    var outputSummary: LocalizedStringResource {
         let names = engine.outputs.map(\.deviceName)
-        return names.isEmpty ? "No output" : names.joined(separator: " + ")
+        return names.isEmpty ? "No output" : "\(names.joined(separator: " + "))"
     }
 
     private func changed() {
@@ -189,6 +196,7 @@ final class MixSession: ObservableObject, Identifiable {
     func addInput(_ device: AudioDevice) {
         if let problem = library?.feedbackProblem(for: self, addingInput: device.uid) {
             status = problem
+            statusIsWarning = true
             return
         }
         addSource(.inputDevice(uid: device.uid, name: device.name))
@@ -315,6 +323,7 @@ final class MixSession: ObservableObject, Identifiable {
         }
         if let problem = library?.feedbackProblem(for: self, addingOutput: device.uid) {
             status = problem
+            statusIsWarning = true
             return
         }
         engine.addOutput(uid: device.uid, name: device.name, transport: device.transport)
@@ -458,6 +467,7 @@ final class MixSession: ObservableObject, Identifiable {
         guard !engine.outputs.isEmpty else { status = "Add an output first"; return }
         if let problem = library?.feedbackProblem(for: self) {
             status = problem
+            statusIsWarning = true
             return
         }
         let identities = engine.outputs.map { "\($0.deviceUID)|\($0.transport)" }
@@ -469,12 +479,22 @@ final class MixSession: ObservableObject, Identifiable {
             if engine.outputs.map({ "\($0.deviceUID)|\($0.transport)" }) != identities { changed() }
             let attached = engine.sources.filter(\.isAttached).count
             let outputsOpen = engine.outputs.filter(\.isAttached).count
-            status = "Running — \(attached) of \(engine.sources.count) source(s), "
-                   + "\(outputsOpen) of \(engine.outputs.count) output(s)"
-                   + (airPlayNote.map { ". \($0)" } ?? "")
+            let sourceCount = engine.sources.count, outputCount = engine.outputs.count
+            // Whole sentences for each case: a translated fragment cannot be
+            // joined to another in the right order in every language.
+            switch airPlayNote {
+            case nil:
+                status = "Running — \(attached) of \(sourceCount) source(s), \(outputsOpen) of \(outputCount) output(s)"
+            case .borrowed?:
+                status = "Running — \(attached) of \(sourceCount) source(s), \(outputsOpen) of \(outputCount) output(s). AirPlay is the Mac's output while this mix runs"
+            case .unavailable?:
+                status = "Running — \(attached) of \(sourceCount) source(s), \(outputsOpen) of \(outputCount) output(s). AirPlay is not available: turn the receiver on, or choose it once in Control Center › Sound"
+            case .failed?:
+                status = "Running — \(attached) of \(sourceCount) source(s), \(outputsOpen) of \(outputCount) output(s). Could not make AirPlay the Mac's output"
+            }
         } catch {
             returnAirPlay()
-            status = "Could not start: \(error.localizedDescription)"
+            status = "Could not start: \(L10n.describe(error))"
         }
         syncRows()
         library?.sessionStateChanged()
@@ -531,7 +551,7 @@ final class MixSession: ObservableObject, Identifiable {
             recordingSize = 0
             status = "Recording to \(url.lastPathComponent)"
         } catch {
-            status = "Could not record: \(error.localizedDescription)"
+            status = "Could not record: \(L10n.describe(error))"
         }
     }
 
@@ -564,15 +584,15 @@ final class MixSession: ObservableObject, Identifiable {
     /// Before starting: when this mix plays to AirPlay, make AirPlay the Mac's
     /// output so macOS connects the receiver, and replace every original so
     /// apps are not heard twice on it. Returns a line for the status.
-    private func borrowAirPlayIfNeeded() -> String? {
+    private enum AirPlayOutcome { case borrowed, unavailable, failed }
+
+    private func borrowAirPlayIfNeeded() -> AirPlayOutcome? {
         guard let output = engine.outputs.first(where: { $0.transport == .airPlay }) else { return nil }
-        guard let device = device(for: output) else {
-            return "AirPlay is not available: turn the receiver on, or choose it once in Control Center › Sound"
-        }
-        if let problem = library?.claimAirPlay(for: self, device: device) { return problem }
+        guard let device = device(for: output) else { return .unavailable }
+        guard library?.claimAirPlay(for: self, device: device) == true else { return .failed }
         borrowsAirPlay = true
         engine.replacesAllOriginals = true
-        return "AirPlay is the Mac's output while this mix runs"
+        return .borrowed
     }
 
     private func returnAirPlay() {
@@ -629,15 +649,14 @@ final class MixSession: ObservableObject, Identifiable {
         let hasApps = engine.sources.contains { if case .application = $0.target { return true }; return false }
         sources = engine.sources.map { source in
             SourceRow(id: source.id,
-                      label: source.target == .systemAudio && hasApps ? "Other system audio" : source.label,
-                      kindLabel: source.target.kindLabel,
+                      title: source.target == .systemAudio && hasApps ? "Other system audio" : source.title,
                       symbolName: Self.symbolName(for: source.target),
                       appIcon: icon(for: source.target),
                       gain: source.gain,
                       isMuted: source.isMuted,
                       level: sources.first { $0.id == source.id }?.level ?? 0,
                       isAttached: source.isAttached,
-                      detail: isRunning ? (source.detachReason ?? source.formatDescription) : "",
+                      detail: isRunning ? (source.detachReason ?? "\(source.formatDescription)") : "",
                       channelOffset: source.channelOffset,
                       effects: source.effectSettings,
                       replacesOriginal: source.replacesOriginal,
@@ -664,7 +683,7 @@ final class MixSession: ObservableObject, Identifiable {
         observeDeviceVolumes()
     }
 
-    private func outputDetail(_ output: Mixer.Output) -> String {
+    private func outputDetail(_ output: Mixer.Output) -> LocalizedStringResource {
         guard isRunning else { return "" }
         if let reason = output.detachReason { return reason }
         return "\(Int(output.sampleRate)) Hz / \(output.channelCount)ch"

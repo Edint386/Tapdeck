@@ -70,13 +70,15 @@ struct VirtualDeviceConfiguration {
         return VirtualDeviceConfiguration(devices: devices.isEmpty ? [defaultDevice] : devices)
     }
 
-    enum WriteError: LocalizedError {
+    enum WriteError: LocalizedError, MessageError {
         case cannotCreateDirectory(String)
         case cannotWrite(String)
         case driverUnavailable
         case rejected(OSStatus)
 
-        var errorDescription: String? {
+        var errorDescription: String? { String(localized: message) }
+
+        var message: LocalizedStringResource {
             switch self {
             case .cannotCreateDirectory(let detail):
                 return "Could not create the configuration directory: \(detail)"
@@ -85,7 +87,7 @@ struct VirtualDeviceConfiguration {
             case .driverUnavailable:
                 return "The Tapdeck driver is not installed. Run: sudo ./install-driver.sh"
             case .rejected(let status):
-                return "The driver rejected the device list (OSStatus \(status))"
+                return "The driver rejected the device list (OSStatus \(Int(status)))"
             }
         }
     }
