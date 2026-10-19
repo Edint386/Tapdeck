@@ -15,6 +15,12 @@
             "state": "translated",
             "value": "Tapdeck は，アプリごとの音を取り込んでミックスするために，オーディオの取り込みを使います．"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tapdeck 会捕获各个 App 的音频，以便将它们混音。"
+          }
         }
       }
     },
@@ -30,6 +36,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tapdeck は，マイクの音を録音やミックスに含めるために，マイクを使います．"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tapdeck 使用麦克风，以便将麦克风的声音加入录制和混音中。"
           }
         }
       }

@@ -30,6 +30,7 @@ struct GeneralSettingsView: View {
                     // Each language is named in itself, whatever the app is shown in.
                     Text(verbatim: "English").tag(LanguageChoice.en)
                     Text(verbatim: "日本語").tag(LanguageChoice.ja)
+                    Text(verbatim: "简体中文").tag(LanguageChoice.zhHans)
                 } label: {
                     Text("Language")
                     Text("The app menu and file dialogs change the next time Tapdeck starts.")

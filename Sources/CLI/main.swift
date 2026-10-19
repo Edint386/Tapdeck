@@ -740,23 +740,37 @@ func runLanguageTest() {
     // A chosen language wins over whatever the system says.
     check("English chosen on a Japanese system", .en, ["ja-JP"], expect: "en")
     check("Japanese chosen on an English system", .ja, ["en-US"], expect: "ja")
+    check("Chinese chosen on a Japanese system", .zhHans, ["ja-JP"], expect: "zh-Hans")
     // System default follows the first language Tapdeck has.
     check("this Mac's own order (English first)", .system, ["en-JP", "ja-JP"], expect: "en")
     check("Japanese first", .system, ["ja-JP", "en-US"], expect: "ja")
     check("skips languages without strings", .system, ["fr-FR", "de-DE", "ja-JP"], expect: "ja")
-    check("nothing available falls back to English", .system, ["fr-FR", "zh-Hans-CN"], expect: "en")
+    check("nothing available falls back to English", .system, ["fr-FR", "zh-Hant-TW"], expect: "en")
     check("empty list falls back to English", .system, [], expect: "en")
     // The language part decides, however the tag is written.
     check("underscore form", .system, ["ja_JP"], expect: "ja")
     check("capital letters", .system, ["JA"], expect: "ja")
     check("script and region", .system, ["ja-Jpan-JP"], expect: "ja")
     check("only the language part counts", .system, ["jam-JM", "en-GB"], expect: "en")
+    // Only Simplified Chinese has strings, so the script, or failing that the
+    // region, decides whether a Chinese tag counts.
+    check("Simplified Chinese first", .system, ["zh-Hans-CN", "en-US"], expect: "zh-Hans")
+    check("Chinese without a script, mainland", .system, ["zh-CN", "en-US"], expect: "zh-Hans")
+    check("Chinese without a script, Singapore", .system, ["zh_SG"], expect: "zh-Hans")
+    check("Chinese with no script or region", .system, ["ZH"], expect: "zh-Hans")
+    check("Simplified script in Hong Kong", .system, ["zh-Hans-HK"], expect: "zh-Hans")
+    check("Traditional script is skipped", .system, ["zh-Hant-TW", "ja-JP"], expect: "ja")
+    check("Traditional script without a region", .system, ["zh-Hant", "en-US"], expect: "en")
+    check("Taiwan without a script is skipped", .system, ["zh-TW", "en-US"], expect: "en")
+    check("Hong Kong without a script is skipped", .system, ["zh_HK", "ja-JP"], expect: "ja")
+    check("Macao without a script is skipped", .system, ["zh-MO"], expect: "en")
     // Every choice can be listed, and the raw values are what is stored.
     total += 1
     let stored = LanguageChoice.allCases.map(\.rawValue)
-    let ok = stored == ["system", "en", "ja"] && LanguageChoice(rawValue: "ja") == .ja && LanguageChoice(rawValue: "xx") == nil
+    let ok = stored == ["system", "en", "ja", "zh-Hans"] && LanguageChoice(rawValue: "ja") == .ja
+        && LanguageChoice(rawValue: "zh-Hans") == .zhHans && LanguageChoice(rawValue: "xx") == nil
     if ok { passed += 1 }
-    print("\(ok ? "PASS" : "FAIL")  \("stored values are system, en, ja".padding(toLength: 46, withPad: " ", startingAt: 0)) \(stored)")
+    print("\(ok ? "PASS" : "FAIL")  \("stored values are system, en, ja, zh-Hans".padding(toLength: 46, withPad: " ", startingAt: 0)) \(stored)")
     print("\(passed)/\(total) passed")
     if passed != total { exit(1) }
 }

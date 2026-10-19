@@ -155,7 +155,7 @@ Screen recording sits on top of this rather than beside it.
 | Master, mix and output volume | Working. 0.5 × 0.5 measured −12.05 dB. Output faders set the device's own volume. |
 | Output limiter | Working. A +12 dB boost that used to clip (3rd harmonic −21.5 dB) now stays at −1 dBFS with the 3rd harmonic at −105 dB. |
 | Output delay | Working. 300 ms set, 300.7 ms measured. |
-| Language | Working. System default, English or 日本語, chosen in Settings and applied without a restart; the app menu and file dialogs follow at the next launch. |
+| Language | Working. System default, English, 日本語 or 简体中文, chosen in Settings and applied without a restart; the app menu and file dialogs follow at the next launch. |
 | AirPlay and Bluetooth | Working as outputs. The AirPlay receiver is chosen in Control Center; Tapdeck makes AirPlay the Mac's output while a mix plays to it (not yet tested with a receiver). |
 
 ## Install

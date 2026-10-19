@@ -14,6 +14,12 @@
             "state": "translated",
             "value": "%@"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@"
+          }
         }
       },
       "comment": "Same in every language"
@@ -31,6 +37,12 @@
             "state": "translated",
             "value": "%1$@（%2$lld ch）"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@（%lld ch）"
+          }
         }
       }
     },
@@ -46,6 +58,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$@ に失敗しました（OSStatus %2$lld '%3$@'）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 失败（OSStatus %lld '%@'）"
           }
         }
       }
@@ -63,6 +81,12 @@
             "state": "translated",
             "value": "%@ はすでに出力です"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 已添加为输出"
+          }
         }
       }
     },
@@ -78,6 +102,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ がこのミックスのソースと出力の両方になっていて，フィードバックしてしまいます．"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 同时是此混音的音源和输出，会形成反馈回路。"
           }
         }
       }
@@ -95,6 +125,12 @@
             "state": "translated",
             "value": "%@ は利用できません — レシーバーの電源を入れるか，コントロールセンター › サウンドで選んでください．"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 不可用 — 请打开接收器，或在“控制中心 › 声音”中选择它"
+          }
         }
       }
     },
@@ -110,6 +146,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ は起動していません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 未运行"
           }
         }
       }
@@ -127,6 +169,12 @@
             "state": "translated",
             "value": "現在 %@"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已录制 %@"
+          }
         }
       }
     },
@@ -143,6 +191,12 @@
             "state": "translated",
             "value": "%@ が見つかりません"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "找不到 %@"
+          }
         }
       }
     },
@@ -155,6 +209,12 @@
           }
         },
         "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ — %2$@"
+          }
+        },
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "%1$@ — %2$@"
@@ -175,6 +235,12 @@
             "state": "translated",
             "value": "%1$@：%2$@"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@：%2$@"
+          }
         }
       }
     },
@@ -187,6 +253,12 @@
           }
         },
         "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld"
+          }
+        },
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "%lld"
@@ -208,6 +280,12 @@
             "state": "translated",
             "value": "%lld Hz"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Hz"
+          }
         }
       },
       "comment": "Same in every language"
@@ -225,6 +303,12 @@
             "state": "translated",
             "value": "%1$lld Hz / %2$lld ch"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Hz / %lld ch"
+          }
         }
       }
     },
@@ -237,6 +321,12 @@
           }
         },
         "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld kbps"
+          }
+        },
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "%lld kbps"
@@ -258,6 +348,12 @@
             "state": "translated",
             "value": "%lld ms"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld ms"
+          }
         }
       },
       "comment": "Same in every language"
@@ -275,6 +371,12 @@
             "state": "translated",
             "value": "%lld 件を実行中"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个正在运行"
+          }
         }
       }
     },
@@ -291,6 +393,12 @@
             "state": "translated",
             "value": "%1$lld × %2$lld ピクセル"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld × %lld 像素"
+          }
         }
       }
     },
@@ -303,6 +411,12 @@
           }
         },
         "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld%%"
+          }
+        },
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "%lld%%"
@@ -324,6 +438,12 @@
             "state": "translated",
             "value": "元の %lld%%"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原尺寸的 %lld%%"
+          }
         }
       }
     },
@@ -339,6 +459,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld 本，チャンネルペアごとに1本"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 条，每个声道对一条"
           }
         }
       }
@@ -356,6 +482,12 @@
             "state": "translated",
             "value": "%lld ビット"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 位"
+          }
         }
       }
     },
@@ -368,6 +500,12 @@
           }
         },
         "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lldp"
+          }
+        },
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "%lldp"
@@ -389,6 +527,12 @@
             "state": "translated",
             "value": "1 本（ミックスの出力）"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 条，即混音的输出"
+          }
         }
       }
     },
@@ -401,6 +545,12 @@
           }
         },
         "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1080p (Full HD)"
+          }
+        },
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "1080p (Full HD)"
@@ -422,6 +572,12 @@
             "state": "translated",
             "value": "120 fps"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "120 fps"
+          }
         }
       },
       "comment": "Same in every language"
@@ -435,6 +591,12 @@
           }
         },
         "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1440p (QHD)"
+          }
+        },
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "1440p (QHD)"
@@ -456,6 +618,12 @@
             "state": "translated",
             "value": "15 fps"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "15 fps"
+          }
         }
       },
       "comment": "Same in every language"
@@ -469,6 +637,12 @@
           }
         },
         "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "16"
+          }
+        },
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "16"
@@ -490,6 +664,12 @@
             "state": "translated",
             "value": "2 — ステレオ"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2 — 立体声"
+          }
         }
       }
     },
@@ -502,6 +682,12 @@
           }
         },
         "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2160p (4K UHD)"
+          }
+        },
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "2160p (4K UHD)"
@@ -523,6 +709,12 @@
             "state": "translated",
             "value": "24 fps"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "24 fps"
+          }
         }
       },
       "comment": "Same in every language"
@@ -536,6 +728,12 @@
           }
         },
         "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "30 fps"
+          }
+        },
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "30 fps"
@@ -557,6 +755,12 @@
             "state": "translated",
             "value": "4 — ソース2つを分けて"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4 — 可分开两个音源"
+          }
         }
       }
     },
@@ -572,6 +776,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "5 ms 減らす"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "减少 5 ms"
           }
         }
       }
@@ -589,6 +799,12 @@
             "state": "translated",
             "value": "5 ms 増やす"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "增加 5 ms"
+          }
         }
       }
     },
@@ -605,6 +821,12 @@
             "state": "translated",
             "value": "6 — ソース3つを分けて"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "6 — 可分开三个音源"
+          }
         }
       }
     },
@@ -617,6 +839,12 @@
           }
         },
         "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "60 fps"
+          }
+        },
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "60 fps"
@@ -638,6 +866,12 @@
             "state": "translated",
             "value": "720p (HD)"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "720p (HD)"
+          }
         }
       },
       "comment": "Same in every language"
@@ -655,6 +889,12 @@
             "state": "translated",
             "value": "8 — ソース4つを分けて"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "8 — 可分开四个音源"
+          }
         }
       }
     },
@@ -670,6 +910,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "AAC (.m4a) — 小さく，どこでも再生できます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AAC (.m4a) — 文件小，随处可播放"
           }
         }
       }
@@ -687,6 +933,12 @@
             "state": "translated",
             "value": "AIFF — 非圧縮"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AIFF — 未压缩"
+          }
         }
       }
     },
@@ -702,6 +954,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加"
           }
         }
       }
@@ -719,6 +977,12 @@
             "state": "translated",
             "value": "先にソースを追加してください"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先添加音源"
+          }
         }
       }
     },
@@ -734,6 +998,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "仮想デバイスを追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加虚拟设备"
           }
         }
       }
@@ -751,6 +1021,12 @@
             "state": "translated",
             "value": "先に出力を追加してください"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先添加输出"
+          }
         }
       }
     },
@@ -766,6 +1042,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "出力を1つ以上追加してください．"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请至少添加一个输出。"
           }
         }
       }
@@ -783,6 +1065,12 @@
             "state": "translated",
             "value": "%lld 個のアプリを追加しました"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已添加 %lld 个 App"
+          }
         }
       }
     },
@@ -798,6 +1086,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "AirPlay と Bluetooth"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AirPlay 和 Bluetooth"
           }
         }
       }
@@ -815,6 +1109,12 @@
             "state": "translated",
             "value": "AirPlay（約 2000 ms）"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AirPlay，约 2000 ms"
+          }
         }
       }
     },
@@ -830,6 +1130,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "すべてのシステム音声"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部系统音频"
           }
         }
       }
@@ -847,6 +1153,12 @@
             "state": "translated",
             "value": "送っている音を自分でも聞けるよう，このミックスをスピーカーやヘッドホンにも出力します"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同时将此混音播放到扬声器或耳机，让你听到自己正在发送的内容"
+          }
         }
       }
     },
@@ -862,6 +1174,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "アプリ：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App：%@"
           }
         }
       }
@@ -879,6 +1197,12 @@
             "state": "translated",
             "value": "Apple Lossless (.m4a) — 可逆圧縮，WAV の約半分のサイズ"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 无损 (.m4a) — 无损，大小约为 WAV 的一半"
+          }
         }
       }
     },
@@ -894,6 +1218,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "アプリケーション"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App"
           }
         }
       }
@@ -911,6 +1241,12 @@
             "state": "translated",
             "value": "アプリケーション"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App"
+          }
         }
       }
     },
@@ -926,6 +1262,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "オーディオ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音频"
           }
         }
       }
@@ -943,6 +1285,12 @@
             "state": "translated",
             "value": "オーディオデバイス"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音频设备"
+          }
         }
       }
     },
@@ -958,6 +1306,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "音声のみ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅音频"
           }
         }
       }
@@ -975,6 +1329,12 @@
             "state": "translated",
             "value": "標準"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "适中"
+          }
         }
       }
     },
@@ -990,6 +1350,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "標準 — %1$lld フレーム，約 %2$lld ms"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "适中 — %lld 帧，约 %lld ms"
           }
         }
       }
@@ -1007,6 +1373,12 @@
             "state": "translated",
             "value": "Bluetooth（約 150 ms）"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bluetooth，约 150 ms"
+          }
         }
       }
     },
@@ -1022,6 +1394,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "大きな部分を小さな部分に近づけます．メイクアップゲインで全体をもう一度持ち上げます．"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将较响的段落压低，使其接近较安静的段落。补偿增益会再把整体提升回来。"
           }
         }
       }
@@ -1039,6 +1417,12 @@
             "state": "translated",
             "value": "このソースを，もとの音が大きくても小さくても，設定 › オーディオで決めた音量に近づけます．元の音を置き換えている場合は，聞こえる音も揃います．"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无论此音源本身播放得多响或多轻，都会将其调整到“设置 › 音频”中设定的响度。替换原声后，你听到的响度也会随之统一。"
+          }
         }
       }
     },
@@ -1054,6 +1438,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "バッファ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "缓冲区"
           }
         }
       }
@@ -1071,6 +1461,12 @@
             "state": "translated",
             "value": "キャンセル"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消"
+          }
         }
       }
     },
@@ -1086,6 +1482,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "キャプチャ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "捕获"
           }
         }
       }
@@ -1103,6 +1505,12 @@
             "state": "translated",
             "value": "シーリング"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上限"
+          }
         }
       }
     },
@@ -1118,6 +1526,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "チャンネル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "声道"
           }
         }
       }
@@ -1135,6 +1549,12 @@
             "state": "translated",
             "value": "チェックに失敗しました：%@"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检测失败：%@"
+          }
         }
       }
     },
@@ -1150,6 +1570,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "チェック中…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在检测…"
           }
         }
       }
@@ -1167,6 +1593,12 @@
             "state": "translated",
             "value": "選択"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选取"
+          }
         }
       }
     },
@@ -1182,6 +1614,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Zoom や OBS，録音アプリのマイクに Tapdeck のデバイスを選ぶと，このミックスが届きます．"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 Zoom、OBS 或录制 App 中将 Tapdeck 设备选为麦克风，该 App 即可收到此混音。"
           }
         }
       }
@@ -1199,6 +1637,12 @@
             "state": "translated",
             "value": "選択…"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选取…"
+          }
         }
       }
     },
@@ -1214,6 +1658,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "コーデック"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编解码器"
           }
         }
       }
@@ -1231,6 +1681,12 @@
             "state": "translated",
             "value": "コンプレッサー"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "压缩器"
+          }
         }
       }
     },
@@ -1246,6 +1702,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld 件のソースを接続しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已连接 %lld 个音源"
           }
         }
       }
@@ -1263,6 +1725,12 @@
             "state": "translated",
             "value": "設定フォルダを作成できませんでした：%@"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法创建配置目录：%@"
+          }
         }
       }
     },
@@ -1278,6 +1746,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "システムの出力デバイスが見つかりません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "找不到系统输出设备"
           }
         }
       }
@@ -1295,6 +1769,12 @@
             "state": "translated",
             "value": "デバイスの一覧を読み取れませんでした：%@"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取设备列表：%@"
+          }
         }
       }
     },
@@ -1310,6 +1790,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "録音できませんでした：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法录制：%@"
           }
         }
       }
@@ -1327,6 +1813,12 @@
             "state": "translated",
             "value": "開始できませんでした：%@"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法开始：%@"
+          }
         }
       }
     },
@@ -1342,6 +1834,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "設定を書き込めませんでした：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法写入配置：%@"
           }
         }
       }
@@ -1359,6 +1857,12 @@
             "state": "translated",
             "value": "ディレイ"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "延时"
+          }
         }
       }
     },
@@ -1374,6 +1878,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "この出力のディレイとレベル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此输出的延时和电平"
           }
         }
       }
@@ -1391,6 +1901,12 @@
             "state": "translated",
             "value": "反響が消えるまで，速い出力を遅らせてください．"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为较快的输出添加延时，直到它们之间的回声消失。"
+          }
         }
       }
     },
@@ -1406,6 +1922,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "反響が消えるまで，速い出力を遅らせてください．このデバイスは %@ ms と報告していますが，ワイヤレス機器は実際より小さい値を報告することがよくあります．"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为较快的输出添加延时，直到它们之间的回声消失。此设备报告的自身延迟为 %@ ms；无线设备报告的值通常小于其实际增加的延迟。"
           }
         }
       }
@@ -1423,6 +1945,12 @@
             "state": "translated",
             "value": "一般的な差の分だけ，ほかのスピーカーを遅らせます．あとで耳を頼りに1つずつ微調整してください．"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按典型差值为其他扬声器添加延时。之后再凭听感逐个微调。"
+          }
         }
       }
     },
@@ -1438,6 +1966,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "この出力を遅らせて，遅いほうにそろえます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为此输出添加延时，使其与较慢的输出对齐"
           }
         }
       }
@@ -1455,6 +1989,12 @@
             "state": "translated",
             "value": "削除"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除"
+          }
         }
       }
     },
@@ -1470,6 +2010,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "このミックスを削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除此混音"
           }
         }
       }
@@ -1487,6 +2033,12 @@
             "state": "translated",
             "value": "デバイス名"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设备名称"
+          }
         }
       }
     },
@@ -1502,6 +2054,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "診断"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "诊断"
           }
         }
       }
@@ -1519,6 +2077,12 @@
             "state": "translated",
             "value": "ディスプレイ"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示器"
+          }
         }
       }
     },
@@ -1534,6 +2098,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ダブルクリックでリセット"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连按两次以重置"
           }
         }
       }
@@ -1551,6 +2121,12 @@
             "state": "translated",
             "value": "複製"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制"
+          }
         }
       }
     },
@@ -1566,6 +2142,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "このミックスを複製"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制此混音"
           }
         }
       }
@@ -1583,6 +2165,12 @@
             "state": "translated",
             "value": "ダイナミクス"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "动态"
+          }
         }
       }
     },
@@ -1598,6 +2186,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "各ソースと追加の出力は，再生の前にこの量の音をためます．バッファが大きいほど遅延は増えますが，クロックのずれや負荷の高い場面でも音切れしにくくなります．変更後に開始したミックスから適用されます．"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个音源和额外输出在播放前都会缓存这么多音频。缓冲区越大，延迟越高，但能在时钟漂移和系统繁忙时避免断音。更改后开始的混音才会应用此设置。"
           }
         }
       }
@@ -1615,6 +2209,12 @@
             "state": "translated",
             "value": "エフェクト"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "效果"
+          }
         }
       }
     },
@@ -1630,6 +2230,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "画面全体 — %1$lld×%2$lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "整个屏幕 — %lld×%lld"
           }
         }
       }
@@ -1647,6 +2253,12 @@
             "state": "translated",
             "value": "イコライザー"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "均衡器"
+          }
         }
       }
     },
@@ -1662,6 +2274,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "停止中にエラーが発生しました：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止时出错：%@"
           }
         }
       }
@@ -1679,6 +2297,12 @@
             "state": "translated",
             "value": "ラウドネスを揃える"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "统一响度"
+          }
         }
       }
     },
@@ -1694,6 +2318,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ラウドネスを揃える：このミックスの音すべてを，設定 › オーディオで決めた音量に近づけ，動画やサイト，曲が変わっても同じくらいの大きさで聞こえるようにします"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "统一响度：将此混音播放的所有内容调整到“设置 › 音频”中设定的响度，让不同的视频、网站或歌曲听起来音量大致相同"
           }
         }
       }
@@ -1711,6 +2341,12 @@
             "state": "translated",
             "value": "ミックスはそれぞれ独立して動きます．必要なだけ同時に開始できます．"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个混音都独立运行。你可以根据需要同时开始多个混音。"
+          }
         }
       }
     },
@@ -1727,6 +2363,12 @@
             "state": "translated",
             "value": "FLAC — 可逆圧縮，オープンな形式"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "FLAC — 无损，开放格式"
+          }
         }
       }
     },
@@ -1739,6 +2381,12 @@
           }
         },
         "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "FX"
+          }
+        },
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "FX"
@@ -1760,6 +2408,12 @@
             "state": "translated",
             "value": "速い"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快速"
+          }
         }
       }
     },
@@ -1775,6 +2429,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ファイル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件"
           }
         }
       }
@@ -1792,6 +2452,12 @@
             "state": "translated",
             "value": "フィルター"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "滤波器"
+          }
         }
       }
     },
@@ -1807,6 +2473,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "このソースのフィルター，イコライザー，ダイナミクスなど"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此音源的滤波器、均衡器、动态等效果"
           }
         }
       }
@@ -1824,6 +2496,12 @@
             "state": "translated",
             "value": "%@ の書き込みが完了しました"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已完成写入 %@"
+          }
         }
       }
     },
@@ -1839,6 +2517,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "フォーマット"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "格式"
           }
         }
       }
@@ -1856,6 +2540,12 @@
             "state": "translated",
             "value": "フレームレート"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "帧率"
+          }
         }
       }
     },
@@ -1871,6 +2561,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "周波数"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "频率"
           }
         }
       }
@@ -1888,6 +2584,12 @@
             "state": "translated",
             "value": "一般"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通用"
+          }
         }
       }
     },
@@ -1903,6 +2605,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ゆるやか"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "柔和"
           }
         }
       }
@@ -1920,6 +2628,12 @@
             "state": "translated",
             "value": "すべてのソースに専用のチャンネルペアを割り当てる"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为每个音源分配独立的声道对"
+          }
         }
       }
     },
@@ -1935,6 +2649,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "H.264 — どこでも再生できます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "H.264 — 随处可播放"
           }
         }
       }
@@ -1952,6 +2672,12 @@
             "state": "translated",
             "value": "HEVC (H.265) — 同じ画質で，より小さく"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HEVC (H.265) — 画质相同，文件更小"
+          }
         }
       }
     },
@@ -1967,6 +2693,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "聞く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "监听"
           }
         }
       }
@@ -1984,6 +2716,12 @@
             "state": "translated",
             "value": "アプリが Tapdeck のデバイスへ送っている音を聞く"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收听 App 正在播放到 Tapdeck 设备的声音"
+          }
         }
       }
     },
@@ -1999,6 +2737,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ハイカット"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高切"
           }
         }
       }
@@ -2016,6 +2760,12 @@
             "state": "translated",
             "value": "高 — あとで編集する場合"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高 — 适合后期编辑"
+          }
         }
       }
     },
@@ -2031,6 +2781,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "このソースを遅らせます．たとえば，遅れて届く映像にマイクを合わせたいときに使います．"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "延后播放此音源，例如让麦克风与较晚到达的视频对齐。"
           }
         }
       }
@@ -2048,6 +2804,12 @@
             "state": "translated",
             "value": "Tapdeck 自身のウインドウを含める"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "包括 Tapdeck 自身的窗口"
+          }
         }
       }
     },
@@ -2063,6 +2825,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ポインタを含める"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "包括指针"
           }
         }
       }
@@ -2080,6 +2848,12 @@
             "state": "translated",
             "value": "入力デバイス"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入设备"
+          }
         }
       }
     },
@@ -2095,6 +2869,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "用途ごとにデバイスを分けましょう — 会議，配信など．\n変更はすぐに反映されます．"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为每种用途单独使用一个设备，例如会议、直播等。\n更改会立即生效。"
           }
         }
       }
@@ -2112,6 +2892,12 @@
             "state": "translated",
             "value": "デバイスを1つ以上残してください"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请至少保留一个设备"
+          }
         }
       }
     },
@@ -2124,6 +2910,12 @@
           }
         },
         "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L"
+          }
+        },
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "L"
@@ -2145,6 +2937,12 @@
             "state": "translated",
             "value": "L %lld%%"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L %lld%%"
+          }
         }
       },
       "comment": "Same in every language"
@@ -2162,6 +2960,12 @@
             "state": "translated",
             "value": "リミット"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "限幅"
+          }
         }
       }
     },
@@ -2177,6 +2981,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "言語"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语言"
           }
         }
       }
@@ -2194,6 +3004,12 @@
             "state": "translated",
             "value": "遅延"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "延迟"
+          }
         }
       }
     },
@@ -2209,6 +3025,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "標準では除外します．操作中のコントロールが録画に映らないようにするためです．"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认不包含，以免录制内容中出现正在操作的控件"
           }
         }
       }
@@ -2226,6 +3048,12 @@
             "state": "translated",
             "value": "レベル"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "电平"
+          }
         }
       }
     },
@@ -2241,6 +3069,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "デバイスへ送るこのミックスのレベルです．いまはデバイス自身の音量を使えません．"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此混音在该设备上的电平。目前无法使用设备自身的音量。"
           }
         }
       }
@@ -2258,6 +3092,12 @@
             "state": "translated",
             "value": "仮想デバイスへ送るこのミックスのレベルです．仮想デバイスには独自の音量はありません．"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此混音在该虚拟设备上的电平。虚拟设备没有自身的音量。"
+          }
         }
       }
     },
@@ -2273,6 +3113,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "リミッター"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "限制器"
           }
         }
       }
@@ -2290,6 +3136,12 @@
             "state": "translated",
             "value": "そろえる"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对齐"
+          }
         }
       }
     },
@@ -2305,6 +3157,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "仮想デバイスを聞く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收听虚拟设备"
           }
         }
       }
@@ -2322,6 +3180,12 @@
             "state": "translated",
             "value": "ループバックのチェック"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回环检测"
+          }
         }
       }
     },
@@ -2337,6 +3201,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "可逆圧縮"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无损"
           }
         }
       }
@@ -2354,6 +3224,12 @@
             "state": "translated",
             "value": "ラウドネス"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "响度"
+          }
         }
       }
     },
@@ -2369,6 +3245,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ローカット"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "低切"
           }
         }
       }
@@ -2386,6 +3268,12 @@
             "state": "translated",
             "value": "低遅延 — %1$lld フレーム，約 %2$lld ms"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "低延迟 — %lld 帧，约 %lld ms"
+          }
         }
       }
     },
@@ -2401,6 +3289,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "メイン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主"
           }
         }
       }
@@ -2418,6 +3312,12 @@
             "state": "translated",
             "value": "先にミックスを作成してください"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先创建混音"
+          }
         }
       }
     },
@@ -2433,6 +3333,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "これをメイン出力にする"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设为主输出"
           }
         }
       }
@@ -2450,6 +3356,12 @@
             "state": "translated",
             "value": "メイクアップ"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "补偿"
+          }
         }
       }
     },
@@ -2465,6 +3377,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "マスター"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "总音量"
           }
         }
       }
@@ -2482,6 +3400,12 @@
             "state": "translated",
             "value": "最大ブースト"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最大提升"
+          }
         }
       }
     },
@@ -2497,6 +3421,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "会議，配信，…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会议、直播…"
           }
         }
       }
@@ -2514,6 +3444,12 @@
             "state": "translated",
             "value": "マイク"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "麦克风"
+          }
         }
       }
     },
@@ -2529,6 +3465,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "マイク"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "麦克风"
           }
         }
       }
@@ -2546,6 +3488,12 @@
             "state": "translated",
             "value": "マイクへのアクセスが許可されていません"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未获准访问麦克风"
+          }
         }
       }
     },
@@ -2561,6 +3509,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "マイクへのアクセスが許可されていません．システム設定 › プライバシーとセキュリティ › マイクを確認してください．"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未获准访问麦克风。请检查“系统设置 > 隐私与安全性 > 麦克风”。"
           }
         }
       }
@@ -2578,6 +3532,12 @@
             "state": "translated",
             "value": "マイクとオーディオインターフェース"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "麦克风和音频接口"
+          }
         }
       }
     },
@@ -2593,6 +3553,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ミックス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "混音"
           }
         }
       }
@@ -2610,6 +3576,12 @@
             "state": "translated",
             "value": "ミックス名"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "混音名称"
+          }
         }
       }
     },
@@ -2625,6 +3597,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ミキサー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "混音器"
           }
         }
       }
@@ -2642,6 +3620,12 @@
             "state": "translated",
             "value": "ミックス"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "混音"
+          }
         }
       }
     },
@@ -2657,6 +3641,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "モニター"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "监测"
           }
         }
       }
@@ -2674,6 +3664,12 @@
             "state": "translated",
             "value": "モノラル"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "单声道"
+          }
         }
       }
     },
@@ -2689,6 +3685,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "左右のチャンネルを1つにまとめます — 片側からしか聞こえないソース向けです．"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "单声道会将两个声道合二为一，适用于只在一侧发声的音源。"
           }
         }
       }
@@ -2706,6 +3708,12 @@
             "state": "translated",
             "value": "最も安定 — %1$lld フレーム，約 %2$lld ms"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最稳定 — %lld 帧，约 %lld ms"
+          }
         }
       }
     },
@@ -2721,6 +3729,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ミュート"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "静音"
           }
         }
       }
@@ -2738,6 +3752,12 @@
             "state": "translated",
             "value": "ネイティブ（実寸）"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原生（全尺寸）"
+          }
         }
       }
     },
@@ -2753,6 +3773,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "新しいミックス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建混音"
           }
         }
       }
@@ -2770,6 +3796,12 @@
             "state": "translated",
             "value": "新しいミックスを作成"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建混音"
+          }
         }
       }
     },
@@ -2785,6 +3817,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "MP3 は macOS では書き出せません．"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不提供 MP3：macOS 无法编码此格式"
           }
         }
       }
@@ -2802,6 +3840,12 @@
             "state": "translated",
             "value": "Tapdeck の仮想デバイスがありません"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有 Tapdeck 虚拟设备"
+          }
         }
       }
     },
@@ -2817,6 +3861,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tapdeck の仮想デバイスがありません — ドライバがインストールされていません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有 Tapdeck 虚拟设备 — 未安装驱动程序"
           }
         }
       }
@@ -2834,6 +3884,12 @@
             "state": "translated",
             "value": "いま音を出しているアプリはありません"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前没有 App 正在播放音频"
+          }
         }
       }
     },
@@ -2849,6 +3905,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "メニューバーに空きがありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "菜单栏没有空余位置"
           }
         }
       }
@@ -2866,6 +3928,12 @@
             "state": "translated",
             "value": "入力デバイスが見つかりません"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未找到输入设备"
+          }
         }
       }
     },
@@ -2881,6 +3949,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ミックスがありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有混音"
           }
         }
       }
@@ -2898,6 +3972,12 @@
             "state": "translated",
             "value": "ミックスはまだありません"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有混音"
+          }
         }
       }
     },
@@ -2913,6 +3993,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "出力なし"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无输出"
           }
         }
       }
@@ -2930,6 +4016,12 @@
             "state": "translated",
             "value": "出力がありません．ほかのアプリがこのミックスを受け取れるよう Tapdeck のデバイスを追加し，「聞く」で自分でも聞いてみましょう．"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有输出。添加 Tapdeck 设备，其他 App 就能接收此混音；添加“监听”，你也能同步收听。"
+          }
         }
       }
     },
@@ -2945,6 +4037,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ピークがシーリングを超えることはありません．"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任何峰值都不会超过上限。"
           }
         }
       }
@@ -2962,6 +4060,12 @@
             "state": "translated",
             "value": "ソースがありません．「システム」と「マイク」を追加すると，コンピュータの音とマイクをまとめて共有できます．"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有音源。添加“系统”和“麦克风”，即可将电脑音频与麦克风一起共享。"
+          }
         }
       }
     },
@@ -2977,6 +4081,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ノイズゲート"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "噪声门"
           }
         }
       }
@@ -2994,6 +4104,12 @@
             "state": "translated",
             "value": "なし"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无"
+          }
         }
       }
     },
@@ -3009,6 +4125,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "開ける出力がありませんでした"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法打开任何输出"
           }
         }
       }
@@ -3026,6 +4148,12 @@
             "state": "translated",
             "value": "入力側にサンプルが1つも届きませんでした．"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入端没有收到任何采样。"
+          }
         }
       }
     },
@@ -3041,6 +4169,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "録音していません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未在录制"
           }
         }
       }
@@ -3058,6 +4192,12 @@
             "state": "translated",
             "value": "オフ：アプリは自分のデバイスにそのまま出力し，このミックスはコピーを扱います．エフェクトが変えるのはミックスの送る音で，アプリ自身から聞こえる音は変わりません．"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭：App 仍直接通过它的设备播放，此混音处理的是一份副本。效果只改变混音发送出去的声音，不影响你直接从 App 听到的声音。"
+          }
         }
       }
     },
@@ -3073,6 +4213,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "オン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启"
           }
         }
       }
@@ -3090,6 +4236,12 @@
             "state": "translated",
             "value": "この出力のチャンネルペアは %lld 組だけなので，最後の組を共有します"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此输出只有 %lld 个声道对，最后一对由多个音源共享"
+          }
         }
       }
     },
@@ -3105,6 +4257,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ウインドウを開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开窗口"
           }
         }
       }
@@ -3122,6 +4280,12 @@
             "state": "translated",
             "value": "入力側を開いています…"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在打开输入端…"
+          }
         }
       }
     },
@@ -3137,6 +4301,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "元の音"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原声"
           }
         }
       }
@@ -3154,6 +4324,12 @@
             "state": "translated",
             "value": "そのほかのシステム音声"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他系统音频"
+          }
         }
       }
     },
@@ -3169,6 +4345,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "出力"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输出"
           }
         }
       }
@@ -3186,6 +4368,12 @@
             "state": "translated",
             "value": "ワイヤレスの一般的な遅延に合わせて出力をそろえました．時計ボタンで，耳を頼りに1つずつ微調整してください．"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已根据典型的无线延迟对齐输出。可使用各输出的时钟按钮凭听感逐个微调。"
+          }
         }
       }
     },
@@ -3201,6 +4389,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ピーク"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "峰值"
           }
         }
       }
@@ -3218,6 +4412,12 @@
             "state": "translated",
             "value": "再生中"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在播放"
+          }
         }
       }
     },
@@ -3233,6 +4433,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "プリセット"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预设"
           }
         }
       }
@@ -3250,6 +4456,12 @@
             "state": "translated",
             "value": "プリセット"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预设"
+          }
         }
       }
     },
@@ -3265,6 +4477,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "品質"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "质量"
           }
         }
       }
@@ -3282,6 +4500,12 @@
             "state": "translated",
             "value": "終了"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出"
+          }
         }
       }
     },
@@ -3294,6 +4518,12 @@
           }
         },
         "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "R"
+          }
+        },
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "R"
@@ -3315,6 +4545,12 @@
             "state": "translated",
             "value": "R %lld%%"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "R %lld%%"
+          }
         }
       },
       "comment": "Same in every language"
@@ -3332,6 +4568,12 @@
             "state": "translated",
             "value": "置き換え"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "替换"
+          }
         }
       }
     },
@@ -3344,6 +4586,12 @@
           }
         },
         "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RMS"
+          }
+        },
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "RMS"
@@ -3365,6 +4613,12 @@
             "state": "translated",
             "value": "レシオ"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "比率"
+          }
         }
       }
     },
@@ -3380,6 +4634,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "出力側へ送った音を読み戻せました．"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已成功读回发送到输出端的音频。"
           }
         }
       }
@@ -3397,6 +4657,12 @@
             "state": "translated",
             "value": "準備完了"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "就绪"
+          }
         }
       }
     },
@@ -3412,6 +4678,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "収録"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录制"
           }
         }
       }
@@ -3429,6 +4701,12 @@
             "state": "translated",
             "value": "ミックスの録音形式"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "混音录制格式"
+          }
         }
       }
     },
@@ -3444,6 +4722,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "入力を録音"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录制输入"
           }
         }
       }
@@ -3461,6 +4745,12 @@
             "state": "translated",
             "value": "このミックスの音をオーディオファイルに録音します"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将此混音播放的内容录制为音频文件"
+          }
         }
       }
     },
@@ -3476,6 +4766,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$lld サンプルを録音，ピーク %2$@ dB"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已录制 %lld 个采样，峰值 %@ dB"
           }
         }
       }
@@ -3493,6 +4789,12 @@
             "state": "translated",
             "value": "録音・録画"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录制"
+          }
         }
       }
     },
@@ -3508,6 +4810,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$lld×%2$lld・%3$lld fps で収録中，%4$@ %5$@ Mbps — 音声：%6$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在录制 %lld×%lld，%lld fps，%@ %@ Mbps — 音频来自 %@"
           }
         }
       }
@@ -3525,6 +4833,12 @@
             "state": "translated",
             "value": "%1$lld×%2$lld・%3$lld fps で収録中，%4$@ %5$@ Mbps — 音声：システム音声とマイク"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在录制 %lld×%lld，%lld fps，%@ %@ Mbps — 音频来自系统音频和麦克风"
+          }
         }
       }
     },
@@ -3540,6 +4854,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "録音に失敗しました：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录制失败：%@"
           }
         }
       }
@@ -3557,6 +4877,12 @@
             "state": "translated",
             "value": "収録を開始しました"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已开始录制"
+          }
         }
       }
     },
@@ -3572,6 +4898,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "録音を停止しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已停止录制"
           }
         }
       }
@@ -3589,6 +4921,12 @@
             "state": "translated",
             "value": "%@ の入力を録音しています…"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在录制 %@ 的输入…"
+          }
         }
       }
     },
@@ -3604,6 +4942,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ に録音中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在录制到 %@"
           }
         }
       }
@@ -3621,6 +4965,12 @@
             "state": "translated",
             "value": "録音・録画"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录制"
+          }
         }
       }
     },
@@ -3636,6 +4986,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "録音中…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在录制…"
           }
         }
       }
@@ -3653,6 +5009,12 @@
             "state": "translated",
             "value": "更新"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刷新"
+          }
         }
       }
     },
@@ -3668,6 +5030,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "一覧を更新"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刷新列表"
           }
         }
       }
@@ -3685,6 +5053,12 @@
             "state": "translated",
             "value": "デバイスとアプリケーションの一覧を更新"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刷新设备和 App 列表"
+          }
         }
       }
     },
@@ -3700,6 +5074,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "すべてのソースを削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除所有音源"
           }
         }
       }
@@ -3717,6 +5097,12 @@
             "state": "translated",
             "value": "この出力を削除"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除此输出"
+          }
         }
       }
     },
@@ -3732,6 +5118,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "このソースを削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除此音源"
           }
         }
       }
@@ -3749,6 +5141,12 @@
             "state": "translated",
             "value": "この周波数より上の，シャーというノイズやきつい高音を取り除きます．"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "去除此频率以上的嘶嘶声和刺耳的高音。"
+          }
         }
       }
     },
@@ -3764,6 +5162,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "この周波数より下の，ゴロゴロ音や机の振動，ハム音を取り除きます．"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "去除此频率以下的隆隆声、桌面碰撞声和嗡嗡声。"
           }
         }
       }
@@ -3781,6 +5185,12 @@
             "state": "translated",
             "value": "元の音を置き換える"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "替换原声"
+          }
         }
       }
     },
@@ -3796,6 +5206,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "すべてリセット"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部重置"
           }
         }
       }
@@ -3813,6 +5229,12 @@
             "state": "translated",
             "value": "0 dB に戻す"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重置为 0 dB"
+          }
         }
       }
     },
@@ -3828,6 +5250,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "チェックを実行"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行检测"
           }
         }
       }
@@ -3845,6 +5273,12 @@
             "state": "translated",
             "value": "実行中 — ソース %1$lld/%2$lld 件，出力 %3$lld/%4$lld 件が接続済み"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行中 — 音源 %lld/%lld，输出 %lld/%lld"
+          }
         }
       }
     },
@@ -3860,6 +5294,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "実行中 — ソース %1$lld/%2$lld 件，出力 %3$lld/%4$lld 件が接続済み．AirPlay を利用できません：レシーバーの電源を入れるか，コントロールセンター › サウンドで一度選んでください"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行中 — 音源 %lld/%lld，输出 %lld/%lld。AirPlay 不可用：请打开接收器，或在“控制中心 › 声音”中选择一次该接收器"
           }
         }
       }
@@ -3877,6 +5317,12 @@
             "state": "translated",
             "value": "実行中 — ソース %1$lld/%2$lld 件，出力 %3$lld/%4$lld 件が接続済み．このミックスの実行中は AirPlay が Mac の出力になります"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行中 — 音源 %lld/%lld，输出 %lld/%lld。此混音运行期间，AirPlay 将作为 Mac 的输出"
+          }
         }
       }
     },
@@ -3892,6 +5338,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "実行中 — ソース %1$lld/%2$lld 件，出力 %3$lld/%4$lld 件が接続済み．AirPlay を Mac の出力にできませんでした"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行中 — 音源 %lld/%lld，输出 %lld/%lld。无法将 AirPlay 设为 Mac 的输出"
           }
         }
       }
@@ -3909,6 +5361,12 @@
             "state": "translated",
             "value": "サンプル"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "采样数"
+          }
         }
       }
     },
@@ -3924,6 +5382,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "保存先"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "存储位置"
           }
         }
       }
@@ -3941,6 +5405,12 @@
             "state": "translated",
             "value": "保存しました"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已存储"
+          }
         }
       }
     },
@@ -3956,6 +5426,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ を保存しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已存储 %@"
           }
         }
       }
@@ -3973,6 +5449,12 @@
             "state": "translated",
             "value": "画面と音声"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "屏幕和音频"
+          }
         }
       }
     },
@@ -3988,6 +5470,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "画面収録の許可が必要です：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要屏幕录制权限：%@"
           }
         }
       }
@@ -4005,6 +5493,12 @@
             "state": "translated",
             "value": "440 Hz を出力側へ送っています…"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在向输出端发送 440 Hz…"
+          }
         }
       }
     },
@@ -4020,6 +5514,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "仮想デバイスの出力に 440 Hz を送り，同じデバイスの入力から読み戻せるかを確認します．"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向虚拟设备的输出端发送 440 Hz，并检查能否从同一设备的输入端读回该信号。"
           }
         }
       }
@@ -4037,6 +5537,12 @@
             "state": "translated",
             "value": "分ける"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分开声道"
+          }
         }
       }
     },
@@ -4052,6 +5558,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "設定…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置…"
           }
         }
       }
@@ -4069,6 +5581,12 @@
             "state": "translated",
             "value": "表示"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示"
+          }
         }
       }
     },
@@ -4084,6 +5602,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tapdeck をメニューバーに表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在菜单栏中显示 Tapdeck"
           }
         }
       }
@@ -4101,6 +5625,12 @@
             "state": "translated",
             "value": "Finder で表示"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在访达中显示"
+          }
         }
       }
     },
@@ -4116,6 +5646,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "無音です — ループバックがつながっていません．"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无声 — 回环未连接。"
           }
         }
       }
@@ -4133,6 +5669,12 @@
             "state": "translated",
             "value": "音がしきい値を下回っている間は，そのソースを無音にします — 話の合間の背景ノイズ向けです．"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音源电平低于阈值时将其静音，可去除说话间隙的背景噪声。"
+          }
         }
       }
     },
@@ -4148,6 +5690,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "サイズ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尺寸"
           }
         }
       }
@@ -4165,6 +5713,12 @@
             "state": "translated",
             "value": "小さいファイル"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "小文件"
+          }
         }
       }
     },
@@ -4180,6 +5734,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "サウンド設定…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "声音设置…"
           }
         }
       }
@@ -4197,6 +5757,12 @@
             "state": "translated",
             "value": "ソース"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音源"
+          }
         }
       }
     },
@@ -4212,6 +5778,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ソース"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音源"
           }
         }
       }
@@ -4229,6 +5801,12 @@
             "state": "translated",
             "value": "スピーカーとインターフェース"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扬声器和音频接口"
+          }
         }
       }
     },
@@ -4244,6 +5822,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "速さ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "速度"
           }
         }
       }
@@ -4261,6 +5845,12 @@
             "state": "translated",
             "value": "安定 — %1$lld フレーム，約 %2$lld ms"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "稳定 — %lld 帧，约 %lld ms"
+          }
         }
       }
     },
@@ -4276,6 +5866,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "開始"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始"
           }
         }
       }
@@ -4293,6 +5889,12 @@
             "state": "translated",
             "value": "先にミックスを開始してください — 録音は，再生中の音を残します"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先开始混音 — 录制保存的是混音正在播放的内容"
+          }
         }
       }
     },
@@ -4308,6 +5910,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "録音するにはミックスを開始してください"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始混音后即可录制"
           }
         }
       }
@@ -4325,6 +5933,12 @@
             "state": "translated",
             "value": "このミックスを開始"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始此混音"
+          }
         }
       }
     },
@@ -4340,6 +5954,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "目安です．耳を頼りに微調整してください"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅为初始参考值，请凭听感微调"
           }
         }
       }
@@ -4357,6 +5977,12 @@
             "state": "translated",
             "value": "ステレオ"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "立体声"
+          }
         }
       }
     },
@@ -4369,6 +5995,12 @@
           }
         },
         "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止"
+          }
+        },
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "停止"
@@ -4389,6 +6021,12 @@
             "state": "translated",
             "value": "すべて停止"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部停止"
+          }
         }
       }
     },
@@ -4404,6 +6042,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "録音を止めてファイルを残す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止录制并保留文件"
           }
         }
       }
@@ -4421,6 +6065,12 @@
             "state": "translated",
             "value": "このミックスを停止"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止此混音"
+          }
         }
       }
     },
@@ -4436,6 +6086,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "停止中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已停止"
           }
         }
       }
@@ -4453,6 +6109,12 @@
             "state": "translated",
             "value": "停止しました：出力を開き直せませんでした"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已停止：无法重新打开输出"
+          }
         }
       }
     },
@@ -4468,6 +6130,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "システム"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统"
           }
         }
       }
@@ -4485,6 +6153,12 @@
             "state": "translated",
             "value": "システム音声"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统音频"
+          }
         }
       }
     },
@@ -4500,6 +6174,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "システム音声とマイク"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统音频和麦克风"
           }
         }
       }
@@ -4517,6 +6197,12 @@
             "state": "translated",
             "value": "システム音声はすでにソースです"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统音频已添加为音源"
+          }
         }
       }
     },
@@ -4533,6 +6219,12 @@
             "state": "translated",
             "value": "システムの既定"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跟随系统"
+          }
         }
       }
     },
@@ -4545,6 +6237,12 @@
           }
         },
         "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tapdeck"
+          }
+        },
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "Tapdeck"
@@ -4566,6 +6264,12 @@
             "state": "translated",
             "value": "Tapdeck のデバイス — ミックスの出力"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tapdeck 设备 — 混音发送的内容"
+          }
         }
       }
     },
@@ -4581,6 +6285,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "歪まないよう，Tapdeck がここでピークを %.1f dB 下げています．避けるには，ソースかミックスの音量を下げるか，デバイスの音量を上げてください．"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tapdeck 正在此处将峰值降低 %.1f dB，以免失真。若要避免这种情况，请调低音源或混音的音量，或调高设备音量。"
           }
         }
       }
@@ -4598,6 +6308,12 @@
             "state": "translated",
             "value": "目標"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目标"
+          }
         }
       }
     },
@@ -4613,6 +6329,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tapdeck のドライバがインストールされていません．次を実行してください：sudo ./install-driver.sh"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未安装 Tapdeck 驱动程序。请运行：sudo ./install-driver.sh"
           }
         }
       }
@@ -4630,6 +6352,12 @@
             "state": "translated",
             "value": "アプリメニューとファイルダイアログは，次回 Tapdeck を起動したときに切り替わります．"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App 菜单和文件对话框会在 Tapdeck 下次启动时切换语言。"
+          }
         }
       }
     },
@@ -4645,6 +6373,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "このミックスの実行中は，アプリ自身の出力が消えるので，Tapdeck の音だけが聞こえます．エフェクトもミックスの音量も出力も，Tapdeck のものが使われます．ミックスを止めると，自動で元に戻ります．"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此混音运行时，该 App 自身的输出会被静音，你只会听到经 Tapdeck 处理的声音：带有这些效果，采用此混音的音量，并从此混音的输出播放。混音停止后，App 的输出会自动恢复。"
           }
         }
       }
@@ -4662,6 +6396,12 @@
             "state": "translated",
             "value": "このミックスの実行中は，アプリ自身の音が消えます"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此混音运行时，该 App 自身的声音会被静音"
+          }
         }
       }
     },
@@ -4677,6 +6417,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "デバイス自身の音量です．Mac の出力のときは，音量キーで変わる音量です．このデバイスに出力するすべてのアプリに影響します．"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设备自身的音量，即该设备作为 Mac 的输出时音量键所调节的音量。所有通过它播放的 App 都会受此更改影响。"
           }
         }
       }
@@ -4694,6 +6440,12 @@
             "state": "translated",
             "value": "ドライバがインストールされていません．"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未安装驱动程序。"
+          }
         }
       }
     },
@@ -4709,6 +6461,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ドライバがデバイスの一覧を受け付けませんでした（OSStatus %lld）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "驱动程序拒绝了设备列表（OSStatus %lld）"
           }
         }
       }
@@ -4726,6 +6484,12 @@
             "state": "translated",
             "value": "メイン出力は %lld チャンネルあるので，ソースごとに専用のペアを割り当てられます．"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主输出有 %lld 个声道，因此每个音源都可以使用各自的声道对。"
+          }
         }
       }
     },
@@ -4741,6 +6505,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "メイン出力のクロックがミックスを動かし，チャンネルの割り当てはそのチャンネルを基準にします．"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "混音由主输出的时钟驱动，声道分配也以其声道为准。"
           }
         }
       }
@@ -4758,6 +6528,12 @@
             "state": "translated",
             "value": "メニューバーの項目から，ウインドウを開かずにミックスを開始・停止できます．ノッチのあるディスプレイでは，メニューバーがいっぱいだと表示される場所がないことがあります．"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通过菜单栏项目，无需打开窗口即可开始和停止混音。在带刘海的显示屏上，如果菜单栏已满，可能没有空间显示该项目。"
+          }
         }
       }
     },
@@ -4773,6 +6549,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "このミックスの実行中は，元の音は消えます．聞くにはスピーカーかヘッドホンの出力を追加してください．"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此混音运行时，原声会被静音。若要听到声音，请添加扬声器或耳机输出。"
           }
         }
       }
@@ -4790,6 +6572,12 @@
             "state": "translated",
             "value": "ストリームが停止しました：%@"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "屏幕捕获已停止：%@"
+          }
         }
       }
     },
@@ -4805,6 +6593,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "この Mac"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台 Mac"
           }
         }
       }
@@ -4822,6 +6616,12 @@
             "state": "translated",
             "value": "デバイス上のこのミックスのレベルです（そこで再生するほかのアプリとの比較）．上のフェーダーはデバイス自身の音量です．"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此混音在该设备上相对于其他正在播放的 App 的电平。上方的推子是设备自身的音量。"
+          }
         }
       }
     },
@@ -4837,6 +6637,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "このミックスの音量（送るすべての音に適用）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此混音的音量，适用于其发送的所有内容"
           }
         }
       }
@@ -4854,6 +6660,12 @@
             "state": "translated",
             "value": "自分自身にフィードバックしてしまいます：%@"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这会形成反馈回路：%@"
+          }
         }
       }
     },
@@ -4869,6 +6681,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "しきい値"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "阈值"
           }
         }
       }
@@ -4886,6 +6704,12 @@
             "state": "translated",
             "value": "トラック"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音轨"
+          }
         }
       }
     },
@@ -4901,6 +6725,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ミュート解除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消静音"
           }
         }
       }
@@ -4918,6 +6748,12 @@
             "state": "translated",
             "value": "名前のないミックス"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未命名混音"
+          }
         }
       }
     },
@@ -4933,6 +6769,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "仮想デバイスは8つまでです"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最多可创建 8 个虚拟设备"
           }
         }
       }
@@ -4950,6 +6792,12 @@
             "state": "translated",
             "value": "標準のフォルダを使う"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用默认文件夹"
+          }
         }
       }
     },
@@ -4965,6 +6813,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ビデオ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "视频"
           }
         }
       }
@@ -4982,6 +6836,12 @@
             "state": "translated",
             "value": "仮想デバイス"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "虚拟设备"
+          }
         }
       }
     },
@@ -4997,6 +6857,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "仮想デバイス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "虚拟设备"
           }
         }
       }
@@ -5014,6 +6880,12 @@
             "state": "translated",
             "value": "Tapdeck が再生するすべての音量（全ミックス，全出力）"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tapdeck 播放的所有声音的音量，作用于每个混音和输出"
+          }
         }
       }
     },
@@ -5029,6 +6901,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "WAV — 非圧縮"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "WAV — 未压缩"
           }
         }
       }
@@ -5046,6 +6924,12 @@
             "state": "translated",
             "value": "エフェクトと音量を通したあとの，ミックスの音を録音します．停止中のミックスは自動で開始します．"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录制所选混音经过效果和音量处理后的声音。已停止的混音会自动开始运行。"
+          }
         }
       }
     },
@@ -5061,6 +6945,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "このソースを，メイン出力のどのチャンネルに置くか"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此音源放置在主输出的哪些声道上"
           }
         }
       }
@@ -5078,6 +6968,12 @@
             "state": "translated",
             "value": "このミックスの実行中は，AirPlay が Mac の出力になり，アプリの音はミックスを通してのみ聞こえます．レシーバーは，コントロールセンター › サウンドで選びます．"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此混音运行时，AirPlay 会成为 Mac 的输出，App 的声音只能通过混音听到。接收器需在“控制中心 › 声音”中选择。"
+          }
         }
       }
     },
@@ -5093,6 +6989,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ウインドウ：%1$@ — %2$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "窗口：%@ — %@"
           }
         }
       }
@@ -5110,6 +7012,12 @@
             "state": "translated",
             "value": "ウインドウ"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "窗口"
+          }
         }
       }
     },
@@ -5125,6 +7033,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "書き込みに失敗しました：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写入失败：%@"
           }
         }
       }
@@ -5142,6 +7056,12 @@
             "state": "translated",
             "value": "独立したトラックとして書き出すので，別々に編集できます"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录制为独立的音轨，方便单独编辑"
+          }
         }
       }
     },
@@ -5157,6 +7077,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "中央"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "居中"
           }
         }
       }
@@ -5174,6 +7100,12 @@
             "state": "translated",
             "value": "入力 %lld"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入 %lld"
+          }
         }
       }
     },
@@ -5190,6 +7122,12 @@
             "state": "translated",
             "value": "入力 %1$lld ch / 出力 %2$lld ch / %3$lld Hz"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入 %lld ch / 输出 %lld ch / %lld Hz"
+          }
         }
       }
     },
@@ -5202,6 +7140,12 @@
           }
         },
         "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "loopback-test.wav"
+          }
+        },
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "loopback-test.wav"
@@ -5223,6 +7167,12 @@
             "state": "translated",
             "value": "ほかのアプリでメニューバーがいっぱいになると，macOS は新しいアイコンを配置しないため，Tapdeck のアイコンは表示されません．Command を押しながらほかのアイコンをメニューバーの外へドラッグして空きを作り，Tapdeck を起動し直してください．以後は，ほかのアイコンと同じように場所が保たれます．"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当其他 App 已占满菜单栏时，macOS 不会再放置新的菜单栏图标，因此 Tapdeck 的图标不会显示。请腾出一些空间（按住 Command 键并将其他图标拖出菜单栏），然后重新启动 Tapdeck；此后该图标会像其他图标一样保持在原位。"
+          }
         }
       }
     },
@@ -5238,6 +7188,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ミュート"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已静音"
           }
         }
       }
@@ -5255,6 +7211,12 @@
             "state": "translated",
             "value": "出力 %lld"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输出 %lld"
+          }
         }
       }
     },
@@ -5270,6 +7232,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ピーク"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "峰值"
           }
         }
       }
@@ -5287,6 +7255,12 @@
             "state": "translated",
             "value": "保留中"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待中"
+          }
         }
       }
     },
@@ -5303,6 +7277,12 @@
             "state": "translated",
             "value": "シェルフ"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搁架"
+          }
         }
       }
     },
@@ -5315,6 +7295,12 @@
           }
         },
         "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "sudo ./install-driver.sh"
+          }
+        },
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "sudo ./install-driver.sh"
@@ -5336,6 +7322,12 @@
             "state": "translated",
             "value": "音を待っています"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在等待声音"
+          }
         }
       }
     },
@@ -5351,6 +7343,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "音の入口"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音频的来源"
           }
         }
       }
@@ -5368,6 +7366,12 @@
             "state": "translated",
             "value": "音の出口"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "混音的去向"
+          }
         }
       }
     },
@@ -5380,6 +7384,12 @@
           }
         },
         "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "—"
+          }
+        },
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "—"
@@ -5401,6 +7411,12 @@
             "state": "translated",
             "value": "ミックスやソースの「ラウドネスを揃える」は，再生される音を目標の音量に近づけ，動画やサイト，曲が変わっても同じくらいの大きさで聞こえるようにします．小さい音は最大ブーストまでしか上げないので，背景のノイズが大きくなりすぎることはありません．「ゆるやか」は曲や映画の中の強弱を残し，「速い」はより強く揃えます．無音や短い間は音量を変えず，−1 dBFS のピークリミッターが急な増加を抑えます．"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对混音或音源开启“统一响度”后，正在播放的任何内容都会被调整到目标响度，因此不同的视频、网站或歌曲听起来响度大致相同。安静的内容最多只会按“最大提升”的值提升，因此背景噪声不会被过度放大。“柔和”会保留歌曲或影片内部的强弱起伏；“快速”则统一得更彻底。遇到静音和短暂停顿时电平保持不变，−1 dBFS 的峰值限制器会抑制突然的跳升。"
+          }
         }
       }
     },
@@ -5416,6 +7432,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "−14 LUFS — YouTube，Spotify"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "−14 LUFS — YouTube、Spotify"
           }
         }
       }
@@ -5433,6 +7455,12 @@
             "state": "translated",
             "value": "−16 LUFS — Apple Music，ポッドキャスト"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "−16 LUFS — Apple Music、播客"
+          }
         }
       }
     },
@@ -5449,6 +7477,12 @@
             "state": "translated",
             "value": "−18 LUFS — 静かに聴く"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "−18 LUFS — 低音量聆听"
+          }
         }
       }
     },
@@ -5464,6 +7498,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "−23 LUFS — 放送向け，余裕が最大"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "−23 LUFS — 广播，余量最大"
           }
         }
       }

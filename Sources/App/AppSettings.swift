@@ -113,7 +113,7 @@ final class AppSettings: ObservableObject {
         }
     }
 
-    /// The language the app is shown in right now: `en` or `ja`.
+    /// The language the app is shown in right now: `en`, `ja` or `zh-Hans`.
     @Published private(set) var languageCode: String
 
     var locale: Locale { Locale(identifier: languageCode) }
@@ -126,6 +126,7 @@ final class AppSettings: ObservableObject {
         case .system: defaults.removeObject(forKey: "AppleLanguages")
         case .en:     defaults.set(["en"], forKey: "AppleLanguages")
         case .ja:     defaults.set(["ja"], forKey: "AppleLanguages")
+        case .zhHans: defaults.set(["zh-Hans"], forKey: "AppleLanguages")
         }
     }
 

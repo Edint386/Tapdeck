@@ -9,11 +9,13 @@ that list with Resources/Localizable.xcstrings and fails the build on:
 
   * a string in the code that is missing from the catalog, or a catalog entry
     nothing uses any more
-  * an entry without a translated English and Japanese value
-  * a Japanese value identical to the English one, unless the entry's comment says
+  * an entry without a translated English, Japanese and Simplified Chinese value
+  * a translated value identical to the English one, unless the entry's comment says
     "Same in every language" (an untranslated string looks exactly like that)
-  * placeholders (%@, %lld, ...) that differ between the two languages
+  * placeholders (%@, %lld, ...) that differ from the English ones
   * Japanese written with 、 or 。 instead of the full-width ， and ．
+  * Simplified Chinese containing kana (left over from the Japanese), the Japanese ．,
+    or half-width , . ; : ! ? next to Chinese text instead of ，。；：！？
   * the ways of getting a string that would ignore the language chosen in the app:
     String(localized:) or NSLocalizedString in the app layer, and a view helper that
     takes its title as a String, which reaches Text or .help verbatim
@@ -25,9 +27,15 @@ import json
 import re
 import sys
 
-LANGUAGES = ("en", "ja")
+LANGUAGES = ("en", "ja", "zh-Hans")
+TRANSLATIONS = LANGUAGES[1:]
 SAME = "Same in every language"
 PLACEHOLDER = re.compile(r"%(?:\d+\$)?(?:lld|lf|ld|d|f|@)")
+KANA = re.compile(r"[\u3040-\u30ff]")
+HAN = r"[\u4e00-\u9fff]"
+# Half-width punctuation touching a Chinese character. A full stop only counts after
+# one, so "1.5" and "Tapdeck.app" stay allowed.
+HALF_WIDTH_BESIDE_HAN = re.compile(rf"{HAN}[,.;:!?]|[,;:!?]{HAN}")
 
 errors = []
 
@@ -64,12 +72,21 @@ def check_catalog(path, used=None):
             values[language] = unit["value"]
         if len(values) < len(LANGUAGES):
             continue
-        if values["ja"] == values["en"] and SAME not in entry.get("comment", ""):
-            fail(f"{path}: {key!r} is the same in Japanese; translate it, or comment {SAME!r}")
-        if placeholders(values["en"]) != placeholders(values["ja"]):
-            fail(f"{path}: {key!r} has different placeholders in English and Japanese")
+        for language in TRANSLATIONS:
+            if values[language] == values["en"] and SAME not in entry.get("comment", ""):
+                fail(f"{path}: {key!r} is the same in {language} as in English; translate it, "
+                     f"or comment {SAME!r}")
+            if placeholders(values["en"]) != placeholders(values[language]):
+                fail(f"{path}: {key!r} has different placeholders in English and {language}")
         if "、" in values["ja"] or "。" in values["ja"]:
             fail(f"{path}: {key!r} uses 、 or 。; use the full-width ， and ．")
+        chinese = values["zh-Hans"]
+        if KANA.search(chinese):
+            fail(f"{path}: {key!r} has kana in Simplified Chinese")
+        if "．" in chinese:
+            fail(f"{path}: {key!r} uses the Japanese ． in Simplified Chinese; use 。")
+        if HALF_WIDTH_BESIDE_HAN.search(chinese):
+            fail(f"{path}: {key!r} has half-width punctuation beside Chinese text; use ，。；：！？")
     return strings
 
 
