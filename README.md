@@ -1,5 +1,18 @@
 # Tapdeck
 
+> **About this fork.** This is an unofficial fork of
+> [Tapdeck](https://github.com/kosuke-apps/Tapdeck) by Kosuke Satake, maintained
+> independently by Edint386. It adds a Simplified Chinese interface, and work on a Windows
+> version happens on its own branch. It is not affiliated with or endorsed by the original
+> author; please report problems with this fork here, not upstream. The original copyright
+> notice and the MIT license are kept unchanged in [LICENSE](LICENSE).
+>
+> **关于这个版本**：这是 Kosuke Satake 开发的
+> [Tapdeck](https://github.com/kosuke-apps/Tapdeck) 的非官方二次开发版本，由 Edint386
+> 独立维护，增加了简体中文界面，Windows 版在单独的分支上开发。本版本与原作者无关，也未获原作者认可；
+> 使用中遇到的问题请在这里反馈，不要提交到原仓库。原作者的版权声明和 MIT 许可证原样保留在
+> [LICENSE](LICENSE) 中。
+
 Audio routing and recording for macOS — the things Loopback and Audio Hijack do,
 built on Core Audio's modern APIs.
 
@@ -424,6 +437,7 @@ virtual device driver comes from.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Copyright (c) 2026 Kosuke Satake.
+MIT — see [LICENSE](LICENSE). Copyright (c) 2026 Kosuke Satake; modifications in this fork
+copyright (c) 2026 Edint386.
 
 This app was built with the help of Claude (Anthropic) through Claude Code; design, review and testing are by Kosuke Satake. Anthropic does not endorse this app.
