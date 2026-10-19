@@ -1,16 +1,10 @@
 #!/bin/bash
 # Use Xcode's SDK when it is installed, otherwise the Command Line Tools SDK.
+# Set DEVELOPER_DIR to build with a particular Xcode instead.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# Xcode refuses to run until its license is accepted again after an update,
-# so fall back to the Command Line Tools when it cannot be used.
-if [ -d /Applications/Xcode.app ] &&
-   DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun --sdk macosx --show-sdk-path >/dev/null 2>&1; then
-  export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-elif [ -d /Applications/Xcode.app ]; then
-  echo "note: Xcode is not usable (license not accepted?); building with the Command Line Tools" >&2
-fi
+source tools/toolchain.sh
 SDK="$(xcrun --sdk macosx --show-sdk-path)"
 
 source tools/signing.sh
@@ -60,9 +54,7 @@ xcrun swiftc -O "${common_flags[@]}" -parse-as-library \
 echo "→ localization"
 python3 tools/check_localization.py build/strings
 # xcstringstool ships with Xcode, not with the Command Line Tools.
-if ! xcrun --find xcstringstool >/dev/null 2>&1; then
-  export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
-fi
+use_xcstringstool
 # One folder per language. Having both is also what makes macOS offer a per-app
 # language for Tapdeck in System Settings.
 xcrun xcstringstool compile --output-directory "$APP/Contents/Resources" Resources/Localizable.xcstrings

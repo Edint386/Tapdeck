@@ -4,14 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# Xcode refuses to run until its license is accepted again after an update,
-# so fall back to the Command Line Tools when it cannot be used.
-if [ -d /Applications/Xcode.app ] &&
-   DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun --sdk macosx --show-sdk-path >/dev/null 2>&1; then
-  export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-elif [ -d /Applications/Xcode.app ]; then
-  echo "note: Xcode is not usable (license not accepted?); building with the Command Line Tools" >&2
-fi
+source ../tools/toolchain.sh  # the script runs from Driver/
 SDK="$(xcrun --sdk macosx --show-sdk-path)"
 
 BUNDLE="../build/driver/Tapdeck.driver"
