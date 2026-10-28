@@ -1,15 +1,22 @@
 // The C++ port against the reference vectors the Swift code wrote (see
 // windows/tools/vectors). Run with the vectors directory as its argument.
 //
-// The gain ramp and the master volume use only multiplication and addition, so
-// they must match bit for bit. The limiter computes its release coefficient
-// with exp(), which Apple's and Microsoft's math libraries may round apart in
-// the last bit, so its output may differ by at most 1e-6 (-120 dBFS).
+// Everything must match bit for bit, with one exception. The limiter computes
+// its release coefficient with exp(), which Apple's and Microsoft's math
+// libraries may round one unit in the last place (ulp) apart. Each case stores
+// the Swift value; only when this platform's exp() gives a different one may
+// each output sample sit one ulp from the Swift output and each block's lowest
+// gain eight. On top of that, no limited sample may exceed the ceiling. NaN
+// never matches anything but NaN.
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <exception>
+#include <limits>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -26,6 +33,10 @@ namespace {
 
 /// Split planar samples stored channel after channel.
 std::vector<std::vector<float>> planar(const std::vector<float>& samples, int channels, int frames) {
+    if (samples.size() != static_cast<std::size_t>(channels) * static_cast<std::size_t>(frames)) {
+        throw std::runtime_error("a vector holds " + std::to_string(samples.size()) + " samples, expected "
+                                 + std::to_string(channels) + " x " + std::to_string(frames));
+    }
     std::vector<std::vector<float>> result(channels);
     for (int c = 0; c < channels; ++c) {
         result[c].assign(samples.begin() + static_cast<std::ptrdiff_t>(c) * frames,
@@ -34,15 +45,38 @@ std::vector<std::vector<float>> planar(const std::vector<float>& samples, int ch
     return result;
 }
 
-double largestDifference(const std::vector<std::vector<float>>& actual, const std::vector<float>& expected) {
+/// Units in the last place between two values: 0 for identical bits,
+/// infinite when only one is NaN.
+template <typename T>
+double ulps(T a, T b) {
+    using Bits = std::conditional_t<sizeof(T) == 4, std::uint32_t, std::uint64_t>;
+    if (std::bit_cast<Bits>(a) == std::bit_cast<Bits>(b)) return 0;
+    if (std::isnan(a) || std::isnan(b)) return std::numeric_limits<double>::infinity();
+    const T larger = std::max(std::abs(a), std::abs(b));
+    const T unit = std::nextafter(larger, std::numeric_limits<T>::infinity()) - larger;
+    return static_cast<double>(std::abs(a - b) / unit);
+}
+
+/// The largest distance in ulps between the processed channels and the
+/// expected samples, stored channel after channel.
+double worstUlps(const std::vector<std::vector<float>>& actual, const std::vector<float>& expected) {
+    std::size_t total = 0;
+    for (const auto& channel : actual) total += channel.size();
+    if (total != expected.size()) {
+        throw std::runtime_error("expected " + std::to_string(expected.size()) + " samples, have " + std::to_string(total));
+    }
     double worst = 0;
     std::size_t index = 0;
     for (const auto& channel : actual) {
-        for (float sample : channel) {
-            worst = std::max(worst, std::abs(static_cast<double>(sample) - expected[index++]));
-        }
+        for (float sample : channel) worst = std::max(worst, ulps(sample, expected[index++]));
     }
     return worst;
+}
+
+std::string describe(double worst) {
+    if (worst == 0) return "bit for bit";
+    if (!std::isfinite(worst)) return "differs";
+    return format("within %.0f ulp", worst);
 }
 
 std::vector<std::string> split(const std::string& text, char separator) {
@@ -74,10 +108,10 @@ void gainRamp(test::Report& report, const VectorFile& file) {
         ramp.apply(channels, lengths[op], values[op]);
         start += lengths[op];
     }
-    const double worst = largestDifference(audio, file.f32("output"));
-    const bool finalMatches = ramp.current() == file.f32("finalGain")[0];
+    const double worst = worstUlps(audio, file.f32("output"));
+    const bool finalMatches = ulps(ramp.current(), file.f32("finalGain")[0]) == 0;
     report("gain ramp matches bit for bit", worst == 0 && finalMatches,
-           format("largest difference %.1e over %zu operations", worst, kinds.size()));
+           format("%s over %zu operations", describe(worst).c_str(), kinds.size()));
 }
 
 void masterVolume(test::Report& report, const VectorFile& file) {
@@ -91,8 +125,9 @@ void masterVolume(test::Report& report, const VectorFile& file) {
         } else {
             master.setMuted(values[op] != 0);
         }
-        same = same && master.gain() == file.f32("gains")[op] && master.volume() == file.f32("volumes")[op]
-            && master.isMuted() == (file.i32("muted")[op] != 0);
+        same = same && ulps(master.gain(), file.f32("gains").at(op)) == 0
+            && ulps(master.volume(), file.f32("volumes").at(op)) == 0
+            && master.isMuted() == (file.i32("muted").at(op) != 0);
     }
     report("master volume matches", same, format("%zu operations", kinds.size()));
 }
@@ -107,6 +142,7 @@ void limiter(test::Report& report, const VectorFile& file) {
         LookaheadLimiter limiter(channels, file.number(prefix + "sampleRate"), file.number(prefix + "ceiling"),
                                  file.number(prefix + "lookaheadSeconds"), file.number(prefix + "releaseSeconds"));
         auto audio = planar(file.f32(prefix + "input"), inputChannels, frames);
+        const auto original = audio;
         const auto& expectedLowest = file.f64(prefix + "lowest");
 
         double worstLowest = 0;
@@ -116,15 +152,34 @@ void limiter(test::Report& report, const VectorFile& file) {
             std::vector<float*> pointers;
             for (auto& channel : audio) pointers.push_back(channel.data() + start);
             const double lowest = limiter.process(pointers, size);
-            worstLowest = std::max(worstLowest, std::abs(lowest - expectedLowest.at(block)));
+            if (block < expectedLowest.size()) worstLowest = std::max(worstLowest, ulps(lowest, expectedLowest[block]));
             start += size;
             block += 1;
         }
-        const double worst = largestDifference(audio, file.f32(prefix + "output"));
-        const bool ok = worst <= 1e-6 && worstLowest <= 1e-9 && block == expectedLowest.size()
-                     && limiter.latencyFrames() == file.i32(prefix + "latency")[0];
+        const double worst = worstUlps(audio, file.f32(prefix + "output"));
+        const double release = std::exp(-1 / (file.number(prefix + "releaseSeconds") * file.number(prefix + "sampleRate")));
+        const bool sameExp = ulps(release, file.number(prefix + "release")) == 0;
+
+        // The guarantee itself: no limited sample above the ceiling, and the
+        // channels beyond the limiter's own left exactly as they were.
+        const auto ceiling = static_cast<float>(file.number(prefix + "ceiling"));
+        bool underCeiling = true, othersUntouched = true;
+        for (int c = 0; c < inputChannels; ++c) {
+            for (int f = 0; f < frames; ++f) {
+                if (c < channels) {
+                    underCeiling = underCeiling && std::abs(audio[c][f]) <= ceiling;
+                } else {
+                    othersUntouched = othersUntouched && ulps(audio[c][f], original[c][f]) == 0;
+                }
+            }
+        }
+        const bool ok = worst <= (sameExp ? 0 : 1) && worstLowest <= (sameExp ? 0 : 8)
+                     && block == expectedLowest.size() && underCeiling
+                     && othersUntouched && limiter.latencyFrames() == file.i32(prefix + "latency").at(0);
         report("limiter: " + file.text(prefix + "name"), ok,
-               format("largest difference %.1e, gain %.1e, delay %d", worst, worstLowest, limiter.latencyFrames()));
+               format("%s, gain %s, delay %d%s%s", describe(worst).c_str(), describe(worstLowest).c_str(),
+                      limiter.latencyFrames(), sameExp ? "" : " (exp() rounds apart here)",
+                      underCeiling ? "" : ", ABOVE THE CEILING"));
     }
 }
 

@@ -11,7 +11,9 @@ cd "$(dirname "$0")/../.."
 source tools/toolchain.sh
 sanitizer="${1:-}"
 directory="build/windows-cpp${sanitizer:+-$sanitizer}"
-cmake -S windows -B "$directory" \
+# --fresh: a changed compiler would otherwise make CMake drop its cache and
+# silently forget the sanitizer.
+cmake --fresh -S windows -B "$directory" \
   -DCMAKE_BUILD_TYPE="${sanitizer:+RelWithDebInfo}" \
   -DCMAKE_CXX_COMPILER="$(xcrun --find clang++)" \
   -DCMAKE_OSX_SYSROOT="$(xcrun --show-sdk-path)" \

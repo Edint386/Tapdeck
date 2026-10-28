@@ -11,6 +11,10 @@
 #include <memory>
 #include <span>
 
+#ifdef TAPDECK_TESTING
+#include <functional>
+#endif
+
 #include "tapdeck/GainStage.h"
 
 namespace tapdeck {
@@ -88,6 +92,20 @@ public:
     // MARK: Neither side running
 
     void clear();
+
+#ifdef TAPDECK_TESTING
+    /// A seam for ringtest, which has to play the writer in the middle of a
+    /// read without depending on thread timing. Compiled only into test builds.
+    struct Testing {
+        /// Called by mixInto after it has copied the frames and before it
+        /// checks whether the writer lapped it.
+        std::function<void()> afterCopy;
+        /// A write announces and stores its block but does not publish it,
+        /// as if the writer were stopped just before its last step.
+        bool holdPublish = false;
+    };
+    Testing testing;
+#endif
 
 private:
     template <typename SourceChannel>

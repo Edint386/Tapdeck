@@ -39,17 +39,24 @@ GitHub Actions does both (`.github/workflows/windows-engine.yml`).
 ```
 windows/tools/vectors.sh check      # do the vectors still match the Swift code?
 windows/tools/vectors.sh write      # regenerate them
-windows/tools/vectors.sh selftest   # show that check catches a stale vector
+windows/tools/vectors.sh selftest   # show that the comparison catches every kind of change
 ```
 
 The generator is built from the unchanged `GainStage.swift` and `RoutingGraph.swift`, so the
-vectors are, by definition, what the macOS engine computes. When a merge from the macOS code
-changes those files, `check` fails in CI; regenerate with `write` and bring the C++ code in
-line until `vectortest` passes.
+vectors are, by definition, what the macOS engine computes. `check` runs that code again on
+the inputs stored in the files and compares bit for bit. When a merge from the macOS code
+changes those files, it fails in CI; regenerate with `write` and bring the C++ code in line
+until `vectortest` passes.
 
 The files are `.tdv`: named arrays of 32- and 64-bit floats, 32-bit integers and text,
 little-endian (format in `tests/VectorFile.h`). Floating point is kept strict on both
-compilers — no fused multiply-add, no fast-math — so the gain ramp, master volume and
-limiter match the Swift output bit for bit on the Mac. Across Apple's and Microsoft's math
-libraries the limiter may differ by the last bit of an `exp()`; `vectortest` allows 1e-6
-(−120 dBFS) there and nothing elsewhere.
+compilers — no fused multiply-add, no fast-math — and `vectortest` demands the Swift output
+bit for bit, with one exception: the limiter's release coefficient comes from `exp()`, which
+Apple's and Microsoft's math libraries may round one ulp apart. Each case stores the Swift
+coefficient, and only where the platform's own `exp()` gives a different one may an output
+sample differ by one ulp (a block's lowest gain by eight). No limited sample may ever exceed
+the ceiling, and NaN never matches anything but NaN. On the Mac everything matches exactly.
+
+`ringtest` drives the ring buffer through a test seam (`AudioRingBuffer::testing`, compiled
+only when `TAPDECK_TESTING` is on, as it is in this build) to lap a read deterministically,
+and races a writer against a reader in three paces.

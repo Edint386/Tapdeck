@@ -46,6 +46,12 @@ void AudioRingBuffer::store(int frameCount, SourceChannel sourceChannel) {
             if (++slot == capacityFrames_) slot = 0;
         }
     }
+#ifdef TAPDECK_TESTING
+    if (testing.holdPublish) {
+        raisePeak(peak);
+        return;
+    }
+#endif
     writeCount_.store(written + static_cast<std::uint64_t>(frameCount), std::memory_order_release);
     raisePeak(peak);
 }
@@ -138,6 +144,10 @@ void AudioRingBuffer::mixInto(Channels destination, int frameCount, float gain, 
             if (++slot == capacityFrames_) slot = 0;
         }
     }
+
+#ifdef TAPDECK_TESTING
+    if (testing.afterCopy) testing.afterCopy();
+#endif
 
     // If the writer lapped this read after all, some of what was read may
     // already be newer audio. It cannot be taken back, but it is counted. The

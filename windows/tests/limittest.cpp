@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <numbers>
 #include <vector>
 
@@ -63,9 +64,14 @@ double level(const std::vector<float>& samples, double hertz) {
     return 20 * std::log10(std::max(2 * std::sqrt(re * re + im * im) / count, 1e-12));
 }
 
+/// Peak in dBFS; a NaN anywhere reads as infinitely loud, so it fails every
+/// "at or under" check.
 double peakDecibels(const std::vector<float>& samples) {
     float peak = 0;
-    for (float sample : samples) peak = std::max(peak, std::abs(sample));
+    for (float sample : samples) {
+        if (std::isnan(sample)) return std::numeric_limits<double>::infinity();
+        peak = std::max(peak, std::abs(sample));
+    }
     return 20 * std::log10(static_cast<double>(peak));
 }
 
@@ -85,7 +91,8 @@ int main() {
     const auto quiet = run(tone(0.5), 1, true, ceiling);
     float worst = 0;
     for (std::size_t i = quiet.latency; i < quiet.output.size(); ++i) {
-        worst = std::max(worst, std::abs(quiet.output[i] - quiet.input[i - quiet.latency]));
+        const float difference = std::abs(quiet.output[i] - quiet.input[i - quiet.latency]);
+        worst = std::isnan(difference) ? std::numeric_limits<float>::infinity() : std::max(worst, difference);
     }
     report("-6 dBFS passes untouched, only delayed", worst < 1e-6f,
            format("largest difference %.1e, delay %d samples (%.2f ms)", worst, quiet.latency,

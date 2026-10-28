@@ -157,7 +157,8 @@ void writeMappings(test::Report& report) {
     Out repeated(4, 8);
     mapped.mixInto(repeated.channels(), 8, 1);
     report("a narrower source repeats its last channel",
-           repeated.counts(0, 1, 8) && repeated.counts(1, 1001, 8) && repeated.counts(3, 1001, 8));
+           repeated.counts(0, 1, 8) && repeated.counts(1, 1001, 8) && repeated.counts(2, 1001, 8)
+               && repeated.counts(3, 1001, 8));
 
     AudioRingBuffer padded(4, 1024, 0);
     padded.write(stereo.channels(), 8);
@@ -228,32 +229,104 @@ void controls(test::Report& report) {
     report("the peak is taken once, then reset", peak == 0.7f && peaks.takePeak() == 0,
            format("peak %.2f", peak));
 
-    peaks.clear();
-    report("clear empties the buffer and its counts",
-           peaks.availableFrames() == 0 && peaks.underruns() == 0 && peaks.overruns() == 0);
+    // Give every piece of state something to clear: an underrun, an overrun,
+    // a peak not yet taken, a primed reader and frames left unread.
+    AudioRingBuffer used(1, 1024, 64);
+    Out sink(1, 1024);
+    Ramp some(1, 100, 1);
+    used.write(some.channels(), 100);
+    used.mixInto(sink.channels(), 100, 1);
+    used.mixInto(sink.channels(), 10, 1); // dry: one underrun
+    Ramp flood(1, 900, 101);
+    used.write(flood.channels(), 900);
+    used.mixInto(sink.channels(), 10, 1); // more than 3/4 unread: one overrun, primed again
+    const bool dirty = used.underruns() == 1 && used.overruns() == 1 && used.availableFrames() > 0;
+    used.clear();
+    const bool countsCleared = used.underruns() == 0 && used.overruns() == 0 && used.availableFrames() == 0
+                            && used.takePeak() == 0;
+    Ramp short_(1, 32, 1);
+    used.write(short_.channels(), 32);
+    Out afterClear(1, 32);
+    used.mixInto(afterClear.channels(), 32, 1);
+    report("clear resets counts, peak, frames and priming", dirty && countsCleared && afterClear.silent(0),
+           format("before: %d underruns, %d overruns", dirty ? 1 : 0, dirty ? 1 : 0));
 }
+
+/// The writer laps a read in progress, played through the test seam so the
+/// outcome does not depend on thread timing.
+void lappedReads(test::Report& report) {
+    Ramp first(1, 512, 1);
+    Ramp lap(1, 900, 513);
+    Ramp small(1, 400, 513);
+
+    AudioRingBuffer published(1, 1024, 0);
+    published.write(first.channels(), 512);
+    published.testing.afterCopy = [&] {
+        published.testing.afterCopy = nullptr;
+        published.write(lap.channels(), 900); // reaches past the frames being read
+    };
+    Out out(1, 256);
+    published.mixInto(out.channels(), 256, 1);
+    report("a read lapped by a finished block counts an overrun", published.overruns() == 1,
+           format("overruns %d", published.overruns()));
+
+    AudioRingBuffer storing(1, 1024, 0);
+    storing.write(first.channels(), 512);
+    storing.testing.afterCopy = [&] {
+        storing.testing.afterCopy = nullptr;
+        storing.testing.holdPublish = true; // stored and announced, not yet published
+        storing.write(lap.channels(), 900);
+        storing.testing.holdPublish = false;
+    };
+    Out held(1, 256);
+    storing.mixInto(held.channels(), 256, 1);
+    report("a read lapped by a block still being stored counts too", storing.overruns() == 1,
+           format("overruns %d", storing.overruns()));
+
+    AudioRingBuffer clear(1, 1024, 0);
+    clear.write(first.channels(), 512);
+    clear.testing.afterCopy = [&] {
+        clear.testing.afterCopy = nullptr;
+        clear.write(small.channels(), 400); // stops short of the frames being read
+    };
+    Out fine(1, 256);
+    clear.mixInto(fine.channels(), 256, 1);
+    report("a writer that stays behind the read counts nothing", clear.overruns() == 0 && fine.counts(0, 1, 256),
+           format("overruns %d", clear.overruns()));
+}
+
+/// How a stress run is paced.
+enum class Pace {
+    /// The writer waits while half the buffer is full, as a source never gets
+    /// that far ahead of a healthy output: nothing may be lost or torn.
+    paced,
+    /// The writer never waits and the reader dawdles between reads: frames
+    /// are dropped before reads begin.
+    racing,
+    /// A small buffer, long reads and a writer that never pauses: the writer
+    /// often laps a read while it copies.
+    lapping,
+};
 
 /// One writer and one reader, as the real threads will be. Frame n carries the
 /// value n + 1 on the left and its negative on the right, so a frame that was
 /// not read stays 0, a gap shows as a jump, and a torn frame as a mismatch.
-///
-/// Paced, the writer waits while half the buffer is full, as a source never
-/// gets that far ahead of a healthy output: nothing may be lost or torn.
-/// Racing, the writer never waits and the reader dawdles: frames are dropped,
-/// but every jump or tear must come with an overrun counted in the same read.
-void stress(test::Report& report, bool racing) {
-    constexpr int capacity = 4096;
-    AudioRingBuffer ring(2, capacity, 512);
+/// Dropping frames is allowed when racing or lapping, but every jump or tear
+/// must come with an overrun counted in the same read.
+void stress(test::Report& report, Pace pace) {
+    const bool lapping = pace == Pace::lapping;
+    const int capacity = lapping ? 1024 : 4096;
+    AudioRingBuffer ring(2, capacity, lapping ? 256 : 512);
     std::atomic<bool> done{false};
-    constexpr std::int64_t total = 400'000; // floats count exactly up to 2^24
+    const std::int64_t total = lapping ? 2'000'000 : 400'000; // floats count exactly up to 2^24
 
     std::thread writer([&] {
         std::mt19937 random(1);
         std::vector<float> left(512), right(512);
         std::int64_t written = 0;
         while (written < total) {
-            const int frames = 64 + static_cast<int>(random() % 448);
-            if (!racing) {
+            const int frames = lapping ? 64 + static_cast<int>(random() % 192) : 64 + static_cast<int>(random() % 448);
+            if (pace == Pace::paced) {
                 while (ring.availableFrames() > capacity / 2) std::this_thread::yield();
             }
             for (int f = 0; f < frames; ++f) {
@@ -263,19 +336,19 @@ void stress(test::Report& report, bool racing) {
             const float* channels[] = {left.data(), right.data()};
             ring.write(channels, frames);
             written += frames;
-            if (random() % 8 == 0) std::this_thread::yield();
+            if (!lapping && random() % 8 == 0) std::this_thread::yield();
         }
         done.store(true, std::memory_order_release);
     });
 
     std::mt19937 random(2);
-    std::vector<float> left(512), right(512);
+    std::vector<float> left(1024), right(1024);
     float last = 0;
     int jumps = 0, torn = 0, unexplained = 0;
     std::int64_t read = 0;
     while (true) {
         const bool finished = done.load(std::memory_order_acquire);
-        const int frames = 64 + static_cast<int>(random() % 448);
+        const int frames = lapping ? 700 + static_cast<int>(random() % 69) : 64 + static_cast<int>(random() % 448);
         std::fill(left.begin(), left.end(), 0.0f);
         std::fill(right.begin(), right.end(), 0.0f);
         float* channels[] = {left.data(), right.data()};
@@ -296,19 +369,24 @@ void stress(test::Report& report, bool racing) {
         }
         read += got;
         if (finished && got == 0) break; // drained, or less than a cushion left
-        if (!racing && random() % 4 == 0) std::this_thread::yield();
-        if (racing && random() % 2 == 0) std::this_thread::sleep_for(std::chrono::microseconds(200));
+        if (pace == Pace::paced && random() % 4 == 0) std::this_thread::yield();
+        if (pace == Pace::racing && random() % 2 == 0) std::this_thread::sleep_for(std::chrono::microseconds(200));
     }
     writer.join();
 
-    if (racing) {
-        report("racing writer: every jump is a counted overrun", unexplained == 0 && ring.overruns() > 0,
-               format("%lld frames read, %d jumps, %d torn, %d overruns", static_cast<long long>(read), jumps, torn,
-                      ring.overruns()));
-    } else {
+    const auto detail = format("%lld frames read, %d jumps, %d torn, %d overruns, %d underruns",
+                               static_cast<long long>(read), jumps, torn, ring.overruns(), ring.underruns());
+    switch (pace) {
+    case Pace::paced:
         report("paced writer and reader: no frame lost or torn",
-               jumps == 0 && torn == 0 && unexplained == 0 && ring.overruns() == 0,
-               format("%lld frames read, %d underruns", static_cast<long long>(read), ring.underruns()));
+               jumps == 0 && torn == 0 && unexplained == 0 && ring.overruns() == 0, detail);
+        break;
+    case Pace::racing:
+        report("racing writer: every jump is a counted overrun", unexplained == 0 && ring.overruns() > 0, detail);
+        break;
+    case Pace::lapping:
+        report("lapping writer: every tear is a counted overrun", unexplained == 0 && ring.overruns() > 0, detail);
+        break;
     }
 }
 
@@ -323,7 +401,9 @@ int main() {
     writeMappings(report);
     overflowAndWrap(report);
     controls(report);
-    stress(report, false);
-    stress(report, true);
+    lappedReads(report);
+    stress(report, Pace::paced);
+    stress(report, Pace::racing);
+    stress(report, Pace::lapping);
     return report.finish();
 }

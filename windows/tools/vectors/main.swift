@@ -6,7 +6,14 @@
 //
 //     vectorgen write DIR      write the .tdv files into DIR
 //     vectorgen check DIR      fail when the files in DIR no longer match the Swift code
-//     vectorgen selftest DIR   show that check catches a deliberately stale file
+//     vectorgen selftest       show that the comparison catches every kind of change
+//
+// check runs the Swift code on the inputs stored in each file, so only what
+// the code does with them is compared, and compares bit for bit. The one
+// allowance is the limiter's: its release coefficient comes from exp(), which
+// another math library may round one unit in the last place apart. Each case
+// stores that coefficient, and only when it really comes out different may the
+// outputs differ by one ulp (and a block's lowest gain by eight).
 
 import Foundation
 
@@ -63,7 +70,13 @@ func usedSizes(frames: Int, sizes: [Int]) -> [Int] {
 
 // MARK: - Gain ramp and master volume
 
-func gainRampVectors() -> TDVFile {
+/// Planar channels from a stored entry, when it has the expected size.
+func storedPlanar(_ file: TDVFile?, _ name: String, channels: Int, frames: Int) -> [[Float]]? {
+    guard let flat = file?.f32(name), flat.count == channels * frames else { return nil }
+    return (0..<channels).map { Array(flat[($0 * frames)..<(($0 + 1) * frames)]) }
+}
+
+func gainRampVectors(stored: TDVFile?) -> TDVFile {
     // Each operation either ramps the next `frames` frames to `value`, or
     // resets the ramp to `value`. Zero-length ramps check that an empty block
     // leaves the current gain alone.
@@ -75,8 +88,8 @@ func gainRampVectors() -> TDVFile {
     let frames = operations.reduce(0) { $0 + $1.frames }
     let rate = 48_000.0
     var noise = Noise(seed: 7)
-    let input: [[Float]] = [sine(997, amplitude: 0.8, rate: rate, frames: frames),
-                            (0..<frames).map { _ in noise.next(scale: 1) }]
+    let input: [[Float]] = storedPlanar(stored, "input", channels: 2, frames: frames)
+        ?? [sine(997, amplitude: 0.8, rate: rate, frames: frames), (0..<frames).map { _ in noise.next(scale: 1) }]
     var output = input
     var ramp = GainRamp(0.6)
     var start = 0
@@ -106,7 +119,7 @@ func gainRampVectors() -> TDVFile {
     return file
 }
 
-func masterVolumeVectors() -> TDVFile {
+func masterVolumeVectors(stored: TDVFile?) -> TDVFile {
     // 0 sets the volume, 1 sets mute (value 1 or 0).
     let operations: [(kind: Int32, value: Float)] = [
         (0, 0.5), (1, 1), (0, 0.25), (1, 0), (0, -3), (0, 1.25), (1, 1), (1, 0), (0, 0), (0, 0.001), (0, 1),
@@ -180,12 +193,18 @@ func limiterCases() -> [LimiterCase] {
     return cases
 }
 
-func lookaheadVectors() -> TDVFile {
+func lookaheadVectors(stored: TDVFile?) -> TDVFile {
     var file = TDVFile()
     let cases = limiterCases()
     file.add("cases", .i32([Int32(cases.count)]))
-    for (index, limiterCase) in cases.enumerated() {
-        let ceiling = pow(10, limiterCase.ceilingDecibels / 20)
+    for (index, generated) in cases.enumerated() {
+        let prefix = "case\(index)."
+        var limiterCase = generated
+        if let input = storedPlanar(stored, prefix + "input", channels: generated.input.count,
+                                    frames: generated.input[0].count) {
+            limiterCase.input = input
+        }
+        let ceiling = stored?.f64(prefix + "ceiling")?.first ?? pow(10, limiterCase.ceilingDecibels / 20)
         let limiter = LookaheadLimiter(channels: limiterCase.channels, sampleRate: limiterCase.sampleRate,
                                        ceiling: ceiling, lookaheadSeconds: limiterCase.lookaheadSeconds,
                                        releaseSeconds: limiterCase.releaseSeconds)
@@ -193,7 +212,6 @@ func lookaheadVectors() -> TDVFile {
         let output = blocks(limiterCase.input, sizes: limiterCase.sizes) { channels, size in
             lowest.append(limiter.process(channels, frameCount: size))
         }
-        let prefix = "case\(index)."
         file.add(prefix + "name", .text(limiterCase.name))
         file.add(prefix + "channels", .i32([Int32(limiterCase.channels)]))
         file.add(prefix + "inputChannels", .i32([Int32(limiterCase.input.count)]))
@@ -202,6 +220,9 @@ func lookaheadVectors() -> TDVFile {
         file.add(prefix + "ceiling", .f64([ceiling]))
         file.add(prefix + "lookaheadSeconds", .f64([limiterCase.lookaheadSeconds]))
         file.add(prefix + "releaseSeconds", .f64([limiterCase.releaseSeconds]))
+        // The same expression as LookaheadLimiter's initialiser: the one value
+        // here that depends on the math library.
+        file.add(prefix + "release", .f64([exp(-1 / (limiterCase.releaseSeconds * limiterCase.sampleRate))]))
         file.add(prefix + "blocks", .i32(usedSizes(frames: limiterCase.input[0].count, sizes: limiterCase.sizes).map { Int32($0) }))
         file.add(prefix + "latency", .i32([Int32(limiter.latencyFrames)]))
         file.add(prefix + "input", .f32(limiterCase.input.flatMap { $0 }))
@@ -213,7 +234,7 @@ func lookaheadVectors() -> TDVFile {
 
 // MARK: - Routing graph
 
-func routingGraphVectors() -> TDVFile {
+func routingGraphVectors(stored: TDVFile?) -> TDVFile {
     // Each connect call is "inputs>outputs" with comma-separated devices;
     // calls are separated by ';'. The expected route is comma-separated, or
     // empty for no loop.
@@ -229,6 +250,7 @@ func routingGraphVectors() -> TDVFile {
         ("two loops: the first in sorted order wins", "C>D;D>C;A>B;B>A"),
         ("a loop found from a later start", "A>B;B>C;C>B"),
         ("neighbours are tried in sorted order", "S>B,A;A>S;B>S"),
+        ("the last neighbour pushed is explored first", "A>C,B;B>A;C>A"),
         ("several inputs in one mix", "mic,line>cable;cable>mic"),
         ("names outside ASCII", "麦克风>扬声器;Lautsprecher>麦克风;扬声器>Lautsprecher"),
     ]
@@ -252,31 +274,58 @@ func routingGraphVectors() -> TDVFile {
 
 // MARK: - Running
 
-let generators: [(file: String, make: () -> TDVFile)] = [
+let generators: [(file: String, make: (TDVFile?) -> TDVFile)] = [
     ("gainramp.tdv", gainRampVectors),
     ("mastervolume.tdv", masterVolumeVectors),
     ("lookahead.tdv", lookaheadVectors),
     ("routinggraph.tdv", routingGraphVectors),
 ]
 
-/// Compare a regenerated file with a stored one. Audio may differ by what
-/// another macOS version's math library rounds differently; everything else
-/// must match exactly.
-func differences(_ fresh: TDVFile, _ stored: TDVFile) -> [String] {
+/// How far a regenerated value may sit from the stored one, in units in the
+/// last place: none, except a limiter case's outputs when this machine's exp()
+/// gives that case a different release coefficient from the stored one.
+func allowedUlps(file: String, entry: String, fresh: TDVFile, stored: TDVFile) -> Double {
+    guard file == "lookahead.tdv", let dot = entry.firstIndex(of: ".") else { return 0 }
+    // The coefficient itself is exp()'s result: one ulp apart at most.
+    if entry.hasSuffix(".release") { return 1 }
+    let release = entry[..<dot] + ".release"
+    guard let mine = fresh.f64(String(release))?.first, let theirs = stored.f64(String(release))?.first,
+          mine.bitPattern != theirs.bitPattern else { return 0 }
+    if entry.hasSuffix(".output") { return 1 }
+    if entry.hasSuffix(".lowest") { return 8 }
+    return 0
+}
+
+/// Units in the last place between two values; infinite when only one is NaN.
+/// With no allowance, only identical bit patterns count as equal.
+func distance(_ a: Float, _ b: Float, allowed: Double) -> Double {
+    if a.bitPattern == b.bitPattern { return 0 }
+    if a.isNaN || b.isNaN || allowed == 0 { return .infinity }
+    return Double((a - b).magnitude / Swift.max(a.magnitude, b.magnitude).ulp)
+}
+
+func distance(_ a: Double, _ b: Double, allowed: Double) -> Double {
+    if a.bitPattern == b.bitPattern { return 0 }
+    if a.isNaN || b.isNaN || allowed == 0 { return .infinity }
+    return (a - b).magnitude / Swift.max(a.magnitude, b.magnitude).ulp
+}
+
+/// Every way `stored` differs from `fresh`, beyond the allowances.
+func differences(_ fresh: TDVFile, _ stored: TDVFile, file: String) -> [String] {
     var problems: [String] = []
-    let freshNames = fresh.entries.map { $0.name }, storedNames = stored.entries.map { $0.name }
-    if freshNames != storedNames { problems.append("entries differ") }
+    if fresh.entries.map({ $0.name }) != stored.entries.map({ $0.name }) { problems.append("entries differ") }
     for (name, value) in fresh.entries {
         guard let other = stored.entries.first(where: { $0.name == name })?.value else { continue }
+        let allowed = allowedUlps(file: file, entry: name, fresh: fresh, stored: stored)
+        func compare(_ worst: Double?) {
+            guard let worst else { return problems.append("\(name): different length or type") }
+            if !(worst <= allowed) { problems.append("\(name): \(worst.isFinite ? "off by \(worst) ulp" : "differs")") }
+        }
         switch (value, other) {
         case let (.f32(a), .f32(b)):
-            if a.count != b.count { problems.append("\(name): \(b.count) values, expected \(a.count)"); continue }
-            let worst = zip(a, b).map { abs(Double($0) - Double($1)) }.max() ?? 0
-            if !(worst <= 1e-6) { problems.append("\(name): differs by up to \(worst)") }
+            compare(a.count == b.count ? zip(a, b).map { distance($0, $1, allowed: allowed) }.reduce(0) { Swift.max($0, $1) } : nil)
         case let (.f64(a), .f64(b)):
-            if a.count != b.count { problems.append("\(name): \(b.count) values, expected \(a.count)"); continue }
-            let worst = zip(a, b).map { abs($0 - $1) }.max() ?? 0
-            if !(worst <= 1e-9) { problems.append("\(name): differs by up to \(worst)") }
+            compare(a.count == b.count ? zip(a, b).map { distance($0, $1, allowed: allowed) }.reduce(0) { Swift.max($0, $1) } : nil)
         default:
             if value != other { problems.append("\(name): differs") }
         }
@@ -284,57 +333,115 @@ func differences(_ fresh: TDVFile, _ stored: TDVFile) -> [String] {
     return problems
 }
 
-func check(_ directory: URL, files: [String: TDVFile]? = nil) -> Bool {
+func check(_ directory: URL) -> Bool {
     var clean = true
     for generator in generators {
-        let fresh = generator.make()
         let stored: TDVFile
         do {
-            stored = try files?[generator.file]
-                ?? TDVFile.decode(Data(contentsOf: directory.appendingPathComponent(generator.file)))
+            stored = try TDVFile.decode(Data(contentsOf: directory.appendingPathComponent(generator.file)))
         } catch {
             print("STALE  \(generator.file): \(error)")
             clean = false
             continue
         }
-        let problems = differences(fresh, stored)
+        let problems = differences(generator.make(stored), stored, file: generator.file)
         print("\(problems.isEmpty ? "OK   " : "STALE")  \(generator.file)\(problems.isEmpty ? "" : ": " + problems.joined(separator: "; "))")
         if !problems.isEmpty { clean = false }
     }
     return clean
 }
 
+/// Change one entry of a file.
+func altered(_ file: TDVFile, _ name: String, _ change: (TDVFile.Value) -> TDVFile.Value) -> TDVFile {
+    var copy = file
+    if let index = copy.entries.firstIndex(where: { $0.name == name }) {
+        copy.entries[index].value = change(copy.entries[index].value)
+    }
+    return copy
+}
+
+/// Show, in memory, that the comparison accepts an unchanged file and the
+/// allowance, and reports every kind of change.
+func selftest() -> Bool {
+    let files = Dictionary(uniqueKeysWithValues: generators.map { ($0.file, $0.make(nil)) })
+    var passed = true
+    func expect(_ label: String, file: String, _ changed: TDVFile, reported: Bool) {
+        let problems = differences(files[file]!, changed, file: file)
+        let ok = problems.isEmpty != reported
+        print("\(ok ? "PASS" : "FAIL")  \(label)\(problems.isEmpty ? "" : ": " + problems.joined(separator: "; "))")
+        if !ok { passed = false }
+    }
+    func nudgeFloat(_ by: Int, nan: Bool = false) -> (TDVFile.Value) -> TDVFile.Value {
+        { value in
+            guard case .f32(var values) = value else { return value }
+            let index = values.count / 2
+            if nan { values[index] = .nan } else { for _ in 0..<by { values[index] = values[index].nextUp } }
+            return .f32(values)
+        }
+    }
+    for (name, file) in files.sorted(by: { $0.key < $1.key }) {
+        expect("\(name) unchanged", file: name, file, reported: false)
+    }
+    let ramp = files["gainramp.tdv"]!, limiter = files["lookahead.tdv"]!
+    let graph = files["routinggraph.tdv"]!, master = files["mastervolume.tdv"]!
+    expect("a ramp output one ulp off", file: "gainramp.tdv", altered(ramp, "output", nudgeFloat(1)), reported: true)
+    expect("a ramp output turned NaN", file: "gainramp.tdv", altered(ramp, "output", nudgeFloat(0, nan: true)), reported: true)
+    expect("a limiter output one ulp off", file: "lookahead.tdv",
+           altered(limiter, "case0.output", nudgeFloat(1)), reported: true)
+    let otherLibrary = altered(limiter, "case0.release") {
+        guard case .f64(let values) = $0 else { return $0 }
+        return .f64(values.map { $0.nextUp })
+    }
+    expect("one ulp off where exp() rounds apart (allowed)", file: "lookahead.tdv",
+           altered(otherLibrary, "case0.output", nudgeFloat(1)), reported: false)
+    expect("two ulps off where exp() rounds apart", file: "lookahead.tdv",
+           altered(otherLibrary, "case0.output", nudgeFloat(2)), reported: true)
+    expect("a limiter gain changed in the 12th digit", file: "lookahead.tdv", altered(limiter, "case1.lowest") {
+        guard case .f64(var values) = $0 else { return $0 }
+        values[values.count / 2] *= 1 + 1e-12
+        return .f64(values)
+    }, reported: true)
+    expect("a limiter delay changed", file: "lookahead.tdv", altered(limiter, "case0.latency") {
+        guard case .i32(let values) = $0 else { return $0 }
+        return .i32(values.map { $0 + 1 })
+    }, reported: true)
+    expect("a graph route changed", file: "routinggraph.tdv", altered(graph, "case3.cycle") { _ in .text("A,B,A") },
+           reported: true)
+    var renamed = master
+    renamed.entries[0].name += "x"
+    expect("an entry renamed", file: "mastervolume.tdv", renamed, reported: true)
+    return passed
+}
+
 let arguments = CommandLine.arguments
-guard arguments.count == 3, ["write", "check", "selftest"].contains(arguments[1]) else {
-    print("usage: vectorgen write|check|selftest DIR")
+let usage = "usage: vectorgen write DIR | check DIR | selftest"
+guard arguments.count >= 2 else {
+    print(usage)
     exit(2)
 }
-let directory = URL(fileURLWithPath: arguments[2], isDirectory: true)
 
-switch arguments[1] {
-case "write":
+switch (arguments[1], arguments.count) {
+case ("write", 3):
+    let directory = URL(fileURLWithPath: arguments[2], isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     for generator in generators {
-        try generator.make().encoded().write(to: directory.appendingPathComponent(generator.file))
+        try generator.make(nil).encoded().write(to: directory.appendingPathComponent(generator.file))
         print("wrote \(generator.file)")
     }
 
-case "check":
-    if !check(directory) {
+case ("check", 3):
+    if !check(URL(fileURLWithPath: arguments[2], isDirectory: true)) {
         print("The reference vectors no longer match the Swift code: run windows/tools/vectors.sh write,")
         print("then bring the C++ port in line until vectortest passes.")
         exit(1)
     }
 
-default: // selftest
-    // A stored output nudged by 0.001 must be reported as stale.
-    var stale = gainRampVectors()
-    if let index = stale.entries.firstIndex(where: { $0.name == "output" }), case .f32(var values) = stale.entries[index].value {
-        values[values.count / 2] += 0.001
-        stale.entries[index].value = .f32(values)
-    }
-    print("Checking a deliberately stale gainramp.tdv:")
-    let caught = !check(directory, files: ["gainramp.tdv": stale])
-    print(caught ? "selftest passed: the stale vector was caught" : "selftest FAILED: the stale vector went unnoticed")
-    exit(caught ? 0 : 1)
+case ("selftest", _):
+    let passed = selftest()
+    print(passed ? "selftest passed" : "selftest FAILED")
+    exit(passed ? 0 : 1)
+
+default:
+    print(usage)
+    exit(2)
 }

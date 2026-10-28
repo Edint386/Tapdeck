@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numbers>
 #include <vector>
 
@@ -38,7 +39,11 @@ int main() {
         // 2·sin(π·1000/48000) ≈ 0.131 between samples. Anything larger is a
         // discontinuity introduced by the gain change.
         float largest = 0;
-        for (int i = 1; i < frames * 2; ++i) largest = std::max(largest, std::abs(samples[i] - samples[i - 1]));
+        for (int i = 1; i < frames * 2; ++i) {
+            const float step = std::abs(samples[i] - samples[i - 1]);
+            if (std::isnan(step)) return std::numeric_limits<float>::infinity();
+            largest = std::max(largest, step);
+        }
         return largest;
     };
     const float hard = largestStep(false);

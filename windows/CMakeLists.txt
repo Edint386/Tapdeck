@@ -41,6 +41,13 @@ add_library(tapdeck_dsp STATIC
   engine/src/GainStage.cpp
   engine/src/RoutingGraph.cpp)
 target_include_directories(tapdeck_dsp PUBLIC engine/include)
+
+# The test seams (AudioRingBuffer::testing). On while this build holds only the
+# tests; the app's build turns it off.
+option(TAPDECK_TESTING "Compile the test seams into the engine" ON)
+if(TAPDECK_TESTING)
+  target_compile_definitions(tapdeck_dsp PUBLIC TAPDECK_TESTING)
+endif()
 target_compile_options(tapdeck_dsp PUBLIC ${TAPDECK_FLOATING_POINT} PRIVATE ${TAPDECK_WARNINGS})
 
 find_package(Threads REQUIRED)
@@ -52,5 +59,11 @@ foreach(test graphtest gaintest limittest ringtest vectortest)
   add_executable(${test} tests/${test}.cpp tests/VectorFile.cpp)
   target_link_libraries(${test} PRIVATE tapdeck_dsp Threads::Threads)
   target_compile_options(${test} PRIVATE ${TAPDECK_WARNINGS})
-  add_test(NAME ${test} COMMAND ${test} "${TAPDECK_VECTORS}")
 endforeach()
+foreach(test graphtest gaintest limittest ringtest)
+  add_test(NAME ${test} COMMAND ${test})
+endforeach()
+# vectortest reads its files relative to the working directory: a path on the
+# command line would pass through the Windows ANSI code page and lose any
+# character outside it.
+add_test(NAME vectortest COMMAND vectortest . WORKING_DIRECTORY "${TAPDECK_VECTORS}")

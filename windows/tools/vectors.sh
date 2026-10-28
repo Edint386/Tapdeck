@@ -4,7 +4,7 @@
 #
 #   windows/tools/vectors.sh write      regenerate windows/vectors
 #   windows/tools/vectors.sh check      fail when windows/vectors no longer match the Swift code
-#   windows/tools/vectors.sh selftest   show that check catches a stale vector
+#   windows/tools/vectors.sh selftest   show that the comparison catches every kind of change
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -14,4 +14,8 @@ xcrun swiftc -O -swift-version 5 \
   Sources/Engine/GainStage.swift Sources/Engine/RoutingGraph.swift \
   windows/tools/vectors/*.swift \
   -o build/windows/vectorgen
-build/windows/vectorgen "${1:-check}" windows/vectors
+if [ "${1:-check}" = selftest ]; then
+  build/windows/vectorgen selftest
+else
+  build/windows/vectorgen "${1:-check}" windows/vectors
+fi

@@ -24,6 +24,16 @@ struct TDVFile {
         entries.append((name, value))
     }
 
+    func f32(_ name: String) -> [Float]? {
+        guard case .f32(let values)? = entries.first(where: { $0.name == name })?.value else { return nil }
+        return values
+    }
+
+    func f64(_ name: String) -> [Double]? {
+        guard case .f64(let values)? = entries.first(where: { $0.name == name })?.value else { return nil }
+        return values
+    }
+
     func encoded() -> Data {
         var data = Data("TDV1".utf8)
         data.append(UInt32(entries.count))
