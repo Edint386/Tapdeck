@@ -8,7 +8,6 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <random>
 #include <thread>
 #include <vector>
@@ -284,7 +283,7 @@ void stress(test::Report& report, bool racing) {
         ring.mixInto(channels, frames, 1);
         const bool overranNow = ring.overruns() != overrunsBefore;
 
-        const float debugLast = last;
+        const float previous = last;
         int got = 0, anomalies = 0;
         for (int f = 0; f < frames && left[f] != 0; ++f, ++got) {
             if (right[f] != -left[f]) { torn += 1; anomalies += 1; }
@@ -293,10 +292,7 @@ void stress(test::Report& report, bool racing) {
         }
         if (anomalies > 0 && !overranNow) {
             unexplained += 1;
-            if (std::getenv("RINGTEST_DEBUG")) {
-                std::fprintf(stderr, "unexplained: got %d first %.0f last-before %.0f overruns %d underruns %d\n",
-                             got, left[0], debugLast, ring.overruns(), ring.underruns());
-            }
+            std::fprintf(stderr, "uncounted jump or tear: %d frames from %.0f after %.0f\n", got, left[0], previous);
         }
         read += got;
         if (finished && got == 0) break; // drained, or less than a cushion left

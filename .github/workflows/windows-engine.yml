@@ -1,0 +1,54 @@
+# The Windows engine's portable code, checked on both platforms against the
+# reference vectors the macOS engine writes. See windows/README.md.
+
+name: Windows engine
+
+on:
+  push:
+    paths:
+      - "windows/**"
+      - "Sources/Engine/**"
+      - "tools/toolchain.sh"
+      - ".github/workflows/windows-engine.yml"
+  pull_request:
+    paths:
+      - "windows/**"
+      - "Sources/Engine/**"
+      - "tools/toolchain.sh"
+      - ".github/workflows/windows-engine.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    name: macOS (Swift vectors, clang, ThreadSanitizer)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reference vectors still match the Swift code
+        run: windows/tools/vectors.sh check
+      - name: The check catches a stale vector
+        run: windows/tools/vectors.sh selftest
+      - name: Build and test with clang
+        run: windows/tools/build-mac.sh
+      - name: Ring buffer under ThreadSanitizer
+        run: windows/tools/build-mac.sh thread
+
+  windows:
+    name: Windows (MSVC, x64)
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain versions
+        shell: pwsh
+        run: |
+          cmake --version
+          & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property catalog_productDisplayVersion
+      - name: Configure
+        run: cmake -S windows -B build -A x64
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Test against the reference vectors
+        run: ctest --test-dir build -C Release --output-on-failure
