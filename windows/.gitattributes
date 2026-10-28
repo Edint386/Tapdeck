@@ -1,0 +1,2 @@
+# Reference vectors are binary: never convert their bytes.
+*.tdv binary
